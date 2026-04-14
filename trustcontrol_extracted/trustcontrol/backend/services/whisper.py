@@ -21,7 +21,7 @@ async def transcribe(wav_bytes: bytes, language: str = "ru") -> str | None:
         buf.name = "audio.wav"
 
         result = await client.audio.transcriptions.create(
-            model=settings.WHISPER_MODEL,
+            model="gpt-4o-mini-transcribe",
             file=buf,
             language=language,
         )
