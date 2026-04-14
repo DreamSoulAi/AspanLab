@@ -1,0 +1,7 @@
+pyaudio
+webrtcvad
+openai>=1.0.0
+python-telegram-bot>=20.0
+requests
+noisereduce
+numpy
