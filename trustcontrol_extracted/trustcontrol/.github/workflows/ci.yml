@@ -1,0 +1,104 @@
+# ════════════════════════════════════════════════════════════
+#  CI/CD — GitHub Actions
+#  Запускается при каждом push и pull request
+#  При merge в main → автодеплой на VPS
+# ════════════════════════════════════════════════════════════
+
+name: TrustControl CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # ── Шаг 1: Тесты ─────────────────────────────────────────
+  test:
+    name: Тесты и проверки
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout кода
+        uses: actions/checkout@v4
+
+      - name: Установка Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Установка зависимостей
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx aiosqlite
+
+      - name: Запуск тестов
+        env:
+          SECRET_KEY: "test-secret-key-for-ci-minimum-32-chars!!"
+          OPENAI_API_KEY: "sk-fake-key-for-tests"
+          TELEGRAM_BOT_TOKEN: "123:fake-token"
+          DEBUG: "true"
+        run: |
+          pytest tests/ -v --tb=short
+
+      - name: Проверка импортов (нет сломанных)
+        env:
+          SECRET_KEY: "test-secret-key-for-ci-minimum-32-chars!!"
+          DEBUG: "true"
+        run: |
+          python -c "from backend.config import settings; print('✅ Config OK')"
+          python -c "from backend.services.analyzer import analyze; print('✅ Analyzer OK')"
+          python -c "from backend.models import User, Location, Report, Alert; print('✅ Models OK')"
+
+  # ── Шаг 2: Деплой на VPS (только main ветка) ─────────────
+  deploy:
+    name: Деплой на VPS
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout кода
+        uses: actions/checkout@v4
+
+      - name: Деплой через SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/trustcontrol
+
+            # Обновляем код
+            git pull origin main
+
+            # Пересобираем и перезапускаем
+            docker-compose build api
+            docker-compose up -d --no-deps api
+
+            # Ждём запуска
+            sleep 10
+
+            # Проверяем что всё работает
+            curl -f http://localhost:8000/health || exit 1
+
+            echo "✅ Деплой успешен!"
+
+      - name: Уведомление в Telegram при успехе
+        if: success()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: "✅ TrustControl задеплоен успешно! Коммит: ${{ github.event.head_commit.message }}"
+
+      - name: Уведомление в Telegram при ошибке
+        if: failure()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: "🚨 Ошибка деплоя TrustControl! Проверь GitHub Actions."

@@ -1,0 +1,63 @@
+# ════════════════════════════════════════════════════════════
+#  TrustControl — Docker Compose
+#  Запуск всего одной командой: docker-compose up -d
+# ════════════════════════════════════════════════════════════
+
+version: "3.9"
+
+services:
+
+  # ── Основной API сервер ──────────────────────────────────
+  api:
+    build: .
+    container_name: trustcontrol_api
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://tc_user:tc_pass@db/trustcontrol
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - SECRET_KEY=${SECRET_KEY}
+      - KASPI_NUMBER=${KASPI_NUMBER}
+      - KASPI_NAME=${KASPI_NAME}
+      - DEBUG=false
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+
+  # ── PostgreSQL база данных ───────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: trustcontrol_db
+    restart: always
+    environment:
+      POSTGRES_DB:       trustcontrol
+      POSTGRES_USER:     tc_user
+      POSTGRES_PASSWORD: tc_pass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tc_user -d trustcontrol"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Nginx — отдаёт фронтенд и проксирует API ────────────
+  nginx:
+    image: nginx:alpine
+    container_name: trustcontrol_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./frontend:/usr/share/nginx/html
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

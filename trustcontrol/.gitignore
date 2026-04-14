@@ -1,0 +1,23 @@
+# Секреты — НИКОГДА не заливать в git!
+.env
+*.env
+
+# База данных
+*.db
+*.sqlite
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Логи
+*.log
+logs/
+
+# Временные файлы
+fails/
+uploads/
