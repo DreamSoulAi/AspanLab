@@ -328,26 +328,47 @@ async function doLogin() {
   const email = document.getElementById("loginEmail").value;
   const pass  = document.getElementById("loginPass").value;
   const err   = document.getElementById("loginError");
+  const btn   = document.querySelector("#loginForm .form-btn");
   err.style.display = "none";
 
-  const r = await fetch(`${API}/api/auth/login`, {
-    method: "POST",
-    headers: {"Content-Type": "application/x-www-form-urlencoded"},
-    body: `username=${encodeURIComponent(email)}&password=${encodeURIComponent(pass)}`,
-  });
-
-  if (r.ok) {
-    const data = await r.json();
-    token = data.access_token;
-    localStorage.setItem("tc_token", token);
-    showApp();
-  } else {
+  if (!email || !pass) {
+    err.textContent = "Введите email и пароль";
     err.style.display = "block";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Входим...";
+  try {
+    const r = await fetch(`${API}/api/auth/login`, {
+      method: "POST",
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: `username=${encodeURIComponent(email)}&password=${encodeURIComponent(pass)}`,
+    });
+
+    if (r.ok) {
+      const data = await r.json();
+      token = data.access_token;
+      localStorage.setItem("tc_token", token);
+      showApp();
+    } else {
+      let msg = "Неверный email или пароль";
+      try { const e = await r.json(); msg = e.detail || msg; } catch(_) {}
+      err.textContent = msg;
+      err.style.display = "block";
+    }
+  } catch(e) {
+    err.textContent = "Нет связи с сервером. Попробуйте позже.";
+    err.style.display = "block";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Войти";
   }
 }
 
 async function doRegister() {
   const err = document.getElementById("regError");
+  const btn = document.querySelector("#registerForm .form-btn");
   err.style.display = "none";
 
   const body = {
@@ -357,21 +378,38 @@ async function doRegister() {
     password: document.getElementById("regPass").value,
   };
 
-  const r = await fetch(`${API}/api/auth/register`, {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(body),
-  });
-
-  if (r.ok) {
-    const data = await r.json();
-    token = data.access_token;
-    localStorage.setItem("tc_token", token);
-    showApp();
-  } else {
-    const e = await r.json();
-    err.textContent = e.detail || "Ошибка регистрации";
+  if (!body.name || !body.email || !body.password) {
+    err.textContent = "Заполните все поля";
     err.style.display = "block";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Регистрируемся...";
+  try {
+    const r = await fetch(`${API}/api/auth/register`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+
+    if (r.ok) {
+      const data = await r.json();
+      token = data.access_token;
+      localStorage.setItem("tc_token", token);
+      showApp();
+    } else {
+      let msg = "Ошибка регистрации";
+      try { const e = await r.json(); msg = e.detail || msg; } catch(_) {}
+      err.textContent = msg;
+      err.style.display = "block";
+    }
+  } catch(e) {
+    err.textContent = "Нет связи с сервером. Попробуйте позже.";
+    err.style.display = "block";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Зарегистрироваться — 14 дней бесплатно";
   }
 }
 
