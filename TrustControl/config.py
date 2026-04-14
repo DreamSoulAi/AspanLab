@@ -22,8 +22,9 @@ BUSINESS_TYPE = "coffee"      # Кофейня
 # BUSINESS_TYPE = "hotel"     # Гостиница
 
 # ── НАСТРОЙКИ РАСПОЗНАВАНИЯ ─────────────────────────────────
-WHISPER_LANGUAGE = "ru"       # "ru" — русский, "kk" — казахский
-VAD_AGGRESSIVENESS = 2        # 0-3 (3 = строго, 2 = баланс)
+WHISPER_LANGUAGE = "ru"                    # "ru" — русский, "kk" — казахский
+WHISPER_MODEL    = "gpt-4o-mini-transcribe" # или "gpt-4o-transcribe" (дороже, точнее)
+VAD_AGGRESSIVENESS = 2                     # 0-3 (3 = строго, 2 = баланс)
 
 # ── КАСТОМНЫЕ ФРАЗЫ ─────────────────────────────────────────
 PHRASES_CUSTOM = [

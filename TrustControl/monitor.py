@@ -28,6 +28,7 @@ from config import (
     LOCATION_NAME,
     BUSINESS_TYPE,
     WHISPER_LANGUAGE,
+    WHISPER_MODEL,
     VAD_AGGRESSIVENESS,
     PHRASES_COMMON,
     PHRASES_NEGATIVE,
@@ -218,7 +219,7 @@ class TrustControlMonitor:
 
             with open(tmp_path, "rb") as af:
                 result = self.openai.audio.transcriptions.create(
-                    model="whisper-1",
+                    model=WHISPER_MODEL,
                     file=af,
                     language=WHISPER_LANGUAGE,
                 )
