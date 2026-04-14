@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: trustcontrol
+    runtime: docker
+    dockerfilePath: ./trustcontrol/Dockerfile
+    dockerContext: ./trustcontrol
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: DEBUG
+        value: false
+      - key: SECRET_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:///trustcontrol.db
+      - key: WHISPER_LANGUAGE
+        value: ru
+      - key: KASPI_NUMBER
+        sync: false
+      - key: KASPI_NAME
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
