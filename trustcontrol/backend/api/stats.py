@@ -42,7 +42,9 @@ async def dashboard(
     user_location_ids = await _get_user_location_ids(user.id, db)
 
     if not user_location_ids:
-        return {"today": {"total": 0, "score": 0}, "week": [], "alerts_today": 0}
+        return {"today": {"total": 0, "score": 0, "greetings_pct": 0, "bonus_pct": 0,
+                          "bad_count": 0, "fraud_count": 0, "positive_tone": 0, "negative_tone": 0},
+                "week": [], "alerts_today": 0}
 
     # ── SECURITY: проверяем что запрошенная точка принадлежит юзеру
     if location_id:
@@ -65,7 +67,9 @@ async def dashboard(
     total = len(today_reports)
 
     if total == 0:
-        return {"today": {"total": 0, "score": 0}, "week": [], "alerts_today": 0}
+        return {"today": {"total": 0, "score": 0, "greetings_pct": 0, "bonus_pct": 0,
+                          "bad_count": 0, "fraud_count": 0, "positive_tone": 0, "negative_tone": 0},
+                "week": [], "alerts_today": 0}
 
     def pct(lst, flag):
         return round(sum(1 for r in lst if getattr(r, flag)) / len(lst) * 100) if lst else 0

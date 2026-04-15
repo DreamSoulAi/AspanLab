@@ -217,11 +217,11 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
   <div class="sidebar">
     <div class="s-logo">Trust<span>Control</span></div>
     <div class="s-menu">
-      <a class="s-item active" onclick="showPage('overview')"><span class="s-ico">📊</span> Обзор</a>
-      <a class="s-item" onclick="showPage('reports')"><span class="s-ico">📝</span> Отчёты</a>
-      <a class="s-item" onclick="showPage('alerts')"><span class="s-ico">🚨</span> Тревоги <span class="s-badge" id="alertsBadge">0</span></a>
-      <a class="s-item" onclick="showPage('locations')"><span class="s-ico">🏪</span> Точки</a>
-      <a class="s-item" onclick="showPage('settings')"><span class="s-ico">⚙️</span> Настройки</a>
+      <a class="s-item active" onclick="showPage('overview', this)"><span class="s-ico">📊</span> Обзор</a>
+      <a class="s-item" onclick="showPage('reports', this)"><span class="s-ico">📝</span> Отчёты</a>
+      <a class="s-item" onclick="showPage('alerts', this)"><span class="s-ico">🚨</span> Тревоги <span class="s-badge" id="alertsBadge">0</span></a>
+      <a class="s-item" onclick="showPage('locations', this)"><span class="s-ico">🏪</span> Точки</a>
+      <a class="s-item" onclick="showPage('settings', this)"><span class="s-ico">⚙️</span> Настройки</a>
     </div>
     <div style="position:absolute;bottom:24px;left:24px;right:24px;">
       <div style="font-size:11px;color:var(--gray);margin-bottom:8px" id="userInfo"></div>
@@ -498,7 +498,12 @@ async function apiFetch(path, opts = {}) {
     },
   });
   if (r.status === 401) { doLogout(); return null; }
-  return r.ok ? r.json() : null;
+  if (!r.ok) {
+    let detail = null;
+    try { const e = await r.json(); detail = e.detail; } catch(_) {}
+    return { _error: true, detail };
+  }
+  return r.json();
 }
 
 async function loadUserInfo() {
@@ -669,11 +674,11 @@ async function resolveAlert(id) {
   await loadAlerts();
 }
 
-function showPage(name) {
+function showPage(name, el) {
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.querySelectorAll(".s-item").forEach(i => i.classList.remove("active"));
   document.getElementById(`page-${name}`).classList.add("active");
-  event.currentTarget.classList.add("active");
+  if (el) el.classList.add("active");
 }
 
 // ═══════════════════════════════════════════
@@ -715,12 +720,12 @@ async function createLocation() {
         address:       document.getElementById("locAddress").value || null,
       }),
     });
-    if (r) {
+    if (r && !r._error) {
       closeAddLocation();
       await loadLocations();
       showPage2("locations");
     } else {
-      err.textContent = "Ошибка создания точки";
+      err.textContent = (r && r.detail) || "Ошибка создания точки";
       err.style.display = "block";
     }
   } catch(e) {
