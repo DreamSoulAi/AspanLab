@@ -211,6 +211,12 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
 </head>
 <body>
 
+<!-- БАННЕР ОШИБОК (поверх всего) -->
+<div id="serverBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:999;padding:10px 16px;font-size:13px;font-weight:600;align-items:center;justify-content:center;gap:12px;text-align:center">
+  <span id="bannerMsg"></span>
+  <button onclick="retryConnection()" style="background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.4);color:inherit;padding:4px 14px;cursor:pointer;font-size:12px;font-weight:700">Повторить</button>
+</div>
+
 <!-- LOGIN -->
 <div id="loginWrap" class="login-wrap">
   <div class="login-box">
@@ -501,47 +507,87 @@ let token = localStorage.getItem("tc_token");
 let weekChart = null;
 
 // ═══════════════════════════════════════════
+//  БАННЕР ОШИБОК
+// ═══════════════════════════════════════════
+function showBanner(msg, type = "error") {
+  const b = document.getElementById("serverBanner");
+  b.style.background = type === "warn" ? "#c9a84c" : "#e05555";
+  b.style.color = type === "warn" ? "#0a0a0a" : "#fff";
+  document.getElementById("bannerMsg").textContent = msg;
+  b.style.display = "flex";
+}
+function hideBanner() {
+  document.getElementById("serverBanner").style.display = "none";
+}
+async function retryConnection() {
+  hideBanner();
+  await loadAll();
+}
+
+// ═══════════════════════════════════════════
+//  API
+// ═══════════════════════════════════════════
+async function apiFetch(path, opts = {}) {
+  try {
+    const r = await fetch(`${API}${path}`, {
+      ...opts,
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...opts.headers,
+      },
+    });
+    if (r.status === 401) { doLogout(); return null; }
+    if (!r.ok) {
+      let detail = "Ошибка сервера " + r.status;
+      try { const e = await r.json(); detail = e.detail || detail; } catch(_) {}
+      showBanner(detail);
+      return null;
+    }
+    hideBanner();
+    return await r.json();
+  } catch(e) {
+    showBanner("Сервер не отвечает. Render может просыпаться 30–60 сек — нажмите Повторить.", "warn");
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════
 //  AUTH
 // ═══════════════════════════════════════════
 async function doLogin() {
-  const email = document.getElementById("loginEmail").value;
+  const email = document.getElementById("loginEmail").value.trim();
   const pass  = document.getElementById("loginPass").value;
   const err   = document.getElementById("loginError");
   const btn   = document.querySelector("#loginForm .form-btn");
   err.style.display = "none";
-
   if (!email || !pass) {
     err.textContent = "Введите email и пароль";
     err.style.display = "block";
     return;
   }
-
-  btn.disabled = true;
-  btn.textContent = "Входим...";
+  btn.disabled = true; btn.textContent = "Входим...";
   try {
     const r = await fetch(`${API}/api/auth/login`, {
       method: "POST",
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
       body: `username=${encodeURIComponent(email)}&password=${encodeURIComponent(pass)}`,
     });
-
     if (r.ok) {
-      const data = await r.json();
-      token = data.access_token;
+      const d = await r.json();
+      token = d.access_token;
       localStorage.setItem("tc_token", token);
       showApp();
     } else {
       let msg = "Неверный email или пароль";
       try { const e = await r.json(); msg = e.detail || msg; } catch(_) {}
-      err.textContent = msg;
-      err.style.display = "block";
+      err.textContent = msg; err.style.display = "block";
     }
   } catch(e) {
     err.textContent = "Нет связи с сервером. Попробуйте позже.";
     err.style.display = "block";
   } finally {
-    btn.disabled = false;
-    btn.textContent = "Войти";
+    btn.disabled = false; btn.textContent = "Войти";
   }
 }
 
@@ -549,46 +595,36 @@ async function doRegister() {
   const err = document.getElementById("regError");
   const btn = document.querySelector("#registerForm .form-btn");
   err.style.display = "none";
-
   const body = {
-    name:     document.getElementById("regName").value,
-    phone:    document.getElementById("regPhone").value,
-    email:    document.getElementById("regEmail").value,
+    name:     document.getElementById("regName").value.trim(),
+    phone:    document.getElementById("regPhone").value.trim(),
+    email:    document.getElementById("regEmail").value.trim(),
     password: document.getElementById("regPass").value,
   };
-
   if (!body.name || !body.email || !body.password) {
-    err.textContent = "Заполните все поля";
-    err.style.display = "block";
-    return;
+    err.textContent = "Заполните все поля"; err.style.display = "block"; return;
   }
-
-  btn.disabled = true;
-  btn.textContent = "Регистрируемся...";
+  btn.disabled = true; btn.textContent = "Регистрируемся...";
   try {
     const r = await fetch(`${API}/api/auth/register`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(body),
     });
-
     if (r.ok) {
-      const data = await r.json();
-      token = data.access_token;
+      const d = await r.json();
+      token = d.access_token;
       localStorage.setItem("tc_token", token);
       showApp();
     } else {
       let msg = "Ошибка регистрации";
       try { const e = await r.json(); msg = e.detail || msg; } catch(_) {}
-      err.textContent = msg;
-      err.style.display = "block";
+      err.textContent = msg; err.style.display = "block";
     }
   } catch(e) {
-    err.textContent = "Нет связи с сервером. Попробуйте позже.";
-    err.style.display = "block";
+    err.textContent = "Нет связи с сервером."; err.style.display = "block";
   } finally {
-    btn.disabled = false;
-    btn.textContent = "Зарегистрироваться — 14 дней бесплатно";
+    btn.disabled = false; btn.textContent = "Зарегистрироваться — 14 дней бесплатно";
   }
 }
 
@@ -598,7 +634,6 @@ function doLogout() {
   document.getElementById("loginWrap").style.display = "flex";
   token = null;
 }
-
 function showRegister() {
   document.getElementById("loginForm").style.display = "none";
   document.getElementById("registerForm").style.display = "block";
@@ -609,55 +644,39 @@ function showLogin() {
 }
 
 // ═══════════════════════════════════════════
-//  APP
+//  APP — параллельная загрузка
 // ═══════════════════════════════════════════
+async function loadAll() {
+  // Запускаем параллельно — одна ошибка не блокирует остальных
+  await Promise.allSettled([
+    loadUserInfo(),
+    loadLocations(),
+    loadDashboard(),
+    loadAlerts(),
+  ]);
+}
+
 async function showApp() {
   document.getElementById("loginWrap").style.display = "none";
   document.getElementById("appWrap").style.display   = "block";
-
-  await loadUserInfo();
-  await loadLocations();
-  await loadDashboard();
-  await loadAlerts();
-
-  // Автообновление каждые 30 сек
+  await loadAll();
+  // Автообновление — стартует ВСЕГДА даже если начальная загрузка упала
   setInterval(loadDashboard, 30000);
-  setInterval(loadAlerts, 60000);
-}
-
-async function apiFetch(path, opts = {}) {
-  const r = await fetch(`${API}${path}`, {
-    ...opts,
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-      ...opts.headers,
-    },
-  });
-  if (r.status === 401) { doLogout(); return null; }
-  if (!r.ok) {
-    let detail = null;
-    try { const e = await r.json(); detail = e.detail; } catch(_) {}
-    return { _error: true, detail };
-  }
-  return r.json();
+  setInterval(loadAlerts,    60000);
 }
 
 async function loadUserInfo() {
   const u = await apiFetch("/api/auth/me");
   if (!u) return;
-  document.getElementById("userInfo").innerHTML = `
-    <b style="color:var(--txt)">${u.name}</b><br>
-    Тариф: <span style="color:var(--gold)">${u.plan}</span>
-  `;
-  // Мобильная шапка — только имя
+  document.getElementById("userInfo").innerHTML =
+    `<b style="color:var(--txt)">${u.name}</b><br>Тариф: <span style="color:var(--gold)">${u.plan}</span>`;
   const mob = document.getElementById("mobileUserInfo");
   if (mob) mob.textContent = u.name;
 }
 
 async function loadLocations() {
   const locs = await apiFetch("/api/locations/");
-  if (!locs) return;
+  if (!locs || !Array.isArray(locs)) return;  // ← защита от краша
 
   const sel = document.getElementById("locationFilter");
   sel.innerHTML = '<option value="">Все точки</option>';
@@ -694,7 +713,7 @@ async function loadDashboard() {
   const locId = document.getElementById("locationFilter").value;
   const url = `/api/stats/dashboard${locId ? `?location_id=${locId}` : ""}`;
   const data = await apiFetch(url);
-  if (!data) return;
+  if (!data || !data.today) return;   // ← защита от краша
 
   const t = data.today;
 
@@ -754,9 +773,12 @@ async function loadDashboard() {
 
   // Таблица отчётов
   const reports = await apiFetch(`/api/reports/?limit=10${locId ? `&location_id=${locId}` : ""}`);
-  if (!reports) return;
-
   const tbody = document.getElementById("reportsTable");
+  if (!reports || !Array.isArray(reports)) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--gray)">Нет данных</td></tr>`;
+    return;
+  }
+
   tbody.innerHTML = reports.map(r => `
     <tr>
       <td>${new Date(r.timestamp).toLocaleTimeString("ru")}</td>
@@ -778,7 +800,7 @@ async function loadDashboard() {
 
 async function loadAlerts() {
   const alerts = await apiFetch("/api/alerts/?days=3");
-  if (!alerts) return;
+  if (!alerts || !Array.isArray(alerts)) return;  // ← защита от краша
 
   const unresolved = alerts.filter(a => !a.is_resolved);
   document.getElementById("alertsBadge").textContent = unresolved.length;
