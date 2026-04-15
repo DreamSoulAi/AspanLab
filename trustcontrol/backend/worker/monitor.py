@@ -79,6 +79,39 @@ logging.basicConfig(
 )
 log = logging.getLogger("monitor")
 
+# ── Проверка конфигурации при старте ────────────────────────
+_CONFIG_OK = True
+if "localhost" in SERVER_URL:
+    log.error("=" * 60)
+    log.error("ОШИБКА: SERVER_URL указывает на localhost!")
+    log.error(f"  Текущее значение: {SERVER_URL}")
+    log.error("  Укажите реальный адрес сервера:")
+    log.error("  --api-url https://aspanlab-1.onrender.com")
+    log.error("=" * 60)
+    _CONFIG_OK = False
+
+if API_KEY == "ВАШ_API_КЛЮЧ_ТОЧКИ" or not API_KEY.strip():
+    log.error("=" * 60)
+    log.error("ОШИБКА: API_KEY не заполнен!")
+    log.error("  Зайдите на сайт → Точки → Создайте точку → скопируйте ключ")
+    log.error("  Затем запустите скрипт с аргументом:")
+    log.error("  --api-key ВАШ_РЕАЛЬНЫЙ_КЛЮЧ")
+    log.error("=" * 60)
+    _CONFIG_OK = False
+
+try:
+    API_KEY.encode("latin-1")
+except UnicodeEncodeError:
+    log.error("=" * 60)
+    log.error("ОШИБКА: API_KEY содержит недопустимые символы!")
+    log.error("  API-ключ должен состоять только из латинских букв и цифр.")
+    log.error("  Получите правильный ключ на сайте → Точки.")
+    log.error("=" * 60)
+    _CONFIG_OK = False
+
+if not _CONFIG_OK:
+    sys.exit(1)
+
 
 def frames_to_wav(frames: list[bytes]) -> bytes:
     buf = io.BytesIO()
