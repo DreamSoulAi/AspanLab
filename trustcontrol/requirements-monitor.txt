@@ -2,11 +2,22 @@
 #  Зависимости для скрипта на кассе
 #  Устанавливается на КАЖДОМ кассовом ПК
 #
-#  pip install -r requirements-monitor.txt
+#  Базовая установка (транскрипция на сервере):
+#    pip install -r requirements-monitor.txt
+#
+#  С локальным Whisper (бесплатная транскрипция, работает офлайн):
+#    pip install -r requirements-monitor.txt faster-whisper
 # ════════════════════════════════════════════════════════════
 
+# Аудио захват и обработка
 pyaudio==0.2.14
 webrtcvad==2.0.10
-noisereduce==3.0.2
-numpy==1.26.3
-requests==2.31.0
+noisereduce>=3.0.2
+numpy>=1.26.3
+
+# Отправка на сервер
+requests>=2.31.0
+
+# ── Опционально: локальная транскрипция (бесплатно) ──────────
+# Раскомментируй или установи отдельно: pip install faster-whisper
+# faster-whisper>=1.0.0

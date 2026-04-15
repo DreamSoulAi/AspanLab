@@ -4,11 +4,17 @@
 ║     Записывает звук и отправляет на сервер                   ║
 ╚══════════════════════════════════════════════════════════════╝
 
-УСТАНОВКА:
-  pip install pyaudio webrtcvad noisereduce numpy requests
+УСТАНОВКА (базовая):
+  pip install -r requirements-monitor.txt
 
-ЗАПУСК:
+УСТАНОВКА (с локальным Whisper, бесплатная транскрипция):
+  pip install -r requirements-monitor.txt faster-whisper
+
+ЗАПУСК (транскрипция на сервере):
   python monitor.py --api-url https://aspanlab-1.onrender.com --api-key ВАШ_КЛЮЧ
+
+ЗАПУСК (транскрипция локально, бесплатно):
+  python monitor.py --api-url https://aspanlab-1.onrender.com --api-key ВАШ_КЛЮЧ --local-whisper
 
 АВТОЗАПУСК Windows (без окна):
   Переименуй в monitor.pyw и добавь ярлык с аргументами в автозагрузку
@@ -37,7 +43,7 @@ import requests
 _parser = argparse.ArgumentParser(description="TrustControl — монитор кассы")
 _parser.add_argument("--api-url", default="http://localhost:8000",
                      help="Адрес сервера TrustControl (например https://aspanlab-1.onrender.com)")
-_parser.add_argument("--api-key", default="ВАШ_API_КЛЮЧ_ТОЧКИ",
+_parser.add_argument("--api-key", default="",
                      help="API-ключ точки из личного кабинета")
 _parser.add_argument("--vad-level", type=int, default=2,
                      help="Чувствительность VAD 0-3 (по умолчанию 2)")
@@ -45,14 +51,24 @@ _parser.add_argument("--silence", type=float, default=2.5,
                      help="Секунд тишины = конец разговора (по умолчанию 2.5)")
 _parser.add_argument("--max-minutes", type=int, default=2,
                      help="Максимальная длина сегмента в минутах (по умолчанию 2)")
+_parser.add_argument("--local-whisper", action="store_true",
+                     help="Транскрибировать локально через faster-whisper (бесплатно)")
+_parser.add_argument("--whisper-model", default="small",
+                     choices=["tiny", "base", "small", "medium"],
+                     help="Размер модели faster-whisper (по умолчанию small)")
+_parser.add_argument("--language", default=None,
+                     help="Язык речи: ru, kk, auto (по умолчанию auto)")
 _args = _parser.parse_args()
 
 # ════════════════════════════════════════════════════════════
 #  НАСТРОЙКИ
 # ════════════════════════════════════════════════════════════
 
-SERVER_URL = _args.api_url.rstrip("/")
-API_KEY    = _args.api_key
+SERVER_URL    = _args.api_url.rstrip("/")
+API_KEY       = _args.api_key
+LOCAL_WHISPER = _args.local_whisper
+WHISPER_MODEL = _args.whisper_model
+LANGUAGE      = _args.language  # None = автоопределение
 
 # ── Дополнительные настройки ─────────────────────────────────
 VAD_LEVEL        = _args.vad_level
@@ -90,28 +106,41 @@ if "localhost" in SERVER_URL:
     log.error("=" * 60)
     _CONFIG_OK = False
 
-if API_KEY == "ВАШ_API_КЛЮЧ_ТОЧКИ" or not API_KEY.strip():
+if not API_KEY.strip():
     log.error("=" * 60)
-    log.error("ОШИБКА: API_KEY не заполнен!")
+    log.error("ОШИБКА: API_KEY не задан!")
     log.error("  Зайдите на сайт → Точки → Создайте точку → скопируйте ключ")
-    log.error("  Затем запустите скрипт с аргументом:")
-    log.error("  --api-key ВАШ_РЕАЛЬНЫЙ_КЛЮЧ")
-    log.error("=" * 60)
-    _CONFIG_OK = False
-
-try:
-    API_KEY.encode("latin-1")
-except UnicodeEncodeError:
-    log.error("=" * 60)
-    log.error("ОШИБКА: API_KEY содержит недопустимые символы!")
-    log.error("  API-ключ должен состоять только из латинских букв и цифр.")
-    log.error("  Получите правильный ключ на сайте → Точки.")
+    log.error("  Затем запустите с аргументом: --api-key ВАШ_РЕАЛЬНЫЙ_КЛЮЧ")
     log.error("=" * 60)
     _CONFIG_OK = False
 
 if not _CONFIG_OK:
     sys.exit(1)
 
+# ── Загрузка faster-whisper если нужно ──────────────────────
+_whisper_model_instance = None
+if LOCAL_WHISPER:
+    try:
+        from faster_whisper import WhisperModel
+        log.info(f"Загружаю faster-whisper модель '{WHISPER_MODEL}'...")
+        _whisper_model_instance = WhisperModel(
+            WHISPER_MODEL,
+            device="cpu",
+            compute_type="int8",
+        )
+        log.info("faster-whisper загружен. Транскрипция — локально (бесплатно).")
+    except ImportError:
+        log.error("=" * 60)
+        log.error("ОШИБКА: faster-whisper не установлен!")
+        log.error("  Установите командой:")
+        log.error("  pip install faster-whisper")
+        log.error("=" * 60)
+        sys.exit(1)
+
+
+# ════════════════════════════════════════════════════════════
+#  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ════════════════════════════════════════════════════════════
 
 def frames_to_wav(frames: list[bytes]) -> bytes:
     buf = io.BytesIO()
@@ -135,25 +164,76 @@ def denoise(frames: list[bytes]) -> list[bytes]:
         return frames
 
 
-def send_to_server(wav_bytes: bytes):
+def transcribe_local(wav_bytes: bytes) -> str | None:
+    """Транскрибирует WAV локально через faster-whisper. Бесплатно."""
+    if not _whisper_model_instance:
+        return None
+    try:
+        buf = io.BytesIO(wav_bytes)
+        segments, info = _whisper_model_instance.transcribe(
+            buf,
+            language=LANGUAGE,
+            beam_size=5,
+            vad_filter=True,
+        )
+        text = " ".join(seg.text.strip() for seg in segments).strip()
+        if not text or len(text) < 3:
+            return None
+        log.info(f"Транскрипция (local): {text!r} [{info.language}]")
+        return text
+    except Exception as e:
+        log.warning(f"Ошибка faster-whisper: {e}")
+        return None
+
+
+def _post(url: str, data: dict, files: dict | None = None, timeout: int = 30):
+    """
+    Обёртка над requests.post.
+    API-ключ передаётся как form-поле 'api_key' (не заголовок),
+    поэтому нет проблем с кодировкой latin-1.
+    """
+    return requests.post(url, data=data, files=files, timeout=timeout)
+
+
+def send_audio_to_server(wav_bytes: bytes):
     """Отправляем аудио на сервер. При ошибке — в папку fails/."""
     try:
-        r = requests.post(
+        r = _post(
             f"{SERVER_URL}/api/reports/submit",
+            data={"api_key": API_KEY},
             files={"audio": ("audio.wav", wav_bytes, "audio/wav")},
-            headers={"X-API-Key": API_KEY},
-            timeout=30,
         )
-        if r.status_code == 200:
-            data = r.json()
-            log.info(f"✅ Отправлено | тон={data.get('tone')} | оценка={data.get('score')}")
-            _retry_fails()
-        else:
-            log.warning(f"Сервер вернул {r.status_code}: {r.text[:100]}")
-            _save_fail(wav_bytes)
+        _handle_response(r, wav_bytes=wav_bytes)
     except Exception as e:
         log.warning(f"Сервер недоступен: {e}")
         _save_fail(wav_bytes)
+
+
+def send_text_to_server(transcript: str):
+    """Отправляем уже готовый транскрипт (режим local-whisper)."""
+    try:
+        r = _post(
+            f"{SERVER_URL}/api/reports/submit",
+            data={"api_key": API_KEY, "transcript_text": transcript},
+        )
+        _handle_response(r)
+    except Exception as e:
+        log.warning(f"Сервер недоступен: {e}")
+
+
+def _handle_response(r, wav_bytes: bytes | None = None):
+    if r.status_code == 200:
+        data = r.json()
+        log.info(
+            f"Отправлено | тон={data.get('tone')} "
+            f"| оценка={data.get('score')} "
+            f"| резюме={data.get('gpt_summary', '')[:60]}"
+        )
+        _retry_fails()
+    else:
+        log.warning(f"Сервер вернул {r.status_code}: {r.text[:120]}")
+        if wav_bytes:
+            _save_fail(wav_bytes)
 
 
 def _save_fail(wav_bytes: bytes):
@@ -168,11 +248,10 @@ def _retry_fails():
     for fpath in sorted(FAILS_DIR.glob("*.wav")):
         try:
             wav_bytes = fpath.read_bytes()
-            r = requests.post(
+            r = _post(
                 f"{SERVER_URL}/api/reports/submit",
+                data={"api_key": API_KEY},
                 files={"audio": ("audio.wav", wav_bytes, "audio/wav")},
-                headers={"X-API-Key": API_KEY},
-                timeout=30,
             )
             if r.status_code == 200:
                 fpath.unlink()
@@ -180,6 +259,22 @@ def _retry_fails():
         except Exception:
             break
 
+
+def process_segment(wav_bytes: bytes):
+    """Обрабатывает один речевой сегмент."""
+    if LOCAL_WHISPER:
+        transcript = transcribe_local(wav_bytes)
+        if transcript:
+            threading.Thread(target=send_text_to_server, args=(transcript,), daemon=True).start()
+        else:
+            log.info("Речь не распознана (local whisper)")
+    else:
+        threading.Thread(target=send_audio_to_server, args=(wav_bytes,), daemon=True).start()
+
+
+# ════════════════════════════════════════════════════════════
+#  ОСНОВНОЙ ЦИКЛ
+# ════════════════════════════════════════════════════════════
 
 def run():
     vad = webrtcvad.Vad(VAD_LEVEL)
@@ -193,11 +288,12 @@ def run():
         frames_per_buffer=FRAME_SIZE,
     )
 
-    log.info(f"🎙️ Мониторинг запущен. Сервер: {SERVER_URL}")
+    mode = "local faster-whisper" if LOCAL_WHISPER else "сервер"
+    log.info(f"Мониторинг запущен. Сервер: {SERVER_URL} | Транскрипция: {mode}")
 
     voiced   = []
     silence  = 0
-    in_speech= False
+    in_speech = False
 
     def flush(reason=""):
         nonlocal voiced, silence, in_speech
@@ -206,7 +302,7 @@ def run():
         log.info(f"Обрабатываю сегмент ({reason}), кадров: {len(voiced)}")
         clean = denoise(voiced)
         wav   = frames_to_wav(clean)
-        threading.Thread(target=send_to_server, args=(wav,), daemon=True).start()
+        process_segment(wav)
         voiced = []; silence = 0; in_speech = False
 
     try:

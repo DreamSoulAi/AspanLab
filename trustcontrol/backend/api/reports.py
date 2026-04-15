@@ -3,10 +3,14 @@
 #  SECURITY FIXES:
 #  - Валидация размера аудио (макс 10MB)
 #  - GET отчётов только своих точек
-#  - Лимит на параметр limit (макс 100)
+#  - Лимит на параметр limit (макс 200)
+#  - API-ключ принимается из form-поля (нет проблем с latin-1)
+#    с обратной совместимостью через X-API-Key заголовок
 # ════════════════════════════════════════════════════════════
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
@@ -17,6 +21,7 @@ from backend.models.report import Report
 from backend.models.alert import Alert
 from backend.services.whisper import transcribe
 from backend.services.analyzer import analyze, get_tone, calculate_score
+from backend.services.gpt_analyzer import gpt_analyze
 from backend.services import notifier
 from backend.api.auth import get_current_user
 from backend.models.user import User
@@ -42,37 +47,56 @@ async def get_location_by_key(api_key: str, db: AsyncSession) -> Location:
 
 @router.post("/submit")
 async def submit_audio(
-    audio: UploadFile = File(...),
-    x_api_key: str = Header(...),
+    audio: Optional[UploadFile] = File(None),
+    # API-ключ: из form-поля (новый способ, нет latin-1) или из заголовка (старый)
+    api_key: Optional[str] = Form(None),
+    x_api_key: Optional[str] = Header(None),
+    # Готовый транскрипт от воркера с faster-whisper (local mode)
+    transcript_text: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Скрипт monitor.py отправляет сюда аудио файл.
-    Авторизация через X-API-Key заголовок (уникальный ключ каждой точки).
+    Скрипт monitor.py отправляет сюда аудио или уже готовый транскрипт.
+
+    Варианты вызова:
+    1. Аудио + api_key (form field)  — новый способ, нет latin-1
+    2. Аудио + X-API-Key (header)    — старый способ, обратная совместимость
+    3. transcript_text + api_key     — local-whisper режим, дешевле
     """
+    # Определяем API-ключ: form-поле имеет приоритет над заголовком
+    effective_key = (api_key or "").strip() or (x_api_key or "").strip()
+    if not effective_key:
+        raise HTTPException(status_code=401, detail="API ключ обязателен (form: api_key или header: X-API-Key)")
+
     # Авторизация точки
-    location = await get_location_by_key(x_api_key, db)
+    location = await get_location_by_key(effective_key, db)
     location.last_seen = datetime.utcnow()
 
-    # ── SECURITY: валидация размера файла ────────────────────
-    wav_bytes = await audio.read()
-    size_mb = len(wav_bytes) / (1024 * 1024)
-    if size_mb > MAX_AUDIO_SIZE_MB:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Файл слишком большой: {size_mb:.1f}MB. Максимум {MAX_AUDIO_SIZE_MB}MB"
-        )
-    if len(wav_bytes) < 100:
-        raise HTTPException(status_code=400, detail="Файл пустой или повреждён")
+    # ── Режим 1: получаем транскрипт от воркера (faster-whisper) ─
+    if transcript_text and transcript_text.strip():
+        transcript = transcript_text.strip()
 
-    audio_size_kb = len(wav_bytes) // 1024
+    # ── Режим 2: получаем аудио и транскрибируем на сервере ──────
+    elif audio:
+        wav_bytes = await audio.read()
+        size_mb = len(wav_bytes) / (1024 * 1024)
+        if size_mb > MAX_AUDIO_SIZE_MB:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Файл слишком большой: {size_mb:.1f}MB. Максимум {MAX_AUDIO_SIZE_MB}MB"
+            )
+        if len(wav_bytes) < 100:
+            raise HTTPException(status_code=400, detail="Файл пустой или повреждён")
 
-    # ── Транскрипция ─────────────────────────────────────────
-    transcript = await transcribe(wav_bytes, language=location.language)
-    if not transcript:
-        return {"status": "silent", "message": "Речь не распознана"}
+        transcript = await transcribe(wav_bytes, language=location.language)
+        if not transcript:
+            return {"status": "silent", "message": "Речь не распознана"}
+    else:
+        raise HTTPException(status_code=400, detail="Нужно передать аудио-файл или transcript_text")
 
-    # ── Анализ фраз и тона ───────────────────────────────────
+    audio_size_kb = len(wav_bytes) // 1024 if audio else 0
+
+    # ── Анализ фраз и тона (regex) ───────────────────────────────
     found = analyze(
         transcript,
         business_type=location.business_type,
@@ -81,13 +105,22 @@ async def submit_audio(
     tone  = get_tone(found)
     score = calculate_score(found)
 
-    # ── Определяем смену ─────────────────────────────────────
+    # ── GPT-4o-mini анализ (AI-резюме) ───────────────────────────
+    gpt_result  = await gpt_analyze(transcript)
+    gpt_score   = gpt_result.get("score")
+    gpt_summary = gpt_result.get("summary")
+    gpt_details = {
+        "positives": gpt_result.get("positives", []),
+        "issues":    gpt_result.get("issues", []),
+    } if gpt_result else None
+
+    # ── Определяем смену ─────────────────────────────────────────
     hour = datetime.utcnow().hour
     if   6 <= hour < 14: shift_number = 1   # утро
     elif 14 <= hour < 22: shift_number = 2  # день
     else:                 shift_number = 3  # вечер/ночь
 
-    # ── Сохраняем отчёт ──────────────────────────────────────
+    # ── Сохраняем отчёт ──────────────────────────────────────────
     report = Report(
         location_id=location.id,
         transcript=transcript,
@@ -102,11 +135,14 @@ async def submit_audio(
         tone=tone,
         tone_score=1.0 if tone == "positive" else 0.0 if tone == "negative" else 0.5,
         shift_number=shift_number,
+        gpt_score=gpt_score,
+        gpt_summary=gpt_summary,
+        gpt_details=gpt_details,
     )
     db.add(report)
     await db.flush()
 
-    # ── Сохраняем тревоги ────────────────────────────────────
+    # ── Сохраняем тревоги ────────────────────────────────────────
     if "🚨 МОШЕННИЧЕСТВО" in found:
         db.add(Alert(
             location_id=location.id,
@@ -136,7 +172,7 @@ async def submit_audio(
             transcript=transcript,
         ))
 
-    # ── Отправляем в Telegram ────────────────────────────────
+    # ── Отправляем в Telegram ────────────────────────────────────
     chat_id = location.telegram_chat or (
         location.owner.telegram_chat if location.owner else None
     )
@@ -151,12 +187,14 @@ async def submit_audio(
         )
 
     return {
-        "status":    "ok",
-        "report_id": report.id,
-        "transcript": transcript,
-        "found":     list(found.keys()),
-        "tone":      tone,
-        "score":     score,
+        "status":      "ok",
+        "report_id":   report.id,
+        "transcript":  transcript,
+        "found":       list(found.keys()),
+        "tone":        tone,
+        "score":       score,
+        "gpt_score":   gpt_score,
+        "gpt_summary": gpt_summary,
     }
 
 
@@ -167,14 +205,12 @@ async def get_reports(
     has_bad: bool = None,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),  # ── SECURITY: обязательная авторизация
+    user: User = Depends(get_current_user),
 ):
     """Список отчётов. Пользователь видит только свои точки."""
 
-    # ── SECURITY: лимит не больше 200 ───────────────────────
     limit = min(limit, 200)
 
-    # Получаем ID точек этого пользователя
     locs_result = await db.execute(
         select(Location.id).where(Location.owner_id == user.id)
     )
@@ -183,7 +219,6 @@ async def get_reports(
     if not user_location_ids:
         return []
 
-    # ── SECURITY: фильтруем только по точкам этого юзера ────
     query = (
         select(Report)
         .where(Report.location_id.in_(user_location_ids))
@@ -191,9 +226,7 @@ async def get_reports(
         .limit(limit)
     )
 
-    # Дополнительные фильтры
     if location_id:
-        # ── SECURITY: проверяем что эта точка принадлежит юзеру
         if location_id not in user_location_ids:
             raise HTTPException(status_code=403, detail="Нет доступа к этой точке")
         query = query.where(Report.location_id == location_id)
@@ -208,15 +241,17 @@ async def get_reports(
 
     return [
         {
-            "id":        r.id,
-            "timestamp": r.timestamp.isoformat(),
-            "transcript": r.transcript[:300],
-            "tone":      r.tone,
-            "score":     r.tone_score,
-            "has_fraud": r.has_fraud,
-            "has_bad":   r.has_bad,
-            "has_bonus": r.has_bonus,
-            "found":     list(r.found_categories.keys()) if r.found_categories else [],
+            "id":          r.id,
+            "timestamp":   r.timestamp.isoformat(),
+            "transcript":  r.transcript[:300],
+            "tone":        r.tone,
+            "score":       r.tone_score,
+            "has_fraud":   r.has_fraud,
+            "has_bad":     r.has_bad,
+            "has_bonus":   r.has_bonus,
+            "found":       list(r.found_categories.keys()) if r.found_categories else [],
+            "gpt_score":   r.gpt_score,
+            "gpt_summary": r.gpt_summary,
         }
         for r in reports
     ]
