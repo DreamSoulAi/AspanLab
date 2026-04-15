@@ -118,6 +118,14 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
 .pulse { display:inline-block; width:8px; height:8px; background:var(--green); border-radius:50%; animation:pulse 2s infinite; margin-right:6px; }
 @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }
 
+/* MODAL */
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:200; align-items:center; justify-content:center; }
+.modal-overlay.open { display:flex; }
+.modal-box { background:var(--card); border:1px solid var(--bdr); padding:36px; width:420px; max-width:95vw; }
+.modal-title { font-size:18px; font-weight:900; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; }
+.modal-close { float:right; cursor:pointer; color:var(--gray); font-size:20px; line-height:1; }
+.modal-select { width:100%; background:#0e0e0e; border:1px solid var(--bdr); color:var(--txt); padding:12px 14px; font-size:14px; }
+
 @media(max-width:900px){
   .sidebar { display:none; }
   .main { margin-left:0; padding:20px; }
@@ -165,6 +173,40 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
       <button class="form-btn" onclick="doRegister()">Зарегистрироваться — 14 дней бесплатно</button>
       <div class="login-switch">Уже есть аккаунт? <a onclick="showLogin()">Войти</a></div>
     </div>
+  </div>
+</div>
+
+<!-- MODAL: Добавить точку -->
+<div class="modal-overlay" id="addLocationModal">
+  <div class="modal-box">
+    <div class="modal-title">+ Добавить точку <span class="modal-close" onclick="closeAddLocation()">×</span></div>
+    <div class="form-group">
+      <label class="form-label">Название точки</label>
+      <input class="form-input" type="text" id="locName" placeholder="Кофейня на Абая">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Тип бизнеса</label>
+      <select class="modal-select" id="locType">
+        <option value="coffee">Кофейня</option>
+        <option value="cafe">Кафе / ресторан</option>
+        <option value="fastfood">Фастфуд</option>
+        <option value="shop">Магазин</option>
+        <option value="gas">АЗС</option>
+        <option value="beauty">Салон красоты</option>
+        <option value="fitness">Фитнес</option>
+        <option value="hotel">Гостиница</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Город</label>
+      <input class="form-input" type="text" id="locCity" placeholder="Алматы" value="Алматы">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Адрес (необязательно)</label>
+      <input class="form-input" type="text" id="locAddress" placeholder="ул. Абая 10">
+    </div>
+    <div class="error-msg" id="locError"></div>
+    <button class="form-btn" onclick="createLocation()">Создать точку</button>
   </div>
 </div>
 
@@ -632,6 +674,67 @@ function showPage(name) {
   document.querySelectorAll(".s-item").forEach(i => i.classList.remove("active"));
   document.getElementById(`page-${name}`).classList.add("active");
   event.currentTarget.classList.add("active");
+}
+
+// ═══════════════════════════════════════════
+//  LOCATIONS
+// ═══════════════════════════════════════════
+function showAddLocation() {
+  document.getElementById("locName").value = "";
+  document.getElementById("locCity").value = "Алматы";
+  document.getElementById("locAddress").value = "";
+  document.getElementById("locError").style.display = "none";
+  document.getElementById("addLocationModal").classList.add("open");
+}
+
+function closeAddLocation() {
+  document.getElementById("addLocationModal").classList.remove("open");
+}
+
+async function createLocation() {
+  const btn  = document.querySelector("#addLocationModal .form-btn");
+  const err  = document.getElementById("locError");
+  const name = document.getElementById("locName").value.trim();
+  err.style.display = "none";
+
+  if (!name) {
+    err.textContent = "Введите название точки";
+    err.style.display = "block";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Создаём...";
+  try {
+    const r = await apiFetch("/api/locations/", {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        business_type: document.getElementById("locType").value,
+        city:          document.getElementById("locCity").value || "Алматы",
+        address:       document.getElementById("locAddress").value || null,
+      }),
+    });
+    if (r) {
+      closeAddLocation();
+      await loadLocations();
+      showPage2("locations");
+    } else {
+      err.textContent = "Ошибка создания точки";
+      err.style.display = "block";
+    }
+  } catch(e) {
+    err.textContent = "Нет связи с сервером";
+    err.style.display = "block";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Создать точку";
+  }
+}
+
+function showPage2(name) {
+  document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+  document.getElementById(`page-${name}`).classList.add("active");
 }
 
 // ═══════════════════════════════════════════
