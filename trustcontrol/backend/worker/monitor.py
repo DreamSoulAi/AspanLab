@@ -7,16 +7,14 @@
 УСТАНОВКА:
   pip install pyaudio webrtcvad noisereduce numpy requests
 
-НАСТРОЙКА:
-  Заполни SERVER_URL и API_KEY ниже
-
 ЗАПУСК:
-  python monitor.py
+  python monitor.py --api-url https://aspanlab-1.onrender.com --api-key ВАШ_КЛЮЧ
 
 АВТОЗАПУСК Windows (без окна):
-  Переименуй в monitor.pyw
+  Переименуй в monitor.pyw и добавь ярлык с аргументами в автозагрузку
 """
 
+import argparse
 import io
 import sys
 import time
@@ -33,16 +31,33 @@ import noisereduce as nr
 import requests
 
 # ════════════════════════════════════════════════════════════
-#  НАСТРОЙКИ — заполни эти две строки
+#  АРГУМЕНТЫ КОМАНДНОЙ СТРОКИ
 # ════════════════════════════════════════════════════════════
 
-SERVER_URL = "http://localhost:8000"    # адрес сервера TrustControl
-API_KEY    = "ВАШ_API_КЛЮЧ_ТОЧКИ"      # из личного кабинета
+_parser = argparse.ArgumentParser(description="TrustControl — монитор кассы")
+_parser.add_argument("--api-url", default="http://localhost:8000",
+                     help="Адрес сервера TrustControl (например https://aspanlab-1.onrender.com)")
+_parser.add_argument("--api-key", default="ВАШ_API_КЛЮЧ_ТОЧКИ",
+                     help="API-ключ точки из личного кабинета")
+_parser.add_argument("--vad-level", type=int, default=2,
+                     help="Чувствительность VAD 0-3 (по умолчанию 2)")
+_parser.add_argument("--silence", type=float, default=2.5,
+                     help="Секунд тишины = конец разговора (по умолчанию 2.5)")
+_parser.add_argument("--max-minutes", type=int, default=2,
+                     help="Максимальная длина сегмента в минутах (по умолчанию 2)")
+_args = _parser.parse_args()
+
+# ════════════════════════════════════════════════════════════
+#  НАСТРОЙКИ
+# ════════════════════════════════════════════════════════════
+
+SERVER_URL = _args.api_url.rstrip("/")
+API_KEY    = _args.api_key
 
 # ── Дополнительные настройки ─────────────────────────────────
-VAD_LEVEL        = 2       # чувствительность 0-3 (3 для шумных мест)
-SILENCE_SECONDS  = 2.5     # секунд тишины = конец разговора
-MAX_MINUTES      = 2       # максимальная длина сегмента
+VAD_LEVEL        = _args.vad_level
+SILENCE_SECONDS  = _args.silence
+MAX_MINUTES      = _args.max_minutes
 SAMPLE_RATE      = 16000
 FRAME_DURATION   = 30      # ms
 
