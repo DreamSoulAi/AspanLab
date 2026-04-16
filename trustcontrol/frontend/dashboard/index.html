@@ -126,14 +126,96 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
 .modal-close { float:right; cursor:pointer; color:var(--gray); font-size:20px; line-height:1; }
 .modal-select { width:100%; background:#0e0e0e; border:1px solid var(--bdr); color:var(--txt); padding:12px 14px; font-size:14px; }
 
-@media(max-width:900px){
+/* TABLE WRAP for horizontal scroll */
+.table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
+/* MOBILE HEADER & NAV — hidden on desktop */
+.mobile-header { display:none; }
+.mobile-nav    { display:none; }
+
+@media(max-width:768px){
+  /* ── Sidebar: скрыт, заменён нижней панелью ────────────── */
   .sidebar { display:none; }
-  .main { margin-left:0; padding:20px; }
-  .grid-2,.grid-3 { grid-template-columns:1fr; }
+
+  /* ── Главная область ─────────────────────────────────────  */
+  .main { margin-left:0; padding:68px 14px 74px; min-height:100vh; }
+
+  /* ── Мобильная шапка ──────────────────────────────────── */
+  .mobile-header {
+    display:flex; position:fixed; top:0; left:0; right:0; z-index:150;
+    height:52px; background:var(--dark); border-bottom:1px solid var(--bdr);
+    align-items:center; justify-content:space-between; padding:0 16px;
+  }
+  .m-logo { font-size:16px; font-weight:900; letter-spacing:2px; color:var(--gold); }
+  .m-logo span { color:var(--txt); }
+  .m-user { font-size:11px; color:var(--gray); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .m-logout { background:none; border:1px solid var(--bdr); color:var(--gray); font-size:11px; padding:5px 10px; cursor:pointer; border-radius:2px; }
+
+  /* ── Мобильная нижняя навигация ────────────────────────── */
+  .mobile-nav {
+    display:flex; position:fixed; bottom:0; left:0; right:0; z-index:150;
+    height:60px; background:var(--dark); border-top:1px solid var(--bdr);
+  }
+  .mn-item {
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; cursor:pointer; color:var(--gray); font-size:9px; font-weight:600;
+    letter-spacing:.4px; padding:6px 2px; transition:color .15s; position:relative;
+    -webkit-tap-highlight-color:transparent; user-select:none;
+  }
+  .mn-item.active { color:var(--gold); }
+  .mn-item.active::before {
+    content:''; position:absolute; top:0; left:20%; right:20%; height:2px;
+    background:var(--gold); border-radius:0 0 2px 2px;
+  }
+  .mn-ico { font-size:19px; line-height:1; }
+  .mn-badge {
+    position:absolute; top:5px; left:calc(50% + 5px);
+    background:var(--red); color:#fff; font-size:9px; font-weight:700;
+    min-width:15px; height:15px; padding:0 3px; border-radius:8px;
+    display:none; align-items:center; justify-content:center;
+  }
+
+  /* ── Топбар ─────────────────────────────────────────────── */
+  .topbar { flex-direction:column; align-items:flex-start; gap:10px; margin-bottom:18px; }
+  .page-title { font-size:20px; letter-spacing:-.5px; }
+  .topbar-right { width:100%; gap:8px; flex-wrap:wrap; }
+  .location-select { flex:1; min-width:0; }
+
+  /* ── Сетки ──────────────────────────────────────────────── */
+  .grid-2, .grid-3 { grid-template-columns:1fr; gap:12px; }
+
+  /* ── Карточки ───────────────────────────────────────────── */
+  .card { padding:16px 14px; }
+  .card-value { font-size:30px; }
+  .cards { gap:10px; margin-bottom:16px; }
+
+  /* ── Score ring ─────────────────────────────────────────── */
+  .score-card { flex-direction:row; gap:14px; padding:16px; }
+
+  /* ── Панели ─────────────────────────────────────────────── */
+  .panel { padding:16px 14px; }
+
+  /* ── Таблица ─────────────────────────────────────────────── */
+  .table th, .table td { padding:8px 10px; font-size:12px; }
+
+  /* ── Логин ───────────────────────────────────────────────── */
+  .login-box { width:calc(100% - 32px); max-width:380px; padding:32px 20px; }
+
+  /* ── Модальное окно ─────────────────────────────────────── */
+  .modal-box {
+    width:calc(100% - 24px); max-width:420px;
+    padding:24px 18px; max-height:88vh; overflow-y:auto;
+  }
 }
 </style>
 </head>
 <body>
+
+<!-- БАННЕР ОШИБОК (поверх всего) -->
+<div id="serverBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:999;padding:10px 16px;font-size:13px;font-weight:600;align-items:center;justify-content:center;gap:12px;text-align:center">
+  <span id="bannerMsg"></span>
+  <button onclick="retryConnection()" style="background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.4);color:inherit;padding:4px 14px;cursor:pointer;font-size:12px;font-weight:700">Повторить</button>
+</div>
 
 <!-- LOGIN -->
 <div id="loginWrap" class="login-wrap">
@@ -212,6 +294,13 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
 
 <!-- DASHBOARD -->
 <div id="appWrap" style="display:none">
+
+  <!-- МОБИЛЬНАЯ ШАПКА (только телефон) -->
+  <div class="mobile-header">
+    <div class="m-logo">Trust<span>Control</span></div>
+    <div class="m-user" id="mobileUserInfo"></div>
+    <button class="m-logout" onclick="doLogout()">Выйти</button>
+  </div>
 
   <!-- SIDEBAR -->
   <div class="sidebar">
@@ -306,19 +395,21 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
       <!-- LAST REPORTS -->
       <div class="panel">
         <h3>Последние разговоры</h3>
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Время</th>
-              <th>Транскрипция</th>
-              <th>Тон</th>
-              <th>Статус</th>
-            </tr>
-          </thead>
-          <tbody id="reportsTable">
-            <tr><td colspan="4" style="text-align:center;padding:24px;color:var(--gray)">Загрузка...</td></tr>
-          </tbody>
-        </table>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Время</th>
+                <th>Транскрипция</th>
+                <th>Тон</th>
+                <th>Статус</th>
+              </tr>
+            </thead>
+            <tbody id="reportsTable">
+              <tr><td colspan="4" style="text-align:center;padding:24px;color:var(--gray)">Загрузка...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -343,6 +434,37 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
       <div id="locationsList"></div>
     </div>
 
+    <!-- REPORTS PAGE -->
+    <div class="page" id="page-reports">
+      <div class="topbar">
+        <div class="page-title">Отчёты</div>
+        <div class="topbar-right">
+          <select class="location-select" id="reportsFilter" onchange="loadReportsPage()">
+            <option value="">Все точки</option>
+          </select>
+          <button class="btn btn-gold" onclick="loadReportsPage()">Обновить</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Время</th>
+                <th>Транскрипция</th>
+                <th>Тон</th>
+                <th>AI оценка</th>
+                <th>Статус</th>
+              </tr>
+            </thead>
+            <tbody id="reportsPageTable">
+              <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gray)">Загрузка...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- SETTINGS PAGE -->
     <div class="page" id="page-settings">
       <div class="topbar"><div class="page-title">Настройки</div></div>
@@ -353,6 +475,27 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
     </div>
 
   </div>
+
+  <!-- МОБИЛЬНАЯ НИЖНЯЯ НАВИГАЦИЯ (только телефон) -->
+  <nav class="mobile-nav">
+    <div class="mn-item active" id="mn-overview" onclick="showPage('overview',null)">
+      <span class="mn-ico">📊</span><span>Обзор</span>
+    </div>
+    <div class="mn-item" id="mn-reports" onclick="showPage('reports',null)">
+      <span class="mn-ico">📝</span><span>Отчёты</span>
+    </div>
+    <div class="mn-item" id="mn-alerts" onclick="showPage('alerts',null)">
+      <span class="mn-ico">🚨</span><span>Тревоги</span>
+      <span class="mn-badge" id="mnAlertsBadge">0</span>
+    </div>
+    <div class="mn-item" id="mn-locations" onclick="showPage('locations',null)">
+      <span class="mn-ico">🏪</span><span>Точки</span>
+    </div>
+    <div class="mn-item" id="mn-settings" onclick="showPage('settings',null)">
+      <span class="mn-ico">⚙️</span><span>Настройки</span>
+    </div>
+  </nav>
+
 </div>
 
 <script>
@@ -364,47 +507,87 @@ let token = localStorage.getItem("tc_token");
 let weekChart = null;
 
 // ═══════════════════════════════════════════
+//  БАННЕР ОШИБОК
+// ═══════════════════════════════════════════
+function showBanner(msg, type = "error") {
+  const b = document.getElementById("serverBanner");
+  b.style.background = type === "warn" ? "#c9a84c" : "#e05555";
+  b.style.color = type === "warn" ? "#0a0a0a" : "#fff";
+  document.getElementById("bannerMsg").textContent = msg;
+  b.style.display = "flex";
+}
+function hideBanner() {
+  document.getElementById("serverBanner").style.display = "none";
+}
+async function retryConnection() {
+  hideBanner();
+  await loadAll();
+}
+
+// ═══════════════════════════════════════════
+//  API
+// ═══════════════════════════════════════════
+async function apiFetch(path, opts = {}) {
+  try {
+    const r = await fetch(`${API}${path}`, {
+      ...opts,
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...opts.headers,
+      },
+    });
+    if (r.status === 401) { doLogout(); return null; }
+    if (!r.ok) {
+      let detail = "Ошибка сервера " + r.status;
+      try { const e = await r.json(); detail = e.detail || detail; } catch(_) {}
+      showBanner(detail);
+      return null;
+    }
+    hideBanner();
+    return await r.json();
+  } catch(e) {
+    showBanner("Сервер не отвечает. Render может просыпаться 30–60 сек — нажмите Повторить.", "warn");
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════
 //  AUTH
 // ═══════════════════════════════════════════
 async function doLogin() {
-  const email = document.getElementById("loginEmail").value;
+  const email = document.getElementById("loginEmail").value.trim();
   const pass  = document.getElementById("loginPass").value;
   const err   = document.getElementById("loginError");
   const btn   = document.querySelector("#loginForm .form-btn");
   err.style.display = "none";
-
   if (!email || !pass) {
     err.textContent = "Введите email и пароль";
     err.style.display = "block";
     return;
   }
-
-  btn.disabled = true;
-  btn.textContent = "Входим...";
+  btn.disabled = true; btn.textContent = "Входим...";
   try {
     const r = await fetch(`${API}/api/auth/login`, {
       method: "POST",
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
       body: `username=${encodeURIComponent(email)}&password=${encodeURIComponent(pass)}`,
     });
-
     if (r.ok) {
-      const data = await r.json();
-      token = data.access_token;
+      const d = await r.json();
+      token = d.access_token;
       localStorage.setItem("tc_token", token);
       showApp();
     } else {
       let msg = "Неверный email или пароль";
       try { const e = await r.json(); msg = e.detail || msg; } catch(_) {}
-      err.textContent = msg;
-      err.style.display = "block";
+      err.textContent = msg; err.style.display = "block";
     }
   } catch(e) {
     err.textContent = "Нет связи с сервером. Попробуйте позже.";
     err.style.display = "block";
   } finally {
-    btn.disabled = false;
-    btn.textContent = "Войти";
+    btn.disabled = false; btn.textContent = "Войти";
   }
 }
 
@@ -412,46 +595,36 @@ async function doRegister() {
   const err = document.getElementById("regError");
   const btn = document.querySelector("#registerForm .form-btn");
   err.style.display = "none";
-
   const body = {
-    name:     document.getElementById("regName").value,
-    phone:    document.getElementById("regPhone").value,
-    email:    document.getElementById("regEmail").value,
+    name:     document.getElementById("regName").value.trim(),
+    phone:    document.getElementById("regPhone").value.trim(),
+    email:    document.getElementById("regEmail").value.trim(),
     password: document.getElementById("regPass").value,
   };
-
   if (!body.name || !body.email || !body.password) {
-    err.textContent = "Заполните все поля";
-    err.style.display = "block";
-    return;
+    err.textContent = "Заполните все поля"; err.style.display = "block"; return;
   }
-
-  btn.disabled = true;
-  btn.textContent = "Регистрируемся...";
+  btn.disabled = true; btn.textContent = "Регистрируемся...";
   try {
     const r = await fetch(`${API}/api/auth/register`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(body),
     });
-
     if (r.ok) {
-      const data = await r.json();
-      token = data.access_token;
+      const d = await r.json();
+      token = d.access_token;
       localStorage.setItem("tc_token", token);
       showApp();
     } else {
       let msg = "Ошибка регистрации";
       try { const e = await r.json(); msg = e.detail || msg; } catch(_) {}
-      err.textContent = msg;
-      err.style.display = "block";
+      err.textContent = msg; err.style.display = "block";
     }
   } catch(e) {
-    err.textContent = "Нет связи с сервером. Попробуйте позже.";
-    err.style.display = "block";
+    err.textContent = "Нет связи с сервером."; err.style.display = "block";
   } finally {
-    btn.disabled = false;
-    btn.textContent = "Зарегистрироваться — 14 дней бесплатно";
+    btn.disabled = false; btn.textContent = "Зарегистрироваться — 14 дней бесплатно";
   }
 }
 
@@ -461,7 +634,6 @@ function doLogout() {
   document.getElementById("loginWrap").style.display = "flex";
   token = null;
 }
-
 function showRegister() {
   document.getElementById("loginForm").style.display = "none";
   document.getElementById("registerForm").style.display = "block";
@@ -472,52 +644,39 @@ function showLogin() {
 }
 
 // ═══════════════════════════════════════════
-//  APP
+//  APP — параллельная загрузка
 // ═══════════════════════════════════════════
+async function loadAll() {
+  // Запускаем параллельно — одна ошибка не блокирует остальных
+  await Promise.allSettled([
+    loadUserInfo(),
+    loadLocations(),
+    loadDashboard(),
+    loadAlerts(),
+  ]);
+}
+
 async function showApp() {
   document.getElementById("loginWrap").style.display = "none";
   document.getElementById("appWrap").style.display   = "block";
-
-  await loadUserInfo();
-  await loadLocations();
-  await loadDashboard();
-  await loadAlerts();
-
-  // Автообновление каждые 30 сек
+  await loadAll();
+  // Автообновление — стартует ВСЕГДА даже если начальная загрузка упала
   setInterval(loadDashboard, 30000);
-  setInterval(loadAlerts, 60000);
-}
-
-async function apiFetch(path, opts = {}) {
-  const r = await fetch(`${API}${path}`, {
-    ...opts,
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-      ...opts.headers,
-    },
-  });
-  if (r.status === 401) { doLogout(); return null; }
-  if (!r.ok) {
-    let detail = null;
-    try { const e = await r.json(); detail = e.detail; } catch(_) {}
-    return { _error: true, detail };
-  }
-  return r.json();
+  setInterval(loadAlerts,    60000);
 }
 
 async function loadUserInfo() {
   const u = await apiFetch("/api/auth/me");
   if (!u) return;
-  document.getElementById("userInfo").innerHTML = `
-    <b style="color:var(--txt)">${u.name}</b><br>
-    Тариф: <span style="color:var(--gold)">${u.plan}</span>
-  `;
+  document.getElementById("userInfo").innerHTML =
+    `<b style="color:var(--txt)">${u.name}</b><br>Тариф: <span style="color:var(--gold)">${u.plan}</span>`;
+  const mob = document.getElementById("mobileUserInfo");
+  if (mob) mob.textContent = u.name;
 }
 
 async function loadLocations() {
   const locs = await apiFetch("/api/locations/");
-  if (!locs) return;
+  if (!locs || !Array.isArray(locs)) return;  // ← защита от краша
 
   const sel = document.getElementById("locationFilter");
   sel.innerHTML = '<option value="">Все точки</option>';
@@ -554,7 +713,7 @@ async function loadDashboard() {
   const locId = document.getElementById("locationFilter").value;
   const url = `/api/stats/dashboard${locId ? `?location_id=${locId}` : ""}`;
   const data = await apiFetch(url);
-  if (!data) return;
+  if (!data || !data.today) return;   // ← защита от краша
 
   const t = data.today;
 
@@ -614,9 +773,12 @@ async function loadDashboard() {
 
   // Таблица отчётов
   const reports = await apiFetch(`/api/reports/?limit=10${locId ? `&location_id=${locId}` : ""}`);
-  if (!reports) return;
-
   const tbody = document.getElementById("reportsTable");
+  if (!reports || !Array.isArray(reports)) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--gray)">Нет данных</td></tr>`;
+    return;
+  }
+
   tbody.innerHTML = reports.map(r => `
     <tr>
       <td>${new Date(r.timestamp).toLocaleTimeString("ru")}</td>
@@ -638,10 +800,16 @@ async function loadDashboard() {
 
 async function loadAlerts() {
   const alerts = await apiFetch("/api/alerts/?days=3");
-  if (!alerts) return;
+  if (!alerts || !Array.isArray(alerts)) return;  // ← защита от краша
 
   const unresolved = alerts.filter(a => !a.is_resolved);
   document.getElementById("alertsBadge").textContent = unresolved.length;
+  // Бейдж в мобильной навигации
+  const mnBadge = document.getElementById("mnAlertsBadge");
+  if (mnBadge) {
+    mnBadge.textContent = unresolved.length;
+    mnBadge.style.display = unresolved.length > 0 ? "flex" : "none";
+  }
 
   const list = document.getElementById("alertsList");
   if (unresolved.length === 0) {
@@ -677,8 +845,13 @@ async function resolveAlert(id) {
 function showPage(name, el) {
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.querySelectorAll(".s-item").forEach(i => i.classList.remove("active"));
+  document.querySelectorAll(".mn-item").forEach(i => i.classList.remove("active"));
   document.getElementById(`page-${name}`).classList.add("active");
   if (el) el.classList.add("active");
+  const mn = document.getElementById(`mn-${name}`);
+  if (mn) mn.classList.add("active");
+  // Ленивая загрузка страницы отчётов
+  if (name === "reports") loadReportsPage();
 }
 
 // ═══════════════════════════════════════════
@@ -739,7 +912,45 @@ async function createLocation() {
 
 function showPage2(name) {
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+  document.querySelectorAll(".mn-item").forEach(i => i.classList.remove("active"));
   document.getElementById(`page-${name}`).classList.add("active");
+  const mn = document.getElementById(`mn-${name}`);
+  if (mn) mn.classList.add("active");
+}
+
+async function loadReportsPage() {
+  const locId = document.getElementById("reportsFilter")?.value || "";
+  const url = `/api/reports/?limit=50${locId ? `&location_id=${locId}` : ""}`;
+  const reports = await apiFetch(url);
+  const tbody = document.getElementById("reportsPageTable");
+  if (!tbody) return;
+  if (!reports || reports.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gray)">Разговоров пока нет</td></tr>`;
+    return;
+  }
+  const toneLabel = t => t === "positive" ? `<span class="badge good">😊 Позитивный</span>` :
+                         t === "negative" ? `<span class="badge fraud">😤 Негативный</span>` :
+                                            `<span class="badge neu">😐 Нейтральный</span>`;
+  tbody.innerHTML = reports.map(r => `
+    <tr>
+      <td class="txt" style="white-space:nowrap">${new Date(r.timestamp).toLocaleString("ru")}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.transcript || "—"}</td>
+      <td>${toneLabel(r.tone)}</td>
+      <td>${r.gpt_score != null ? `<b style="color:var(--gold)">${r.gpt_score}</b>` : "—"}</td>
+      <td>
+        ${r.has_fraud ? `<span class="badge fraud">🚨 Мошенн.</span> ` : ""}
+        ${r.has_bad   ? `<span class="badge bad">⚠️ Грубость</span> ` : ""}
+        ${r.has_bonus ? `<span class="badge good">⭐ Допрод.</span>` : ""}
+        ${!r.has_fraud && !r.has_bad && !r.has_bonus ? `<span class="badge neu">—</span>` : ""}
+      </td>
+    </tr>
+  `).join("");
+  // Синхронизируем фильтр точек
+  const sel = document.getElementById("reportsFilter");
+  if (sel && sel.options.length < 2) {
+    const locs = await apiFetch("/api/locations/");
+    if (locs) locs.forEach(l => { sel.innerHTML += `<option value="${l.id}">${l.name}</option>`; });
+  }
 }
 
 // ═══════════════════════════════════════════

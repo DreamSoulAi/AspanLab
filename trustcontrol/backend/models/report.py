@@ -34,6 +34,14 @@ class Report(Base):
     tone            = Column(String(20), default="neutral") # positive/negative/neutral
     tone_score      = Column(Float, default=0.5)            # 0.0 — очень негативный, 1.0 — очень позитивный
 
+    # GPT-4o-mini анализ
+    gpt_score       = Column(Integer, nullable=True)        # оценка качества 0-100 от GPT
+    gpt_summary     = Column(Text,    nullable=True)        # краткое резюме от GPT
+    gpt_details     = Column(JSON,    nullable=True)        # {"positives": [...], "issues": [...]}
+
+    # Диаризация (кто говорит)
+    speakers        = Column(JSON, nullable=True)           # [{"role":"cashier","text":"..."},...]
+
     # Смена
     shift_number    = Column(Integer)                       # 1/2/3
 
