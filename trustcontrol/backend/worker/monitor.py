@@ -366,6 +366,12 @@ def run():
         nonlocal voiced, silence, in_speech
         if not voiced:
             return
+        # Минимум 100 кадров ≈ 3 секунды реальной речи
+        # Короче — шум, случайный звук или одно слово, не отправляем
+        if len(voiced) < 100:
+            log.debug(f"Сегмент слишком короткий ({len(voiced)} кадров) — пропускаем")
+            voiced = []; silence = 0; in_speech = False
+            return
         log.info(f"Обрабатываю сегмент ({reason}), кадров: {len(voiced)}")
         clean     = denoise(voiced)
         raw_wav   = frames_to_wav(clean)
