@@ -39,6 +39,9 @@ class Report(Base):
     gpt_summary     = Column(Text,    nullable=True)        # краткое резюме от GPT
     gpt_details     = Column(JSON,    nullable=True)        # {"positives": [...], "issues": [...]}
 
+    # Диаризация (кто говорит)
+    speakers        = Column(JSON, nullable=True)           # [{"role":"cashier","text":"..."},...]
+
     # Смена
     shift_number    = Column(Integer)                       # 1/2/3
 
