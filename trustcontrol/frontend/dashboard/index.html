@@ -237,7 +237,7 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
     <div id="registerForm" style="display:none">
       <div class="form-group">
         <label class="form-label">Имя</label>
-        <input class="form-input" type="text" id="regName" placeholder="Данил Трейдер">
+        <input class="form-input" type="text" id="regName" placeholder="Иван Иванов">
       </div>
       <div class="form-group">
         <label class="form-label">Телефон</label>
@@ -289,6 +289,52 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
     </div>
     <div class="error-msg" id="locError"></div>
     <button class="form-btn" onclick="createLocation()">Создать точку</button>
+  </div>
+</div>
+
+<!-- MODAL: Редактировать точку -->
+<div class="modal-overlay" id="editLocationModal">
+  <div class="modal-box">
+    <div class="modal-title">Настройки точки <span class="modal-close" onclick="closeEditLocation()">×</span></div>
+    <input type="hidden" id="editLocId">
+    <div class="form-group">
+      <label class="form-label">Название</label>
+      <input class="form-input" type="text" id="editLocName" placeholder="Кофейня на Абая">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Тип бизнеса</label>
+      <select class="modal-select" id="editLocType">
+        <option value="coffee">Кофейня</option>
+        <option value="cafe">Кафе / ресторан</option>
+        <option value="fastfood">Фастфуд</option>
+        <option value="shop">Магазин</option>
+        <option value="gas">АЗС</option>
+        <option value="beauty">Салон красоты</option>
+        <option value="fitness">Фитнес</option>
+        <option value="hotel">Гостиница</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Telegram Chat ID</label>
+      <input class="form-input" type="text" id="editLocTg" placeholder="-1001234567890">
+      <div style="font-size:11px;color:var(--gray);margin-top:6px">
+        Как получить: создай группу → добавь бота → открой<br>
+        <span style="color:var(--gold)">api.telegram.org/bot<b>ТОКЕН</b>/getUpdates</span> → найди "chat":{"id":...}
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Язык записей</label>
+      <select class="modal-select" id="editLocLang">
+        <option value="ru">Русский</option>
+        <option value="kk">Казахский</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Город</label>
+      <input class="form-input" type="text" id="editLocCity" placeholder="Алматы">
+    </div>
+    <div class="error-msg" id="editLocError"></div>
+    <button class="form-btn" onclick="saveLocation()">Сохранить</button>
   </div>
 </div>
 
@@ -468,9 +514,51 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
     <!-- SETTINGS PAGE -->
     <div class="page" id="page-settings">
       <div class="topbar"><div class="page-title">Настройки</div></div>
-      <div class="panel">
+
+      <!-- Аккаунт -->
+      <div class="panel" style="margin-bottom:16px">
         <h3>Аккаунт</h3>
-        <p style="color:var(--gray);font-size:14px;margin-top:8px" id="settingsInfo">Загрузка...</p>
+        <div id="settingsInfo" style="margin-top:16px;display:grid;gap:12px">
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-size:11px;color:var(--gray);width:80px;text-transform:uppercase;letter-spacing:1px">Имя</span>
+            <span id="sName" style="color:var(--txt);font-weight:600">—</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-size:11px;color:var(--gray);width:80px;text-transform:uppercase;letter-spacing:1px">Email</span>
+            <span id="sEmail" style="color:var(--txt)">—</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-size:11px;color:var(--gray);width:80px;text-transform:uppercase;letter-spacing:1px">Телефон</span>
+            <span id="sPhone" style="color:var(--txt)">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Тариф -->
+      <div class="panel" style="margin-bottom:16px">
+        <h3>Тариф</h3>
+        <div id="settingsPlan" style="margin-top:16px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <span id="sPlanBadge" style="font-size:13px;font-weight:700;padding:4px 14px;border-radius:2px">—</span>
+            <span id="sPlanExpiry" style="font-size:12px;color:var(--gray)"></span>
+          </div>
+          <div id="sPlanDesc" style="font-size:13px;color:var(--gray);line-height:1.6"></div>
+        </div>
+      </div>
+
+      <!-- Помощь -->
+      <div class="panel">
+        <h3>Быстрый старт</h3>
+        <div style="margin-top:14px;font-size:13px;color:var(--gray);line-height:2">
+          <div>1. Перейди в раздел <b style="color:var(--txt)">Точки</b> → нажми кнопку редактирования</div>
+          <div>2. Вставь <b style="color:var(--txt)">Telegram Chat ID</b> — туда будут приходить отчёты</div>
+          <div>3. Скопируй <b style="color:var(--txt)">API ключ</b> из карточки точки</div>
+          <div>4. На кассовом ПК запусти:</div>
+          <div style="background:var(--bg);border:1px solid var(--bdr);padding:10px 14px;margin:8px 0;font-family:monospace;font-size:12px;color:var(--gold)">
+            py -3.13 monitor.py --api-url https://твой-сайт.onrender.com --api-key &lt;КЛЮЧ&gt;
+          </div>
+          <div>5. Говори что-нибудь — отчёт появится через ~15 секунд</div>
+        </div>
       </div>
     </div>
 
@@ -665,23 +753,61 @@ async function showApp() {
   setInterval(loadAlerts,    60000);
 }
 
+const PLAN_NAMES = { trial: "Пробный", start: "Старт", business: "Бизнес", network: "Сеть" };
+
 async function loadUserInfo() {
   const u = await apiFetch("/api/auth/me");
   if (!u) return;
+
+  const planName = PLAN_NAMES[u.plan] || u.plan;
+
+  // Сайдбар
   document.getElementById("userInfo").innerHTML =
-    `<b style="color:var(--txt)">${u.name}</b><br>Тариф: <span style="color:var(--gold)">${u.plan}</span>`;
+    `<b style="color:var(--txt)">${u.name}</b><br>Тариф: <span style="color:var(--gold)">${planName}</span>`;
+
+  // Мобильная шапка
   const mob = document.getElementById("mobileUserInfo");
   if (mob) mob.textContent = u.name;
+
+  // Страница настроек
+  document.getElementById("sName").textContent  = u.name;
+  document.getElementById("sEmail").textContent = u.email;
+  document.getElementById("sPhone").textContent = u.phone || "—";
+
+  // Тариф бейдж
+  const badge = document.getElementById("sPlanBadge");
+  const planColors = { trial:"#7a7a72", start:"#4a9eff", business:"#c9a84c", network:"#4caf7d" };
+  badge.textContent = planName;
+  badge.style.background = (planColors[u.plan] || "#7a7a72") + "22";
+  badge.style.color       =  planColors[u.plan] || "#7a7a72";
+  badge.style.border      = `1px solid ${planColors[u.plan] || "#7a7a72"}44`;
+
+  const expiry = document.getElementById("sPlanExpiry");
+  if (u.plan_expires) {
+    const d = new Date(u.plan_expires);
+    const left = Math.ceil((d - Date.now()) / 86400000);
+    expiry.textContent = left > 0
+      ? `Активен ещё ${left} дн. (до ${d.toLocaleDateString("ru")})`
+      : `Истёк ${d.toLocaleDateString("ru")}`;
+    expiry.style.color = left > 3 ? "var(--gray)" : "var(--red)";
+  }
+
+  const limits = { trial:1, start:1, business:5, network:999 };
+  document.getElementById("sPlanDesc").innerHTML =
+    `Максимум точек: <b style="color:var(--txt)">${limits[u.plan] ?? 1}</b><br>` +
+    (u.plan === "trial" ? "Для снятия ограничений обновите тариф." : "");
 }
 
 async function loadLocations() {
   const locs = await apiFetch("/api/locations/");
   if (!locs || !Array.isArray(locs)) return;  // ← защита от краша
 
-  const sel = document.getElementById("locationFilter");
-  sel.innerHTML = '<option value="">Все точки</option>';
-  locs.forEach(l => {
-    sel.innerHTML += `<option value="${l.id}">${l.name}</option>`;
+  // Заполняем все селекты точек на всех страницах
+  ["locationFilter", "reportsFilter"].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Все точки</option>';
+    locs.forEach(l => { sel.innerHTML += `<option value="${l.id}">${l.name}</option>`; });
   });
 
   const list = document.getElementById("locationsList");
@@ -690,20 +816,35 @@ async function loadLocations() {
     return;
   }
 
+  const bizNames = {coffee:"Кофейня",cafe:"Кафе",fastfood:"Фастфуд",shop:"Магазин",gas:"АЗС",beauty:"Салон",fitness:"Фитнес",hotel:"Отель"};
+
   list.innerHTML = locs.map(l => `
     <div class="panel" style="margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
           <div style="font-weight:700;font-size:15px">${l.name}</div>
           <div style="color:var(--gray);font-size:12px;margin-top:4px">
-            ${l.business_type} · ${l.is_active ? '<span style="color:var(--green)">● Активна</span>' : '<span style="color:var(--red)">● Отключена</span>'}
-            ${l.last_seen ? '· Последний онлайн: ' + new Date(l.last_seen).toLocaleString('ru') : '· Никогда не подключалась'}
+            ${bizNames[l.business_type] || l.business_type} ·
+            ${l.is_active ? '<span style="color:var(--green)">● Активна</span>' : '<span style="color:var(--red)">● Отключена</span>'}
+            ${l.last_seen ? '· Онлайн: ' + new Date(l.last_seen).toLocaleString('ru') : '· Никогда не подключалась'}
           </div>
         </div>
+        <button class="btn btn-outline" style="font-size:12px;padding:6px 14px;flex-shrink:0"
+          onclick='openEditLocation(${JSON.stringify(l)})'>✏️ Изменить</button>
       </div>
+
       <div style="margin-top:14px;padding:12px;background:var(--bg);border:1px solid var(--bdr)">
-        <div style="font-size:11px;color:var(--gray);margin-bottom:4px">API ключ для config.py на кассе:</div>
+        <div style="font-size:11px;color:var(--gray);margin-bottom:4px">API ключ для кассы (--api-key):</div>
         <code style="font-size:12px;color:var(--gold);word-break:break-all">${l.api_key}</code>
+      </div>
+
+      <div style="margin-top:8px;padding:10px 12px;background:var(--bg);border:1px solid var(--bdr);display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--gray)">Telegram Chat ID:</span>
+        ${l.telegram_chat
+          ? `<span style="font-size:12px;color:var(--green);font-weight:600">${l.telegram_chat} ✅</span>`
+          : `<span style="font-size:12px;color:var(--red)">Не задан — уведомления не придут</span>
+             <button class="btn btn-gold" style="font-size:11px;padding:4px 12px;margin-left:auto"
+               onclick='openEditLocation(${JSON.stringify(l)})'>Добавить</button>`}
       </div>
     </div>
   `).join("");
@@ -907,6 +1048,55 @@ async function createLocation() {
   } finally {
     btn.disabled = false;
     btn.textContent = "Создать точку";
+  }
+}
+
+// ═══════════════════════════════════════════
+//  РЕДАКТИРОВАНИЕ ТОЧКИ
+// ═══════════════════════════════════════════
+function openEditLocation(loc) {
+  document.getElementById("editLocId").value    = loc.id;
+  document.getElementById("editLocName").value  = loc.name;
+  document.getElementById("editLocTg").value    = loc.telegram_chat || "";
+  document.getElementById("editLocCity").value  = loc.city || "Алматы";
+  document.getElementById("editLocLang").value  = loc.language || "ru";
+  document.getElementById("editLocType").value  = loc.business_type || "coffee";
+  document.getElementById("editLocError").style.display = "none";
+  document.getElementById("editLocationModal").classList.add("open");
+}
+
+function closeEditLocation() {
+  document.getElementById("editLocationModal").classList.remove("open");
+}
+
+async function saveLocation() {
+  const id  = document.getElementById("editLocId").value;
+  const err = document.getElementById("editLocError");
+  const btn = document.querySelector("#editLocationModal .form-btn");
+  err.style.display = "none";
+  btn.disabled = true; btn.textContent = "Сохраняем...";
+
+  const body = {
+    name:          document.getElementById("editLocName").value.trim(),
+    telegram_chat: document.getElementById("editLocTg").value.trim() || null,
+    city:          document.getElementById("editLocCity").value.trim(),
+    language:      document.getElementById("editLocLang").value,
+    business_type: document.getElementById("editLocType").value,
+  };
+
+  const r = await apiFetch(`/api/locations/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+
+  btn.disabled = false; btn.textContent = "Сохранить";
+
+  if (r) {
+    closeEditLocation();
+    await loadLocations();
+  } else {
+    err.textContent = "Ошибка сохранения";
+    err.style.display = "block";
   }
 }
 
