@@ -63,6 +63,11 @@ _parser.add_argument("--compress", action="store_true", default=True,
 _parser.add_argument("--compress-format", default="mp3",
                      choices=["wav", "mp3"],
                      help="Формат сжатия: mp3 (64kbps, требует ffmpeg) или wav (8kHz, без зависимостей)")
+_parser.add_argument("--device", default=None,
+                     help="Индекс или часть названия микрофона (см. --list-devices). "
+                          "По умолчанию — системный микрофон по умолчанию.")
+_parser.add_argument("--list-devices", action="store_true",
+                     help="Показать все доступные устройства записи и выйти")
 _args = _parser.parse_args()
 
 # ════════════════════════════════════════════════════════════
@@ -80,6 +85,7 @@ VAD_LEVEL        = _args.vad_level
 SILENCE_SECONDS  = _args.silence
 MAX_MINUTES      = _args.max_minutes
 COMPRESS_FORMAT  = _args.compress_format
+DEVICE_ARG       = _args.device      # None = системный по умолчанию
 SAMPLE_RATE      = 16000
 FRAME_DURATION   = 30          # ms
 
@@ -105,6 +111,72 @@ logging.basicConfig(
     ]
 )
 log = logging.getLogger("monitor")
+
+# ════════════════════════════════════════════════════════════
+#  УСТРОЙСТВО ЗАПИСИ: ВЫБОР И ЗАЩИТА ОТ LOOPBACK
+# ════════════════════════════════════════════════════════════
+
+# Ключевые слова устройств которые захватывают системный звук
+# (колонки, видео, музыка) — а не настоящий микрофон.
+# При совпадении monitor выдаёт предупреждение и предлагает альтернативу.
+_LOOPBACK_KEYWORDS = {
+    "stereo mix", "what u hear", "what you hear",
+    "loopback", "wasapi", "virtual", "cable output",
+    "vb-audio", "vb audio", "mix", "output", "speaker",
+    "soundflower", "blackhole", "voicemeeter",
+}
+
+
+def _list_devices(pa: "pyaudio.PyAudio"):
+    """Печатает таблицу всех устройств ввода и выходит."""
+    print("\n" + "=" * 60)
+    print("  Доступные устройства записи (--device <ИНДЕКС>):")
+    print("=" * 60)
+    found_any = False
+    for i in range(pa.get_device_count()):
+        info = pa.get_device_info_by_index(i)
+        if info.get("maxInputChannels", 0) < 1:
+            continue
+        name   = info["name"]
+        marker = "  ← РЕКОМЕНДУЕТСЯ" if _is_real_mic(name) else ""
+        warn   = "  ⚠ LOOPBACK (захватывает системный звук!)" if _is_loopback(name) else ""
+        print(f"  [{i:2d}]  {name}{marker}{warn}")
+        found_any = True
+    if not found_any:
+        print("  Устройства не найдены.")
+    print("=" * 60)
+    print("  Пример: --device 1   или   --device \"USB Mic\"\n")
+
+
+def _is_loopback(name: str) -> bool:
+    nl = name.lower()
+    return any(kw in nl for kw in _LOOPBACK_KEYWORDS)
+
+
+def _is_real_mic(name: str) -> bool:
+    nl = name.lower()
+    return any(kw in nl for kw in ("mic", "microphone", "микрофон", "usb", "headset", "гарнитур"))
+
+
+def _resolve_device_index(pa: "pyaudio.PyAudio", arg: str | None) -> int | None:
+    """
+    Преобразует аргумент --device в индекс PyAudio.
+      None  → системное устройство по умолчанию
+      "2"   → индекс 2
+      "USB" → первое устройство с "USB" в названии
+    """
+    if arg is None:
+        return None
+    if arg.isdigit():
+        return int(arg)
+    arg_l = arg.lower()
+    for i in range(pa.get_device_count()):
+        info = pa.get_device_info_by_index(i)
+        if info.get("maxInputChannels", 0) > 0 and arg_l in info["name"].lower():
+            return i
+    log.warning(f"Устройство '{arg}' не найдено — используется системный микрофон")
+    return None
+
 
 # ════════════════════════════════════════════════════════════
 #  ПРОВЕРКА КОНФИГУРАЦИИ
@@ -350,21 +422,44 @@ def process_segment(wav_bytes: bytes):
 #  МИКРОФОН: ОТКРЫТИЕ С ПОВТОРАМИ
 # ════════════════════════════════════════════════════════════
 
-def _open_stream(pa: pyaudio.PyAudio, retry_interval: int = 5) -> pyaudio.Stream:
+def _open_stream(pa: pyaudio.PyAudio, device_index: int | None = None,
+                 retry_interval: int = 5) -> pyaudio.Stream:
     """
-    Открывает аудио-поток. Повторяет попытки каждые retry_interval секунд
-    пока микрофон не появится. Безопасен при горячем подключении.
+    Открывает аудио-поток на указанном устройстве.
+    Если device_index=None — используется системный микрофон по умолчанию.
+    При ошибке повторяет попытки каждые retry_interval секунд.
     """
+    # Предупреждаем если выбранное или дефолтное устройство похоже на loopback
+    try:
+        idx = device_index if device_index is not None else pa.get_default_input_device_info()["index"]
+        dev_name = pa.get_device_info_by_index(idx)["name"]
+        if _is_loopback(dev_name):
+            log.error("=" * 60)
+            log.error(f"⚠️  ВНИМАНИЕ: устройство '{dev_name}'")
+            log.error("   похоже на системный захват звука (Stereo Mix / Loopback)!")
+            log.error("   Оно будет записывать музыку и видео с компьютера,")
+            log.error("   а НЕ живой разговор на кассе.")
+            log.error("   Подключите USB-микрофон и укажите: --device <ИНДЕКС>")
+            log.error("   Список устройств:  monitor.py --list-devices")
+            log.error("=" * 60)
+        else:
+            log.info(f"Микрофон: [{idx}] {dev_name}")
+    except Exception:
+        pass
+
     attempt = 0
     while True:
         try:
-            stream = pa.open(
+            kwargs = dict(
                 rate=SAMPLE_RATE,
                 channels=1,
                 format=pyaudio.paInt16,
                 input=True,
                 frames_per_buffer=FRAME_SIZE,
             )
+            if device_index is not None:
+                kwargs["input_device_index"] = device_index
+            stream = pa.open(**kwargs)
             if attempt > 0:
                 log.info("Микрофон снова подключён.")
             return stream
@@ -383,7 +478,14 @@ def _open_stream(pa: pyaudio.PyAudio, retry_interval: int = 5) -> pyaudio.Stream
 def run():
     vad = webrtcvad.Vad(VAD_LEVEL)
     pa  = pyaudio.PyAudio()
-    stream = _open_stream(pa)
+
+    if _args.list_devices:
+        _list_devices(pa)
+        pa.terminate()
+        sys.exit(0)
+
+    device_index = _resolve_device_index(pa, DEVICE_ARG)
+    stream = _open_stream(pa, device_index=device_index)
 
     mode        = "local faster-whisper" if LOCAL_WHISPER else f"сервер ({SERVER_URL})"
     compress_info = f"{COMPRESS_FORMAT.upper()} 64kbps" if COMPRESS and COMPRESS_FORMAT == "mp3" else ("WAV 8kHz" if COMPRESS else "выкл")
@@ -435,7 +537,7 @@ def run():
                     except Exception:
                         pass
                     time.sleep(2)
-                    stream = _open_stream(pa)
+                    stream = _open_stream(pa, device_index=device_index)
                 else:
                     # Overflow или другой временный сбой — просто пропускаем
                     log.debug(f"Ошибка чтения (код {err_code}): {e}")
