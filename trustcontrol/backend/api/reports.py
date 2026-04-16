@@ -80,7 +80,12 @@ async def _process_submission(
             log.info(f"[loc={location_id}] Речь не распознана — отчёт не создан")
             return
 
-        transcript  = result["transcript"]
+        transcript = result["transcript"].strip()
+
+        # Фильтр: минимум 8 слов — иначе это шум, пение или случайный звук
+        if len(transcript.split()) < 8:
+            log.info(f"[loc={location_id}] Транскрипт слишком короткий ({len(transcript.split())} слов) — пропускаем")
+            return
         speakers    = result.get("speakers", [])
         gpt_score   = result.get("score")
         gpt_summary = result.get("summary", "")
