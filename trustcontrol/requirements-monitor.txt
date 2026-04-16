@@ -15,7 +15,7 @@
 # ── Python 3.13: модули удалены из стандартной библиотеки ────
 # audioop, aifc, sunau, chunk больше не входят в Python 3.13+
 # Эти пакеты возвращают совместимость:
-audiooop-lts>=0.2.2
+audioop-lts>=0.2.2
 standard-aifc>=3.13.0
 standard-sunau>=3.13.0
 standard-chunk>=3.13.0
