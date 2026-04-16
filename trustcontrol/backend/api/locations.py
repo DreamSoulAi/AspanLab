@@ -27,6 +27,16 @@ class LocationCreate(BaseModel):
     vad_level:     int = 2
 
 
+class LocationUpdate(BaseModel):
+    name:          Optional[str] = None
+    business_type: Optional[str] = None
+    address:       Optional[str] = None
+    city:          Optional[str] = None
+    telegram_chat: Optional[str] = None
+    language:      Optional[str] = None
+    vad_level:     Optional[int] = None
+
+
 @router.get("/")
 async def list_locations(
     user: User = Depends(get_current_user),
@@ -42,8 +52,11 @@ async def list_locations(
             "name":          loc.name,
             "business_type": loc.business_type,
             "city":          loc.city,
+            "address":       loc.address,
+            "language":      loc.language,
             "is_active":     loc.is_active,
             "api_key":       loc.api_key,
+            "telegram_chat": loc.telegram_chat,
             "last_seen":     loc.last_seen.isoformat() if loc.last_seen else None,
         }
         for loc in locations
@@ -91,6 +104,28 @@ async def create_location(
         "api_key": loc.api_key,
         "message": "Точка создана. Используйте api_key в config.py на кассе.",
     }
+
+
+@router.patch("/{location_id}")
+async def update_location(
+    location_id: int,
+    data: LocationUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    loc = await db.get(Location, location_id)
+    if not loc or loc.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Точка не найдена")
+
+    if data.name          is not None: loc.name          = data.name
+    if data.business_type is not None: loc.business_type = data.business_type
+    if data.address       is not None: loc.address       = data.address
+    if data.city          is not None: loc.city          = data.city
+    if data.telegram_chat is not None: loc.telegram_chat = data.telegram_chat
+    if data.language      is not None: loc.language      = data.language
+    if data.vad_level     is not None: loc.vad_level     = data.vad_level
+
+    return {"message": "Точка обновлена", "id": loc.id}
 
 
 @router.delete("/{location_id}")
