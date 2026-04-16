@@ -99,6 +99,45 @@ async def send_report(
     await _send(chat_id, report)
 
 
+async def send_critical_alert(data: dict):
+    """
+    Отправляет критическое уведомление когда GPT устанавливает priority=1.
+
+    Ожидаемые поля data:
+      telegram_chat  — куда слать
+      location_name  — название точки
+      summary        — краткая суть от GPT
+      audio_url      — ссылка на запись в S3 (если есть)
+      sha256         — хеш файла (первые 16 символов)
+      transcript     — текст разговора
+
+    TODO: добавить Telegram-кнопки, email, webhook в будущей версии.
+    """
+    chat_id = data.get("telegram_chat")
+    if not chat_id:
+        log.warning("send_critical_alert: telegram_chat не задан")
+        return
+
+    summary       = data.get("summary", "—")
+    audio_url     = data.get("audio_url") or ""
+    sha256        = (data.get("sha256") or "")[:16]
+    location_name = data.get("location_name", "—")
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    text = (
+        f"🚨 *ПРИОРИТЕТ 1 — ТРЕБУЕТСЯ ПРОВЕРКА*\n\n"
+        f"🏪 *{location_name}*\n"
+        f"🕐 {ts}\n\n"
+        f"📋 *Суть:* {summary}\n"
+    )
+    if audio_url:
+        text += f"\n🔗 [Слушать запись]({audio_url})"
+    if sha256:
+        text += f"\n🔐 SHA256: `{sha256}...`"
+
+    await _send(chat_id, text)
+
+
 async def send_shift_summary(
     chat_id: str,
     location_name: str,

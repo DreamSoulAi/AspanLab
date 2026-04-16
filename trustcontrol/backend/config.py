@@ -58,6 +58,13 @@ class Settings:
     WHISPER_MODEL:    str = "whisper-1"
     WHISPER_LANGUAGE: str = os.getenv("WHISPER_LANGUAGE", "ru")
 
+    # ── S3 / Supabase Storage (архив приоритетных записей) ───
+    S3_BUCKET:             str = os.getenv("S3_BUCKET", "")
+    S3_REGION:             str = os.getenv("S3_REGION", "us-east-1")
+    S3_ENDPOINT_URL:       str = os.getenv("S3_ENDPOINT_URL", "")   # пусто = AWS, иначе Supabase/MinIO
+    AWS_ACCESS_KEY_ID:     str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+
     # ── Kaspi ────────────────────────────────────────────────
     KASPI_NUMBER: str = os.getenv("KASPI_NUMBER", "")
     KASPI_NAME:   str = os.getenv("KASPI_NAME", "")

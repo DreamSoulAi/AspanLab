@@ -45,3 +45,8 @@ requests>=2.33.0
 # Запускать monitor.py с флагом --local-whisper
 # Раскомментируй строку ниже или установи отдельно:
 # faster-whisper>=1.0.0
+
+# ── Опционально: сжатие MP3 64kbps (экономия 75-85% трафика) ─
+# Требует ffmpeg в PATH: https://ffmpeg.org/download.html
+# После установки ffmpeg раскомментируй строку ниже:
+# pydub>=0.25.1

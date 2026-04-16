@@ -32,3 +32,6 @@ pydantic[email]>=2.7.0
 
 # Config
 python-dotenv>=1.0.0
+
+# S3 / Supabase Storage (архив приоритетных записей)
+boto3>=1.34.0

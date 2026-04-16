@@ -60,6 +60,9 @@ _parser.add_argument("--language", default=None,
                      help="Язык речи: ru, kk (по умолчанию — автоопределение)")
 _parser.add_argument("--compress", action="store_true", default=True,
                      help="Сжимать аудио перед отправкой (по умолчанию включено)")
+_parser.add_argument("--compress-format", default="mp3",
+                     choices=["wav", "mp3"],
+                     help="Формат сжатия: mp3 (64kbps, требует ffmpeg) или wav (8kHz, без зависимостей)")
 _args = _parser.parse_args()
 
 # ════════════════════════════════════════════════════════════
@@ -76,6 +79,7 @@ COMPRESS      = _args.compress
 VAD_LEVEL        = _args.vad_level
 SILENCE_SECONDS  = _args.silence
 MAX_MINUTES      = _args.max_minutes
+COMPRESS_FORMAT  = _args.compress_format
 SAMPLE_RATE      = 16000
 FRAME_DURATION   = 30          # ms
 
@@ -156,18 +160,12 @@ def frames_to_wav(frames: list[bytes]) -> bytes:
     return buf.getvalue()
 
 
-def compress_wav(wav_bytes: bytes) -> bytes:
-    """
-    Сжимает WAV: 16 kHz → 8 kHz (трафик сокращается вдвое).
-    Голос разборчив вплоть до 4 kHz, качество не страдает.
-    """
-    if not COMPRESS:
-        return wav_bytes
+def _compress_wav_fallback(wav_bytes: bytes) -> bytes:
+    """WAV 16 kHz → 8 kHz (прореживание 2:1). Не требует зависимостей."""
     try:
         buf_in = io.BytesIO(wav_bytes)
         with wave.open(buf_in, "rb") as wf:
             pcm = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
-        # Прореживание 2:1 — берём каждый второй отсчёт
         downsampled = pcm[::2]
         buf_out = io.BytesIO()
         with wave.open(buf_out, "wb") as wf:
@@ -175,12 +173,43 @@ def compress_wav(wav_bytes: bytes) -> bytes:
             wf.setsampwidth(2)
             wf.setframerate(8000)
             wf.writeframes(downsampled.tobytes())
-        compressed = buf_out.getvalue()
-        log.debug(f"Сжатие: {len(wav_bytes)//1024}kB → {len(compressed)//1024}kB")
-        return compressed
+        return buf_out.getvalue()
     except Exception as e:
-        log.warning(f"Сжатие не удалось: {e}")
+        log.warning(f"WAV-сжатие не удалось: {e}")
         return wav_bytes
+
+
+def compress_audio(wav_bytes: bytes) -> tuple:
+    """
+    Сжимает аудио перед отправкой.
+    Возвращает: (bytes, content_type, filename)
+
+    Приоритет: MP3 64kbps (pydub + ffmpeg) → WAV 8kHz (без зависимостей).
+    MP3 64kbps экономит 75-85% трафика по сравнению с WAV 16kHz.
+
+    Установка ffmpeg: https://ffmpeg.org/download.html (добавить в PATH)
+    """
+    if not COMPRESS:
+        return wav_bytes, "audio/wav", "audio.wav"
+
+    if COMPRESS_FORMAT == "mp3":
+        try:
+            from pydub import AudioSegment
+            audio = AudioSegment.from_wav(io.BytesIO(wav_bytes))
+            buf   = io.BytesIO()
+            audio.export(buf, format="mp3", bitrate="64k")
+            result = buf.getvalue()
+            log.debug(f"MP3 64k: {len(wav_bytes)//1024}kB → {len(result)//1024}kB")
+            return result, "audio/mpeg", "audio.mp3"
+        except ImportError:
+            log.warning("pydub не установлен (pip install pydub) — используется WAV 8kHz")
+        except Exception as e:
+            log.warning(f"MP3 сжатие не удалось ({e}) — используется WAV 8kHz")
+
+    # Fallback: WAV 16→8 kHz
+    result = _compress_wav_fallback(wav_bytes)
+    log.debug(f"WAV 8kHz: {len(wav_bytes)//1024}kB → {len(result)//1024}kB")
+    return result, "audio/wav", "audio.wav"
 
 
 def denoise(frames: list[bytes]) -> list[bytes]:
@@ -232,9 +261,10 @@ def _post(data: dict, files: dict | None = None, timeout: int = 60):
 def send_audio_to_server(wav_bytes: bytes):
     """Отправляем аудио. При ошибке — сохраняем в fails/ для повторной отправки."""
     try:
+        audio_bytes, content_type, filename = compress_audio(wav_bytes)
         r = _post(
             data={"api_key": API_KEY},
-            files={"audio": ("audio.wav", wav_bytes, "audio/wav")},
+            files={"audio": (filename, audio_bytes, content_type)},
         )
         _handle_response(r, wav_bytes=wav_bytes)
     except requests.exceptions.ConnectionError:
@@ -355,8 +385,9 @@ def run():
     pa  = pyaudio.PyAudio()
     stream = _open_stream(pa)
 
-    mode = "local faster-whisper" if LOCAL_WHISPER else f"сервер ({SERVER_URL})"
-    log.info(f"Мониторинг запущен | Транскрипция: {mode} | Сжатие: {'вкл' if COMPRESS else 'выкл'}")
+    mode        = "local faster-whisper" if LOCAL_WHISPER else f"сервер ({SERVER_URL})"
+    compress_info = f"{COMPRESS_FORMAT.upper()} 64kbps" if COMPRESS and COMPRESS_FORMAT == "mp3" else ("WAV 8kHz" if COMPRESS else "выкл")
+    log.info(f"Мониторинг запущен | Транскрипция: {mode} | Сжатие: {compress_info}")
 
     voiced    = []
     silence   = 0
@@ -373,10 +404,9 @@ def run():
             voiced = []; silence = 0; in_speech = False
             return
         log.info(f"Обрабатываю сегмент ({reason}), кадров: {len(voiced)}")
-        clean     = denoise(voiced)
-        raw_wav   = frames_to_wav(clean)
-        small_wav = compress_wav(raw_wav)
-        process_segment(small_wav)
+        clean   = denoise(voiced)
+        raw_wav = frames_to_wav(clean)
+        process_segment(raw_wav)
         voiced = []; silence = 0; in_speech = False
 
     try:

@@ -2,7 +2,7 @@
 #  Модель: Отчёт о разговоре
 # ════════════════════════════════════════════════════════════
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, JSON, Text, BigInteger
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from backend.database import Base
@@ -44,6 +44,11 @@ class Report(Base):
 
     # Смена
     shift_number    = Column(Integer)                       # 1/2/3
+
+    # Приоритет и архив (priority=1 → запись летит в S3)
+    is_priority     = Column(Boolean, default=False, index=True)  # GPT: priority=1
+    audio_sha256    = Column(String(64), nullable=True)           # SHA-256 аудио-файла (доказательство)
+    s3_url          = Column(Text, nullable=True)                 # Ссылка на файл в облаке
 
     # Связи
     location        = relationship("Location", back_populates="reports")
