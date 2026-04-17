@@ -420,7 +420,7 @@ def _ping_loop():
     Запускается как daemon-поток при старте.
     Если сервер недоступен — молча пропускает (без ошибок).
     """
-    PING_INTERVAL = 300   # 5 минут
+    PING_INTERVAL = 30    # 30 секунд — офлайн-порог 60с на сервере
     while True:
         time.sleep(PING_INTERVAL)
         try:

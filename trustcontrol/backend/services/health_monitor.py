@@ -17,9 +17,9 @@ from backend.models.user import User
 
 log = logging.getLogger("health_monitor")
 
-CHECK_INTERVAL_SEC      = 120    # проверяем каждые 2 минуты
-OFFLINE_THRESHOLD_MIN   = 10    # считаем оффлайн после 10 мин без пинга
-ALERT_COOLDOWN_MIN      = 30    # не спамим: повторный алерт через 30 мин
+CHECK_INTERVAL_SEC      = 30     # проверяем каждые 30 секунд (пинг тоже 30с)
+OFFLINE_THRESHOLD_MIN   = 1     # оффлайн если нет пинга > 60 секунд
+ALERT_COOLDOWN_MIN      = 10    # не спамим: повторный алерт через 10 мин
 
 
 async def _send_offline_alert(location: Location, owner: User, minutes_offline: int):

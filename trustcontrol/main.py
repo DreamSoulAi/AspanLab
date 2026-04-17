@@ -18,10 +18,13 @@ from backend.api.reports    import router as reports_router
 from backend.api.alerts     import router as alerts_router
 from backend.api.auth       import router as auth_router
 from backend.api.stats      import router as stats_router
-from backend.api.pos        import router as pos_router
-from backend.api.health     import router as health_router
-from backend.database       import init_db
-from backend.config         import settings
+from backend.api.pos              import router as pos_router
+from backend.api.health           import router as health_router
+from backend.api.summary          import router as summary_router
+from backend.api.incidents        import router as incidents_router
+from backend.api.telegram_webhook import router as tg_router
+from backend.database             import init_db
+from backend.config               import settings
 
 log = logging.getLogger("main")
 
@@ -54,8 +57,11 @@ app.include_router(locations_router, prefix="/api/locations",   tags=["Locations
 app.include_router(reports_router,   prefix="/api/reports",     tags=["Reports"])
 app.include_router(alerts_router,    prefix="/api/alerts",      tags=["Alerts"])
 app.include_router(stats_router,     prefix="/api/stats",       tags=["Stats"])
-app.include_router(pos_router,       prefix="/api/v1/pos",      tags=["POS"])
-app.include_router(health_router,    prefix="/api/v1/health",   tags=["Health"])
+app.include_router(pos_router,       prefix="/api/v1/pos",       tags=["POS"])
+app.include_router(health_router,    prefix="/api/v1/health",    tags=["Health"])
+app.include_router(summary_router,   prefix="/api/v1/summary",   tags=["Summary"])
+app.include_router(incidents_router, prefix="/api/v1/incidents", tags=["Incidents"])
+app.include_router(tg_router,        prefix="/telegram",         tags=["Telegram"])
 
 # ── Фронтенд ─────────────────────────────────────────────────
 DASHBOARD_DIR = Path(__file__).parent / "frontend" / "dashboard"

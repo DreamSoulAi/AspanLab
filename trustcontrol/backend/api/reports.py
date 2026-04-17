@@ -237,6 +237,7 @@ async def _process_submission(
                     proof_sha256=evidence.get("sha256"),
                 )
                 db.add(incident)
+                await db.flush()  # получаем incident.id до Telegram
                 report.fraud_status = "critical_fraud_risk"
                 report.is_priority  = True
 
@@ -245,6 +246,7 @@ async def _process_submission(
                         chat_id=telegram_chat,
                         location_name=location_name,
                         incident_type="KASPI_FRAUD",
+                        incident_id=incident.id,
                         description=incident.description,
                         proof_s3_url=incident.proof_s3_url,
                         detected_phone=hit["phone"],

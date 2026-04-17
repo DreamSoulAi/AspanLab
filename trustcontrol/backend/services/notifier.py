@@ -128,6 +128,7 @@ async def send_incident_alert(
     location_name: str,
     incident_type: str,
     description: str,
+    incident_id: int | None = None,
     proof_s3_url: str | None = None,
     detected_phone: str | None = None,
     tx_amount: float | None = None,
@@ -171,9 +172,16 @@ async def send_incident_alert(
         lines.append(f"\n📱 Продиктованный номер: `{detected_phone}`")
         lines.append("_Этого номера нет в белом списке владельца_")
 
-    buttons_row = []
+    # Строка 1: аудио (url-кнопка)
+    row1 = []
     if proof_s3_url:
-        buttons_row.append(InlineKeyboardButton("🎧 Прослушать запись", url=proof_s3_url))
+        row1.append(InlineKeyboardButton("🎧 Прослушать запись", url=proof_s3_url))
+
+    # Строка 2: подтверждение / ошибка (callback-кнопки)
+    row2 = []
+    if incident_id:
+        row2.append(InlineKeyboardButton("✅ Подтвердить", callback_data=f"tc_confirm:{incident_id}"))
+        row2.append(InlineKeyboardButton("❌ Ошибка",      callback_data=f"tc_fp:{incident_id}"))
 
     # Данные чека — вставляем текстом (нельзя открыть как URL)
     if tx_amount is not None:
@@ -189,7 +197,8 @@ async def send_incident_alert(
                 price = item.get("price") or item.get("sum") or "—"
                 lines.append(f"    • {name} × {qty} = {price} ₸")
 
-    markup = InlineKeyboardMarkup([buttons_row]) if buttons_row else None
+    all_rows = [r for r in [row1, row2] if r]
+    markup = InlineKeyboardMarkup(all_rows) if all_rows else None
     await _send(chat_id, "\n".join(lines), reply_markup=markup)
 
 
