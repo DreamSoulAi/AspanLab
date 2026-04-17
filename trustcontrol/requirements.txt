@@ -30,6 +30,9 @@ python-telegram-bot>=21.0
 # Валидация данных
 pydantic[email]>=2.7.0
 
+# Email (OTP-письма)
+aiosmtplib>=3.0.0
+
 # Config
 python-dotenv>=1.0.0
 

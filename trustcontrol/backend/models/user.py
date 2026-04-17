@@ -19,6 +19,9 @@ class User(Base):
     telegram_id     = Column(String(50))       # Telegram ID владельца
     telegram_chat   = Column(String(50))       # ID группы для уведомлений
 
+    # Email verification
+    is_verified     = Column(Boolean, default=False)
+
     # Подписка
     plan            = Column(String(20), default="trial")  # trial / start / business / network
     plan_expires    = Column(DateTime)

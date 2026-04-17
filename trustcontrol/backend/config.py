@@ -69,6 +69,13 @@ class Settings:
     KASPI_NUMBER: str = os.getenv("KASPI_NUMBER", "")
     KASPI_NAME:   str = os.getenv("KASPI_NAME", "")
 
+    # ── SMTP (OTP-письма) ────────────────────────────────────
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")      # smtp.gmail.com / smtp.yandex.ru
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", 587))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")      # login
+    SMTP_PASS: str = os.getenv("SMTP_PASS", "")      # app-password
+    SMTP_FROM: str = os.getenv("SMTP_FROM", "")      # "TrustControl <noreply@...>"
+
     def validate(self):
         """Проверяем что все обязательные переменные заданы."""
         errors = []
