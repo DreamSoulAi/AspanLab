@@ -406,6 +406,29 @@ def _retry_fails():
             break
 
 
+def _ping_loop():
+    """
+    Шлёт health-ping на сервер каждые 5 минут.
+    Запускается как daemon-поток при старте.
+    Если сервер недоступен — молча пропускает (без ошибок).
+    """
+    PING_INTERVAL = 300   # 5 минут
+    while True:
+        time.sleep(PING_INTERVAL)
+        try:
+            r = requests.post(
+                f"{SERVER_URL}/api/v1/health/ping",
+                headers={"X-API-Key": API_KEY},
+                timeout=10,
+            )
+            if r.status_code == 200:
+                log.debug("Health ping: OK")
+            else:
+                log.debug(f"Health ping: {r.status_code}")
+        except Exception:
+            pass   # нет сети — просто пропускаем
+
+
 def process_segment(wav_bytes: bytes):
     """Обрабатывает один речевой сегмент (в отдельном потоке)."""
     if LOCAL_WHISPER:
@@ -486,6 +509,9 @@ def run():
 
     device_index = _resolve_device_index(pa, DEVICE_ARG)
     stream = _open_stream(pa, device_index=device_index)
+
+    # Запускаем health-ping в фоне
+    threading.Thread(target=_ping_loop, daemon=True, name="ping").start()
 
     mode        = "local faster-whisper" if LOCAL_WHISPER else f"сервер ({SERVER_URL})"
     compress_info = f"{COMPRESS_FORMAT.upper()} 64kbps" if COMPRESS and COMPRESS_FORMAT == "mp3" else ("WAV 8kHz" if COMPRESS else "выкл")

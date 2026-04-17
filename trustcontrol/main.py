@@ -19,6 +19,7 @@ from backend.api.alerts     import router as alerts_router
 from backend.api.auth       import router as auth_router
 from backend.api.stats      import router as stats_router
 from backend.api.pos        import router as pos_router
+from backend.api.health     import router as health_router
 from backend.database       import init_db
 from backend.config         import settings
 
@@ -54,6 +55,7 @@ app.include_router(reports_router,   prefix="/api/reports",     tags=["Reports"]
 app.include_router(alerts_router,    prefix="/api/alerts",      tags=["Alerts"])
 app.include_router(stats_router,     prefix="/api/stats",       tags=["Stats"])
 app.include_router(pos_router,       prefix="/api/v1/pos",      tags=["POS"])
+app.include_router(health_router,    prefix="/api/v1/health",   tags=["Health"])
 
 # ── Фронтенд ─────────────────────────────────────────────────
 DASHBOARD_DIR = Path(__file__).parent / "frontend" / "dashboard"
@@ -232,6 +234,9 @@ async def startup():
     asyncio.create_task(_retry_worker())
     asyncio.create_task(_retention_worker())
     asyncio.create_task(_daily_report_worker())
+
+    from backend.services.health_monitor import run_health_monitor
+    asyncio.create_task(run_health_monitor())
 
     print("✅ TrustControl API v3.0 запущен!")
     print(f"📡 http://localhost:{settings.PORT}")

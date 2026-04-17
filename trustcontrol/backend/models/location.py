@@ -33,7 +33,9 @@ class Location(Base):
     api_key         = Column(String(64), unique=True)       # ключ для скрипта на кассе
 
     created_at      = Column(DateTime, default=datetime.utcnow)
-    last_seen       = Column(DateTime)                      # последний раз скрипт был онлайн
+    last_seen       = Column(DateTime)                      # последний раз скрипт прислал аудио
+    last_ping_at    = Column(DateTime)                      # последний health-ping от воркера
+    offline_alerted_at = Column(DateTime)                   # когда отправили offline-алерт (анти-спам)
 
     # Связи
     owner           = relationship("User", back_populates="locations")
