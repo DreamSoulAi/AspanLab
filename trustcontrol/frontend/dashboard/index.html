@@ -533,6 +533,23 @@ html, body {
       <label class="form-label">Город</label>
       <input class="form-input" type="text" id="editLocCity" placeholder="Алматы">
     </div>
+    <div style="border-top:1px solid rgba(255,255,255,.08);margin:16px 0 12px;padding-top:14px">
+      <div style="font-size:12px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Антифрод / допродажи</div>
+      <div class="form-group">
+        <label class="form-label">Белый список Kaspi-телефонов</label>
+        <textarea class="form-input" id="editLocPhones" rows="3" placeholder="+77001234567&#10;+77009876543" style="resize:vertical;font-size:13px;line-height:1.6"></textarea>
+        <div style="font-size:11px;color:var(--gray);margin-top:4px">По одному номеру в строке — не будут помечаться как фрод</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Обязательные фразы допродажи</label>
+        <textarea class="form-input" id="editLocUpsells" rows="3" placeholder="Хотите добавить десерт?&#10;Попробуйте нашу новинку?" style="resize:vertical;font-size:13px;line-height:1.6"></textarea>
+        <div style="font-size:11px;color:var(--gray);margin-top:4px">По одной фразе в строке — если не сказана, инцидент UPSELL_GAP</div>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:10px;margin-bottom:0">
+        <input type="checkbox" id="editLocIgnoreProf" style="width:16px;height:16px;cursor:pointer;flex-shrink:0">
+        <label for="editLocIgnoreProf" class="form-label" style="margin:0;cursor:pointer">Игнорировать брань вне обслуживания клиента</label>
+      </div>
+    </div>
     <div class="error-msg" id="editLocError"></div>
     <button class="form-btn" onclick="saveLocation()">Сохранить</button>
   </div>
@@ -1216,6 +1233,20 @@ async function loadIncidentsPanel() {
          </a>` : "";
     const locName = (inc.location_name || "").replace(/</g,"&lt;");
     const desc    = (inc.description || "").replace(/</g,"&lt;");
+    const actionArea = inc.status === "open"
+      ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
+           <button class="play-btn" onclick="resolveIncident(${inc.id},'resolved')"
+                   style="background:rgba(0,200,100,.12);color:#00c864;border-color:rgba(0,200,100,.3)">
+             ✅ Подтвердить
+           </button>
+           <button class="play-btn" onclick="resolveIncident(${inc.id},'false_positive')"
+                   style="background:rgba(255,200,0,.1);color:#c8a000;border-color:rgba(255,200,0,.25)">
+             ❌ Ложная тревога
+           </button>
+         </div>`
+      : `<span class="badge ${inc.status === 'resolved' ? 'good' : 'neu'}" style="font-size:11px">
+           ${inc.status === 'resolved' ? '✅ Закрыт' : '❎ Ложная тревога'}
+         </span>`;
     return `<div class="incident-card ${typeCSS}">
       <div class="incident-header">
         <div style="display:flex;align-items:center;gap:8px">
@@ -1227,11 +1258,19 @@ async function loadIncidentsPanel() {
       <div class="incident-desc">${desc}</div>
       ${phoneHtml}
       <div class="incident-footer">
-        <span></span>
+        ${actionArea}
         ${playBtn}
       </div>
     </div>`;
   }).join("");
+}
+
+async function resolveIncident(id, status) {
+  const r = await apiFetch(`/api/v1/incidents/${id}/resolve`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+  if (r) await loadIncidentsPanel();
 }
 
 // ═══════════════════════════════════════════
@@ -1604,6 +1643,9 @@ function openEditLocation(loc) {
   document.getElementById("editLocCity").value  = loc.city || "Алматы";
   document.getElementById("editLocLang").value  = loc.language || "ru";
   document.getElementById("editLocType").value  = loc.business_type || "coffee";
+  document.getElementById("editLocPhones").value   = (loc.allowed_phones || []).join("\n");
+  document.getElementById("editLocUpsells").value  = (loc.required_upsells || []).join("\n");
+  document.getElementById("editLocIgnoreProf").checked = !!loc.ignore_internal_profanity;
   document.getElementById("editLocError").style.display = "none";
   document.getElementById("editLocationModal").classList.add("open");
 }
@@ -1625,16 +1667,20 @@ async function saveLocation() {
     city:          document.getElementById("editLocCity").value.trim(),
     language:      document.getElementById("editLocLang").value,
     business_type: document.getElementById("editLocType").value,
+    ignore_internal_profanity: document.getElementById("editLocIgnoreProf").checked,
   };
 
-  const r = await apiFetch(`/api/locations/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify(body),
-  });
+  const phones  = document.getElementById("editLocPhones").value.split("\n").map(s => s.trim()).filter(Boolean);
+  const upsells = document.getElementById("editLocUpsells").value.split("\n").map(s => s.trim()).filter(Boolean);
+
+  const [r1, r2] = await Promise.all([
+    apiFetch(`/api/locations/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    apiFetch(`/api/locations/${id}/antifraud`, { method: "PUT", body: JSON.stringify({ allowed_phones: phones, required_upsells: upsells }) }),
+  ]);
 
   btn.disabled = false; btn.textContent = "Сохранить";
 
-  if (r) {
+  if (r1 && r2) {
     closeEditLocation();
     await loadLocations();
   } else {

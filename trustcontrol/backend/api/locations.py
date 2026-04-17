@@ -64,6 +64,9 @@ async def list_locations(
             "api_key":       loc.api_key,
             "telegram_chat": loc.telegram_chat,
             "last_seen":     loc.last_seen.isoformat() if loc.last_seen else None,
+            "allowed_phones":            loc.allowed_phones or [],
+            "required_upsells":          loc.required_upsells or [],
+            "ignore_internal_profanity": bool(loc.ignore_internal_profanity),
         }
         for loc in locations
     ]
