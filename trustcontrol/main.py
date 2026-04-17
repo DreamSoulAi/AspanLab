@@ -267,15 +267,18 @@ async def _run_migrations():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified                 BOOLEAN DEFAULT false",
     ]
 
-    async with AsyncSessionLocal() as db:
-        for sql in _migrations:
-            try:
+    ok = 0
+    for sql in _migrations:
+        # Each statement in its own session+transaction so a failure
+        # (e.g. column already exists in older PG) doesn't abort the rest.
+        try:
+            async with AsyncSessionLocal() as db:
                 await db.execute(text(sql))
-            except Exception as exc:
-                # Column already exists or table doesn't exist yet — skip
-                log.debug(f"Migration skipped ({exc.__class__.__name__}): {sql[:60]}")
-        await db.commit()
-    log.info("✅ DB migrations applied")
+                await db.commit()
+            ok += 1
+        except Exception as exc:
+            log.debug(f"Migration skipped ({exc.__class__.__name__}): {sql[:60]}")
+    log.info(f"✅ DB migrations: {ok}/{len(_migrations)} applied")
 
 
 # ── Lifecycle ─────────────────────────────────────────────────
