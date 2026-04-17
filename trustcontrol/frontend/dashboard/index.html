@@ -380,6 +380,124 @@ html, body {
     padding:24px 18px; max-height:88vh; overflow-y:auto;
   }
 }
+
+/* ── Enhanced background depth ──────────────────────────── */
+html, body {
+  background: #0a0a0a;
+  background-image:
+    radial-gradient(ellipse at 10% 0%,   rgba(201,168,76,.09) 0, transparent 48%),
+    radial-gradient(ellipse at 90% 100%, rgba(74,158,255,.06)  0, transparent 48%),
+    radial-gradient(ellipse at 50% 50%,  rgba(30,30,30,.4)    0, transparent 75%);
+  background-attachment: fixed;
+}
+
+/* ── Sidebar — premium glass ─────────────────────────────── */
+.sidebar {
+  background: rgba(8,8,8,0.86) !important;
+  backdrop-filter: blur(36px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(36px) saturate(200%) !important;
+  box-shadow: 2px 0 48px rgba(0,0,0,.65);
+}
+
+/* ── Mobile bottom nav — glass too ──────────────────────── */
+@media(max-width:768px){
+  .mobile-header {
+    background: rgba(8,8,8,0.88) !important;
+    backdrop-filter: blur(24px) !important;
+    -webkit-backdrop-filter: blur(24px) !important;
+  }
+  .mobile-nav {
+    background: rgba(8,8,8,0.92) !important;
+    backdrop-filter: blur(28px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+    border-top: 1px solid rgba(255,255,255,.07) !important;
+  }
+}
+
+/* ── Page-transition fade ────────────────────────────────── */
+.page.active { animation: pageFadeIn .22s ease both; }
+@keyframes pageFadeIn {
+  from { opacity:0; transform:translateY(8px); }
+  to   { opacity:1; transform:translateY(0);   }
+}
+
+/* ── Badge micro-glow ────────────────────────────────────── */
+.badge.fraud { box-shadow: 0 0 8px rgba(255,77,77,.22);  }
+.badge.good  { box-shadow: 0 0 8px rgba(0,230,118,.2);   }
+.badge.bad   { box-shadow: 0 0 6px rgba(255,100,100,.12);}
+
+/* ── Card / panel — slightly more radius ─────────────────── */
+.card, .panel, .score-card, .kpi-ring-wrap, .status-chip, .incident-card {
+  border-radius: 14px !important;
+}
+.modal-box   { border-radius: 16px !important; }
+.login-box   { border-radius: 16px !important; }
+.play-btn    { border-radius: 22px !important; }
+
+/* ── UPSELL GAP — hero widget ────────────────────────────── */
+.upsell-hero {
+  position: relative; overflow: hidden;
+  background: linear-gradient(135deg, rgba(255,152,0,.13) 0%, rgba(255,80,0,.06) 100%);
+  border: 1px solid rgba(255,152,0,.35) !important;
+  border-radius: 14px !important;
+  padding: 20px 22px;
+  min-width: 170px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  box-shadow: 0 0 30px rgba(255,152,0,.12), 0 4px 24px rgba(0,0,0,.4);
+  animation: upsellGlow 3s ease-in-out infinite;
+}
+@keyframes upsellGlow {
+  0%,100% { box-shadow: 0 0 24px rgba(255,152,0,.1),  0 4px 24px rgba(0,0,0,.4); }
+  50%      { box-shadow: 0 0 42px rgba(255,152,0,.22), 0 4px 28px rgba(0,0,0,.45); }
+}
+.upsell-hero::before {
+  content:'';
+  position:absolute; top:-30%; left:-10%; width:120%; height:60%;
+  background: radial-gradient(ellipse, rgba(255,152,0,.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+.upsell-hero-ico { font-size: 28px; line-height:1; }
+.upsell-hero-label {
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: rgba(255,152,0,.7); font-weight: 700;
+}
+.upsell-hero-val {
+  font-size: 30px; font-weight: 900; color: #ff9800; line-height: 1;
+  text-shadow: 0 0 20px rgba(255,152,0,.4);
+}
+.upsell-hero-sub {
+  font-size: 10px; color: rgba(255,152,0,.5); letter-spacing: .5px;
+}
+
+/* ── Report mobile cards ─────────────────────────────────── */
+.report-cards-wrap { display: none; }
+@media(max-width:768px) {
+  .report-table-wrap { display: none !important; }
+  .report-cards-wrap { display: block; }
+}
+.rc {
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--bdr);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 10px;
+  animation: rcFadeIn .28s ease both;
+}
+.rc:nth-child(2) { animation-delay: .04s; }
+.rc:nth-child(3) { animation-delay: .08s; }
+.rc:nth-child(4) { animation-delay: .12s; }
+.rc:nth-child(5) { animation-delay: .16s; }
+@keyframes rcFadeIn {
+  from { opacity:0; transform:translateY(-10px); }
+  to   { opacity:1; transform:translateY(0);     }
+}
+.rc-top    { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.rc-time   { font-size:12px; color:var(--gray); }
+.rc-quote  { font-size:14px; color:var(--txt); line-height:1.55; margin-bottom:12px;
+             display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.rc-footer { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 </style>
 </head>
 <body>
@@ -669,10 +787,11 @@ html, body {
           </div>
           <div class="kpi-label-outer">AI оценка</div>
         </div>
-        <div class="kpi-ring-wrap" style="border-color:rgba(255,152,0,.2)">
-          <div style="font-size:11px;color:var(--gray);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-weight:600">Упущено</div>
-          <div id="kpiMissedRev" style="font-size:26px;font-weight:900;color:#ff9800">—</div>
-          <div style="font-size:10px;color:var(--gray);margin-top:4px">тенге (UPSELL GAP)</div>
+        <div class="upsell-hero">
+          <div class="upsell-hero-ico">💰</div>
+          <div class="upsell-hero-label">Упущено</div>
+          <div class="upsell-hero-val" id="kpiMissedRev">—</div>
+          <div class="upsell-hero-sub">тенге · UPSELL GAP</div>
         </div>
       </div>
 
@@ -787,7 +906,10 @@ html, body {
         </div>
       </div>
       <div class="panel">
-        <div class="table-wrap">
+        <!-- Mobile cards (shown only on ≤768px) -->
+        <div class="report-cards-wrap" id="reportsCards"></div>
+        <!-- Desktop table -->
+        <div class="report-table-wrap table-wrap">
           <table class="table">
             <thead>
               <tr>
@@ -1569,7 +1691,11 @@ function showPage(name, el) {
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.querySelectorAll(".s-item").forEach(i => i.classList.remove("active"));
   document.querySelectorAll(".mn-item").forEach(i => i.classList.remove("active"));
-  document.getElementById(`page-${name}`).classList.add("active");
+  const newPage = document.getElementById(`page-${name}`);
+  newPage.classList.add("active");
+  newPage.style.animation = "none";
+  newPage.offsetHeight; // reflow
+  newPage.style.animation = "";
   if (el) el.classList.add("active");
   const mn = document.getElementById(`mn-${name}`);
   if (mn) mn.classList.add("active");
@@ -1732,6 +1858,30 @@ async function loadReportsPage() {
       </td>
     </tr>
   `).join("");
+
+  // Mobile cards
+  const cards = document.getElementById("reportsCards");
+  if (cards) {
+    cards.innerHTML = reports.map((r, i) => {
+      const flags = [
+        r.has_fraud ? `<span class="badge fraud">🚨 Мошенн.</span>` : "",
+        r.has_bad   ? `<span class="badge bad">⚠️ Грубость</span>` : "",
+        r.has_bonus ? `<span class="badge good">⭐ Допрод.</span>` : "",
+      ].filter(Boolean).join("") || `<span class="badge neu">Норма</span>`;
+      return `<div class="rc" style="animation-delay:${i * 0.04}s">
+        <div class="rc-top">
+          <span class="rc-time">${new Date(r.timestamp).toLocaleString("ru",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span>
+          ${scoreLabel(r.gpt_score)}
+        </div>
+        <div class="rc-quote">${(r.transcript || "Нет транскрипции").replace(/</g,"&lt;")}</div>
+        <div class="rc-footer">
+          ${toneLabel(r.tone)}
+          ${flags}
+        </div>
+      </div>`;
+    }).join("");
+  }
+
   // Синхронизируем фильтр точек
   const sel = document.getElementById("reportsFilter");
   if (sel && sel.options.length < 2) {
