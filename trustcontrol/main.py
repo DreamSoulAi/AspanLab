@@ -242,31 +242,41 @@ async def _run_migrations():
     from backend.database import engine
 
     _migrations = [
-        # locations — v3.0
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS allowed_phones           JSON    DEFAULT '[]'",
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS required_upsells         JSON    DEFAULT '[]'",
+        # ── locations ─────────────────────────────────────────
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS silence_seconds          INTEGER  DEFAULT 3",
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS custom_phrases           JSON     DEFAULT '[]'",
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS allowed_phones           JSON     DEFAULT '[]'",
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS required_upsells         JSON     DEFAULT '[]'",
         "ALTER TABLE locations ADD COLUMN IF NOT EXISTS ignore_internal_profanity BOOLEAN DEFAULT false",
         "ALTER TABLE locations ADD COLUMN IF NOT EXISTS last_ping_at             TIMESTAMP",
         "ALTER TABLE locations ADD COLUMN IF NOT EXISTS offline_alerted_at       TIMESTAMP",
-        # reports — v3.0
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS payment_confirmed          BOOLEAN",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS upsell_attempt             BOOLEAN",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS customer_satisfaction      INTEGER",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_personal_talk           BOOLEAN DEFAULT false",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_hidden                  BOOLEAN DEFAULT false",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS fraud_status               VARCHAR(30) DEFAULT 'normal'",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS s3_deleted_at              TIMESTAMP",
+        # ── reports (v2.0 columns) ────────────────────────────
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS duration_sec               FLOAT",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS audio_size_kb              INTEGER",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS tone_score                 FLOAT    DEFAULT 0.5",
         "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_score                  INTEGER",
         "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_summary                TEXT",
         "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_details                JSON",
         "ALTER TABLE reports ADD COLUMN IF NOT EXISTS speakers                   JSON",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS shift_number               INTEGER",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_priority                BOOLEAN  DEFAULT false",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS audio_sha256               VARCHAR(64)",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS s3_url                     TEXT",
+        # ── reports (v3.0 columns) ────────────────────────────
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS payment_confirmed          BOOLEAN",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS upsell_attempt             BOOLEAN",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS customer_satisfaction      INTEGER",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_personal_talk           BOOLEAN  DEFAULT false",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_hidden                  BOOLEAN  DEFAULT false",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS fraud_status               VARCHAR(30) DEFAULT 'normal'",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS s3_deleted_at              TIMESTAMP",
         "ALTER TABLE reports ADD COLUMN IF NOT EXISTS conversation_context       VARCHAR(30) DEFAULT 'unknown'",
         "ALTER TABLE reports ADD COLUMN IF NOT EXISTS context_score              FLOAT",
-        # pos_transactions — v3.0
+        # ── pos_transactions ──────────────────────────────────
         "ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS pos_type          VARCHAR(20) DEFAULT 'none'",
-        "ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS items             JSON DEFAULT '[]'",
-        # users — auth v2.0
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified                  BOOLEAN DEFAULT false",
+        "ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS items             JSON     DEFAULT '[]'",
+        # ── users ─────────────────────────────────────────────
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified                  BOOLEAN  DEFAULT false",
     ]
 
     ok = 0
