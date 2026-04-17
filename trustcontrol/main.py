@@ -280,15 +280,18 @@ async def _run_migrations():
     ]
 
     ok = 0
-    # Use a raw connection with AUTOCOMMIT so each DDL statement commits
-    # immediately and a duplicate-column error never aborts subsequent ones.
-    async with engine.connect() as conn:
-        await conn.execution_options(isolation_level="AUTOCOMMIT")
-        for sql in _migrations:
+    # Use SAVEPOINTs so a failed ALTER (column already exists) doesn't abort
+    # the whole transaction — each statement rolls back only to its savepoint.
+    async with engine.begin() as conn:
+        for i, sql in enumerate(_migrations):
+            sp = f"m{i}"
             try:
+                await conn.execute(text(f"SAVEPOINT {sp}"))
                 await conn.execute(text(sql))
+                await conn.execute(text(f"RELEASE SAVEPOINT {sp}"))
                 ok += 1
             except Exception as exc:
+                await conn.execute(text(f"ROLLBACK TO SAVEPOINT {sp}"))
                 log.debug(f"Migration skipped ({exc.__class__.__name__}): {sql[:55]}")
 
     print(f"✅ DB migrations: {ok}/{len(_migrations)} applied")
