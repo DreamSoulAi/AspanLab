@@ -23,7 +23,7 @@ from backend.api.health           import router as health_router
 from backend.api.summary          import router as summary_router
 from backend.api.incidents        import router as incidents_router
 from backend.api.telegram_webhook import router as tg_router
-from backend.database             import init_db
+from backend.database             import init_db, AsyncSessionLocal
 from backend.config               import settings
 
 log = logging.getLogger("main")
@@ -230,11 +230,60 @@ async def _daily_report_worker():
             log.error(f"Daily report worker ошибка: {e}")
 
 
+# ── Schema migrations (ADD COLUMN IF NOT EXISTS) ──────────────
+
+async def _run_migrations():
+    """
+    Adds columns that were introduced after initial deploy.
+    Safe to run multiple times — uses IF NOT EXISTS / ignores duplicates.
+    """
+    from sqlalchemy import text
+
+    _migrations = [
+        # locations — v3.0
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS allowed_phones          JSON    DEFAULT '[]'",
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS required_upsells        JSON    DEFAULT '[]'",
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS ignore_internal_profanity BOOLEAN DEFAULT false",
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS last_ping_at            TIMESTAMP",
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS offline_alerted_at      TIMESTAMP",
+        # reports — v3.0
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS payment_confirmed         BOOLEAN",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS upsell_attempt            BOOLEAN",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS customer_satisfaction     INTEGER",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_personal_talk          BOOLEAN DEFAULT false",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_hidden                 BOOLEAN DEFAULT false",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS fraud_status              VARCHAR(30) DEFAULT 'normal'",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS s3_deleted_at             TIMESTAMP",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_score                 INTEGER",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_summary               TEXT",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_details               JSON",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS speakers                  JSON",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS conversation_context      VARCHAR(30) DEFAULT 'unknown'",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS context_score             FLOAT",
+        # pos_transactions — v3.0
+        "ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS pos_type         VARCHAR(20) DEFAULT 'none'",
+        "ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS items            JSON DEFAULT '[]'",
+        # users — auth v2.0
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified                 BOOLEAN DEFAULT false",
+    ]
+
+    async with AsyncSessionLocal() as db:
+        for sql in _migrations:
+            try:
+                await db.execute(text(sql))
+            except Exception as exc:
+                # Column already exists or table doesn't exist yet — skip
+                log.debug(f"Migration skipped ({exc.__class__.__name__}): {sql[:60]}")
+        await db.commit()
+    log.info("✅ DB migrations applied")
+
+
 # ── Lifecycle ─────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def startup():
     await init_db()
+    await _run_migrations()
 
     # Запускаем фоновые задачи
     asyncio.create_task(_retry_worker())
