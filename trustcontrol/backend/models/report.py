@@ -1,7 +1,3 @@
-# ════════════════════════════════════════════════════════════
-#  Модель: Отчёт о разговоре
-# ════════════════════════════════════════════════════════════
-
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -15,12 +11,12 @@ class Report(Base):
     location_id     = Column(Integer, ForeignKey("locations.id"), nullable=False)
 
     timestamp       = Column(DateTime, default=datetime.utcnow, index=True)
-    transcript      = Column(Text, nullable=False)          # текст разговора
-    duration_sec    = Column(Float)                         # длительность записи
-    audio_size_kb   = Column(Integer)                       # размер аудио
+    transcript      = Column(Text, nullable=False)
+    duration_sec    = Column(Float)
+    audio_size_kb   = Column(Integer)
 
     # Найденные категории
-    found_categories = Column(JSON, default=dict)           # {"✅ Приветствие": ["привет"]}
+    found_categories = Column(JSON, default=dict)
 
     # Флаги (для быстрой фильтрации)
     has_greeting    = Column(Boolean, default=False, index=True)
@@ -31,19 +27,43 @@ class Report(Base):
     has_fraud       = Column(Boolean, default=False, index=True)
 
     # Тон
-    tone            = Column(String(20), default="neutral") # positive/negative/neutral
-    tone_score      = Column(Float, default=0.5)            # 0.0 — очень негативный, 1.0 — очень позитивный
+    tone            = Column(String(20), default="neutral")
+    tone_score      = Column(Float, default=0.5)
 
-    # GPT-4o-mini анализ
-    gpt_score       = Column(Integer, nullable=True)        # оценка качества 0-100 от GPT
-    gpt_summary     = Column(Text,    nullable=True)        # краткое резюме от GPT
-    gpt_details     = Column(JSON,    nullable=True)        # {"positives": [...], "issues": [...]}
+    # GPT-4o-mini-audio анализ
+    gpt_score       = Column(Integer, nullable=True)
+    gpt_summary     = Column(Text,    nullable=True)
+    gpt_details     = Column(JSON,    nullable=True)
 
-    # Диаризация (кто говорит)
-    speakers        = Column(JSON, nullable=True)           # [{"role":"cashier","text":"..."},...]
+    # Диаризация
+    speakers        = Column(JSON, nullable=True)
 
     # Смена
-    shift_number    = Column(Integer)                       # 1/2/3
+    shift_number    = Column(Integer)
+
+    # Приоритет и архив
+    is_priority     = Column(Boolean, default=False, index=True)
+    audio_sha256    = Column(String(64), nullable=True)
+    s3_url          = Column(Text, nullable=True)
+
+    # ── Бизнес-аналитика (v3.0) ──────────────────────────────
+    payment_confirmed     = Column(Boolean, nullable=True)   # оплата завершена в разговоре
+    upsell_attempt        = Column(Boolean, nullable=True)   # была попытка допродажи
+    customer_satisfaction = Column(Integer, nullable=True)   # настроение клиента 1-5
+    is_personal_talk      = Column(Boolean, default=False, index=True)  # личный разговор
+    is_hidden             = Column(Boolean, default=False, index=True)  # скрыт от дашборда
+
+    # ── Contextual Severity (детектор клиента) ───────────────
+    conversation_context = Column(String(30), default="unknown", index=True)
+    # customer_service | internal_talk | unknown
+    context_score        = Column(Float, nullable=True)   # сигнальный счёт (-1..+1)
+
+    # ── Статус мошенничества (POS-матчер) ────────────────────
+    fraud_status    = Column(String(30), default="normal", index=True)
+    # normal | critical_fraud_risk | cleared
+
+    # ── S3 Retention ─────────────────────────────────────────
+    s3_deleted_at   = Column(DateTime, nullable=True)        # когда файл удалён из S3
 
     # Связи
     location        = relationship("Location", back_populates="reports")

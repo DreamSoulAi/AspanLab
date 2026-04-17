@@ -4,22 +4,38 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TrustControl — Дашборд</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 :root {
-  --bg:    #0a0a0a;
-  --dark:  #111;
-  --card:  #161616;
-  --bdr:   #242424;
-  --gold:  #c9a84c;
-  --txt:   #edeae2;
-  --gray:  #7a7a72;
-  --green: #4caf7d;
-  --red:   #e05555;
-  --blue:  #4a9eff;
+  --bg:     #121212;
+  --dark:   #0e0e0e;
+  --card:   #1e1e1e;
+  --glass:  rgba(30,30,30,0.75);
+  --bdr:    rgba(255,255,255,0.07);
+  --bdr2:   #2a2a2a;
+  --gold:   #c9a84c;
+  --gold2:  #e8c468;
+  --txt:    #edeae2;
+  --gray:   #7a7a72;
+  --green:  #00e676;
+  --red:    #ff4d4d;
+  --blue:   #4a9eff;
+  --glow-g: 0 0 12px rgba(0,230,118,.5), 0 0 28px rgba(0,230,118,.2);
+  --glow-r: 0 0 12px rgba(255,77,77,.5),  0 0 28px rgba(255,77,77,.2);
+  --glow-g: rgba(0,230,118,.5);
 }
-html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; min-height:100vh; }
+html, body {
+  background: var(--bg);
+  background-image:
+    radial-gradient(at 15% 10%, rgba(201,168,76,.05) 0, transparent 55%),
+    radial-gradient(at 85% 90%, rgba(74,158,255,.03) 0, transparent 55%);
+  color: var(--txt);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  min-height: 100vh;
+}
 
 /* SIDEBAR */
 .sidebar { position:fixed; left:0; top:0; bottom:0; width:220px; background:var(--dark); border-right:1px solid var(--bdr); padding:24px 0; z-index:100; }
@@ -46,29 +62,117 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
 .btn-gold { background:var(--gold); color:#0a0a0a; }
 .btn-outline { background:transparent; color:var(--txt); border:1px solid var(--bdr); }
 
-/* CARDS */
-.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; margin-bottom:28px; }
-.card { background:var(--card); border:1px solid var(--bdr); padding:24px 20px; }
-.card-label { font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--gray); margin-bottom:10px; }
-.card-value { font-size:38px; font-weight:900; color:var(--gold); line-height:1; }
-.card-sub { font-size:12px; color:var(--gray); margin-top:5px; }
-.card.red .card-value { color:var(--red); }
+/* CARDS — glassmorphism */
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; margin-bottom:24px; }
+.card {
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--bdr);
+  padding: 22px 20px;
+  border-radius: 4px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.35);
+  transition: border-color .2s;
+}
+.card:hover { border-color: rgba(255,255,255,.13); }
+.card-label { font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--gray); margin-bottom:10px; font-weight:600; }
+.card-value { font-size:36px; font-weight:900; color:var(--gold); line-height:1; }
+.card-sub { font-size:12px; color:var(--gray); margin-top:6px; }
+.card.red  .card-value { color:var(--red); }
 .card.green .card-value { color:var(--green); }
 
 /* SCORE RING */
-.score-card { background:var(--card); border:1px solid var(--bdr); padding:24px; display:flex; align-items:center; gap:20px; }
+.score-card {
+  background: var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  border:1px solid var(--bdr); padding:24px; display:flex; align-items:center; gap:20px;
+  border-radius:4px; box-shadow:0 4px 24px rgba(0,0,0,.35);
+}
 .score-ring { position:relative; width:80px; height:80px; flex-shrink:0; }
 .score-ring svg { transform:rotate(-90deg); }
 .score-ring .score-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:900; color:var(--gold); }
 .score-info h3 { font-size:15px; font-weight:700; margin-bottom:4px; }
 .score-info p { font-size:12px; color:var(--gray); }
 
+/* KPI PROGRESS RINGS */
+.kpi-rings-row { display:flex; gap:16px; margin-bottom:20px; overflow-x:auto; padding-bottom:4px; }
+.kpi-ring-wrap {
+  flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:8px;
+  background:var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  border:1px solid var(--bdr); border-radius:4px; padding:18px 20px;
+  min-width:130px; box-shadow:0 4px 24px rgba(0,0,0,.3);
+}
+.kpi-svg-outer { position:relative; width:90px; height:90px; }
+.kpi-svg { width:90px; height:90px; transform:rotate(-90deg); }
+.kpi-track { fill:none; stroke:rgba(255,255,255,.05); stroke-width:9; }
+.kpi-arc   { fill:none; stroke-width:9; stroke-linecap:round;
+             stroke-dasharray:226.2; stroke-dashoffset:226.2;
+             transition:stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1), stroke .3s; }
+.kpi-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.kpi-pct  { font-size:19px; font-weight:900; line-height:1; }
+.kpi-label-inner { font-size:9px; letter-spacing:1px; text-transform:uppercase; color:var(--gray); margin-top:2px; }
+.kpi-label-outer { font-size:11px; color:var(--gray); font-weight:600; text-align:center; }
+
 /* GRID */
 .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px; }
 .grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px; margin-bottom:20px; }
-.panel { background:var(--card); border:1px solid var(--bdr); padding:24px; }
+.panel {
+  background:var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  border:1px solid var(--bdr); padding:24px; border-radius:4px;
+  box-shadow:0 4px 24px rgba(0,0,0,.35);
+}
 .panel h3 { font-size:14px; font-weight:700; margin-bottom:16px; color:var(--txt); letter-spacing:.3px; }
 .panel.full { grid-column:1/-1; }
+
+/* INCIDENT FEED */
+.incident-feed { margin-bottom:20px; }
+.incident-card {
+  background: rgba(255,77,77,.04);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,77,77,.18);
+  border-left: 3px solid var(--red);
+  border-radius: 4px;
+  padding: 14px 18px;
+  margin-bottom: 10px;
+  transition: border-color .2s, background .2s;
+}
+.incident-card:hover { background: rgba(255,77,77,.07); border-color: rgba(255,77,77,.3); }
+.incident-card.kaspi { border-left-color: #ff9800; border-color: rgba(255,152,0,.18); background: rgba(255,152,0,.04); }
+.incident-card.kaspi:hover { background: rgba(255,152,0,.08); }
+.incident-card.upsell { border-left-color: var(--blue); border-color: rgba(74,158,255,.18); background: rgba(74,158,255,.04); }
+.incident-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+.incident-type-badge {
+  font-size:10px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase;
+  padding:3px 10px; border-radius:20px; white-space:nowrap;
+}
+.incident-type-badge.kaspi_fraud { background:rgba(255,152,0,.15); color:#ff9800; }
+.incident-type-badge.fraud  { background:rgba(255,77,77,.15); color:var(--red); }
+.incident-type-badge.aggression { background:rgba(255,77,77,.12); color:#ff6b6b; }
+.incident-type-badge.upsell_gap { background:rgba(74,158,255,.12); color:var(--blue); }
+.incident-loc { font-size:12px; color:var(--gray); }
+.incident-desc { font-size:13px; color:var(--txt); line-height:1.5; margin-bottom:10px; }
+.incident-phone { font-family:monospace; font-size:13px; font-weight:700; color:#ff9800; }
+.incident-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.incident-time { font-size:11px; color:var(--gray); }
+.play-btn {
+  display:flex; align-items:center; gap:8px;
+  background:rgba(74,158,255,.1); border:1px solid rgba(74,158,255,.3);
+  color:var(--blue); padding:7px 16px; border-radius:20px;
+  cursor:pointer; font-size:12px; font-weight:700; font-family:'Inter',sans-serif;
+  transition:all .2s; text-decoration:none;
+}
+.play-btn:hover { background:rgba(74,158,255,.22); border-color:var(--blue); box-shadow:0 0 12px rgba(74,158,255,.25); }
+.play-ico {
+  width:22px; height:22px; background:var(--blue); color:#000;
+  border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-size:9px; flex-shrink:0;
+}
+.missed-rev {
+  display:inline-flex; align-items:center; gap:6px;
+  background:rgba(255,152,0,.1); border:1px solid rgba(255,152,0,.2);
+  color:#ff9800; padding:4px 12px; border-radius:2px; font-size:12px; font-weight:700;
+  margin-bottom:12px;
+}
 
 /* TABLE */
 .table { width:100%; border-collapse:collapse; }
@@ -100,9 +204,16 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
 .alert-resolve { background:transparent; border:1px solid var(--bdr); color:var(--gray); font-size:11px; padding:4px 10px; cursor:pointer; }
 .alert-resolve:hover { border-color:var(--green); color:var(--green); }
 
+/* SIDEBAR — glass */
+.sidebar { background: rgba(14,14,14,0.92); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px); border-right:1px solid var(--bdr); }
+
 /* LOGIN */
 .login-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); }
-.login-box { background:var(--card); border:1px solid var(--bdr); padding:48px 40px; width:380px; }
+.login-box {
+  background:var(--glass); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
+  border:1px solid var(--bdr); padding:48px 40px; width:380px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.6);
+}
 .login-logo { font-size:22px; font-weight:900; letter-spacing:3px; color:var(--gold); text-align:center; margin-bottom:32px; text-transform:uppercase; }
 .login-logo span { color:var(--txt); }
 .form-group { margin-bottom:20px; }
@@ -117,6 +228,68 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
 /* REALTIME PULSE */
 .pulse { display:inline-block; width:8px; height:8px; background:var(--green); border-radius:50%; animation:pulse 2s infinite; margin-right:6px; }
 @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }
+
+/* ── СТАТУС ТОЧЕК (лента воркеров) ─────────────────────── */
+.status-strip {
+  display:flex; gap:10px; overflow-x:auto; padding-bottom:4px;
+  margin-bottom:20px; scrollbar-width:none;
+  -webkit-overflow-scrolling:touch;
+}
+.status-strip::-webkit-scrollbar { display:none; }
+.status-chip {
+  display:flex; align-items:center; gap:10px; flex-shrink:0;
+  background:var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  border:1px solid var(--bdr); padding:12px 16px; border-radius:6px; min-width:180px;
+  transition:border-color .2s, box-shadow .2s;
+}
+.status-chip.online  {
+  border-left:3px solid var(--green);
+  box-shadow: 0 0 0 1px rgba(0,230,118,.12), 0 4px 20px rgba(0,0,0,.3);
+}
+.status-chip.offline { border-left:3px solid var(--red); }
+.status-chip.unknown { border-left:3px solid var(--gray); }
+.sc-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.online .sc-dot {
+  background:var(--green);
+  box-shadow: 0 0 0 3px rgba(0,230,118,.2), 0 0 10px rgba(0,230,118,.6);
+  animation: neon-pulse 2s ease-in-out infinite;
+}
+.offline .sc-dot { background:var(--red); box-shadow: 0 0 6px rgba(255,77,77,.4); }
+.unknown .sc-dot { background:var(--gray); }
+@keyframes neon-pulse {
+  0%,100% { box-shadow:0 0 0 3px rgba(0,230,118,.2), 0 0 10px rgba(0,230,118,.5); }
+  50%      { box-shadow:0 0 0 5px rgba(0,230,118,.1), 0 0 20px rgba(0,230,118,.8); }
+}
+.sc-body { overflow:hidden; }
+.sc-name {
+  font-size:12px; font-weight:700; color:var(--txt);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px;
+}
+.sc-status { font-size:11px; margin-top:3px; font-weight:600; }
+.online  .sc-status { color:var(--green); }
+.offline .sc-status { color:var(--red);   }
+.unknown .sc-status { color:var(--gray);  }
+
+/* Мобильный: чипы стекуются вертикально при ширине <400px */
+@media(max-width:400px){
+  .status-strip { flex-direction:column; }
+  .status-chip  { min-width:0; width:100%; }
+}
+
+/* Удобные нижние карточки метрик на мобиле */
+@media(max-width:768px){
+  .cards { grid-template-columns:repeat(2,1fr); }
+  .card-value { font-size:28px; }
+
+  /* Таблица: скрываем колонку ТОН на маленьких экранах */
+  .table .col-hide-sm { display:none; }
+
+  /* Score card — горизонтальный на мобиле */
+  .score-card { padding:14px; gap:12px; }
+  .score-ring { width:64px; height:64px; }
+  .score-ring svg { width:64px; height:64px; }
+  .score-ring .score-text { font-size:15px; }
+}
 
 /* MODAL */
 .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:200; align-items:center; justify-content:center; }
@@ -379,13 +552,84 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
         </div>
       </div>
 
-      <!-- SCORE + STATS CARDS -->
+      <!-- СТАТУС ВОРКЕРОВ -->
+      <div class="status-strip" id="statusStrip">
+        <div class="status-chip unknown">
+          <div class="sc-dot"></div>
+          <div class="sc-body">
+            <div class="sc-name">Загрузка...</div>
+            <div class="sc-status">Проверка связи</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COUNT CARDS -->
       <div class="cards" id="statsCards">
         <div class="card"><div class="card-label">Разговоров сегодня</div><div class="card-value" id="statTotal">—</div></div>
-        <div class="card"><div class="card-label">Приветствия</div><div class="card-value" id="statGreeting">—</div><div class="card-sub">% разговоров</div></div>
-        <div class="card"><div class="card-label">Допродажи</div><div class="card-value" id="statBonus">—</div><div class="card-sub">% разговоров</div></div>
         <div class="card red"><div class="card-label">Нарушения</div><div class="card-value" id="statBad">—</div></div>
-        <div class="card red"><div class="card-label">🚨 Мошенничество</div><div class="card-value" id="statFraud">—</div></div>
+        <div class="card red"><div class="card-label">🚨 Фрод</div><div class="card-value" id="statFraud">—</div></div>
+        <div class="card"><div class="card-label">Инциденты открыты</div><div class="card-value" id="statIncidents">—</div></div>
+      </div>
+
+      <!-- KPI PROGRESS RINGS -->
+      <div class="kpi-rings-row" id="kpiRingsRow">
+        <div class="kpi-ring-wrap">
+          <div class="kpi-svg-outer">
+            <svg class="kpi-svg" viewBox="0 0 90 90">
+              <circle class="kpi-track" cx="45" cy="45" r="36"/>
+              <circle class="kpi-arc" cx="45" cy="45" r="36" id="ringGreeting" stroke="#00e676"/>
+            </svg>
+            <div class="kpi-center">
+              <div class="kpi-pct" id="kpiGreetingVal" style="color:#00e676">—</div>
+              <div class="kpi-label-inner">%</div>
+            </div>
+          </div>
+          <div class="kpi-label-outer">Приветствия</div>
+        </div>
+        <div class="kpi-ring-wrap">
+          <div class="kpi-svg-outer">
+            <svg class="kpi-svg" viewBox="0 0 90 90">
+              <circle class="kpi-track" cx="45" cy="45" r="36"/>
+              <circle class="kpi-arc" cx="45" cy="45" r="36" id="ringUpsell" stroke="#c9a84c"/>
+            </svg>
+            <div class="kpi-center">
+              <div class="kpi-pct" id="kpiUpsellVal" style="color:#c9a84c">—</div>
+              <div class="kpi-label-inner">%</div>
+            </div>
+          </div>
+          <div class="kpi-label-outer">Допродажи</div>
+        </div>
+        <div class="kpi-ring-wrap">
+          <div class="kpi-svg-outer">
+            <svg class="kpi-svg" viewBox="0 0 90 90">
+              <circle class="kpi-track" cx="45" cy="45" r="36"/>
+              <circle class="kpi-arc" cx="45" cy="45" r="36" id="ringSat" stroke="#4a9eff"/>
+            </svg>
+            <div class="kpi-center">
+              <div class="kpi-pct" id="kpiSatVal" style="color:#4a9eff">—</div>
+              <div class="kpi-label-inner">/ 5</div>
+            </div>
+          </div>
+          <div class="kpi-label-outer">Удовлетворённость</div>
+        </div>
+        <div class="kpi-ring-wrap">
+          <div class="kpi-svg-outer">
+            <svg class="kpi-svg" viewBox="0 0 90 90">
+              <circle class="kpi-track" cx="45" cy="45" r="36"/>
+              <circle class="kpi-arc" cx="45" cy="45" r="36" id="ringScore" stroke="#c9a84c"/>
+            </svg>
+            <div class="kpi-center">
+              <div class="kpi-pct" id="kpiScoreVal" style="color:#c9a84c">—</div>
+              <div class="kpi-label-inner">/ 100</div>
+            </div>
+          </div>
+          <div class="kpi-label-outer">AI оценка</div>
+        </div>
+        <div class="kpi-ring-wrap" style="border-color:rgba(255,152,0,.2)">
+          <div style="font-size:11px;color:var(--gray);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-weight:600">Упущено</div>
+          <div id="kpiMissedRev" style="font-size:26px;font-weight:900;color:#ff9800">—</div>
+          <div style="font-size:10px;color:var(--gray);margin-top:4px">тенге (UPSELL GAP)</div>
+        </div>
       </div>
 
       <div class="grid-2" style="margin-bottom:20px">
@@ -436,6 +680,12 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
       <div class="panel" style="margin-bottom:20px">
         <h3>Активность за 7 дней</h3>
         <canvas id="weekChart" height="80"></canvas>
+      </div>
+
+      <!-- INCIDENT FEED -->
+      <div class="panel incident-feed" id="incidentFeedPanel" style="margin-bottom:20px">
+        <h3>🚨 Последние инциденты</h3>
+        <div id="incidentFeed"><p style="color:var(--gray);font-size:13px">Загрузка...</p></div>
       </div>
 
       <!-- LAST REPORTS -->
@@ -734,6 +984,166 @@ function showLogin() {
 // ═══════════════════════════════════════════
 //  APP — параллельная загрузка
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+//  KPI PROGRESS RINGS
+// ═══════════════════════════════════════════
+function drawRing(circleId, pct, clampMax) {
+  const el = document.getElementById(circleId);
+  if (!el) return;
+  const circumference = 226.2; // 2π × 36
+  const p = Math.min(Math.max(pct, 0), clampMax || 100);
+  const offset = circumference - (p / (clampMax || 100)) * circumference;
+  el.style.strokeDashoffset = offset;
+  // Gold if > 80%, red if < 40%
+  if (clampMax === 100 || clampMax == null) {
+    if (p >= 80) el.style.stroke = "#c9a84c";
+    else if (p < 40) el.style.stroke = "#ff4d4d";
+  }
+}
+
+// ═══════════════════════════════════════════
+//  SUMMARY API
+// ═══════════════════════════════════════════
+async function loadSummary() {
+  const data = await apiFetch("/api/v1/summary/");
+  if (!data) return;
+
+  const t = data.today || {};
+
+  // Count cards
+  _setText("statTotal",     t.total_conversations ?? "—");
+  _setText("statBad",       t.negative_count      ?? "—");
+  _setText("statFraud",     t.fraud_count         ?? "—");
+  _setText("statIncidents", data.open_incidents    ?? "—");
+
+  // KPI rings
+  const greeting = t.greeting_pct ?? 0;
+  const upsell   = t.upsell_pct   ?? 0;
+  const sat      = t.avg_satisfaction ?? 0;
+  const score    = t.avg_score    ?? 0;
+
+  drawRing("ringGreeting", greeting, 100);
+  drawRing("ringUpsell",   upsell,   100);
+  drawRing("ringSat",      sat,      5);
+  drawRing("ringScore",    score,    100);
+
+  _setText("kpiGreetingVal", greeting ? greeting.toFixed(0) : "—");
+  _setText("kpiUpsellVal",   upsell   ? upsell.toFixed(0)   : "—");
+  _setText("kpiSatVal",      sat      ? sat.toFixed(1)       : "—");
+  _setText("kpiScoreVal",    score    ? score.toFixed(0)     : "—");
+
+  const missed = t.missed_upsell_revenue ?? 0;
+  _setText("kpiMissedRev", missed > 0 ? `−${missed.toLocaleString("ru")}` : "0");
+
+  // Update status strip from summary workers
+  if (data.workers && Array.isArray(data.workers)) {
+    _renderWorkers(data.workers);
+  }
+}
+
+function _setText(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function _renderWorkers(workers) {
+  const strip = document.getElementById("statusStrip");
+  if (!strip || !workers.length) return;
+  strip.innerHTML = workers.map(w => {
+    const cls   = w.status;
+    const label = w.status === "online"
+      ? (w.recording_active ? "⏺ Запись идёт" : "Онлайн")
+      : w.status === "offline" ? `Офлайн ${w.minutes_ago} мин` : "Не подключён";
+    const name = (w.name || "Точка").replace(/</g,"&lt;");
+    return `<div class="status-chip ${cls}">
+      <div class="sc-dot"></div>
+      <div class="sc-body">
+        <div class="sc-name">${name}</div>
+        <div class="sc-status">${label}</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ═══════════════════════════════════════════
+//  INCIDENT FEED
+// ═══════════════════════════════════════════
+async function loadIncidentsPanel() {
+  const feed = document.getElementById("incidentFeed");
+  if (!feed) return;
+  const data = await apiFetch("/api/v1/incidents/?days=3&limit=10");
+  if (!data || !data.length) {
+    feed.innerHTML = "<p style='color:var(--gray);font-size:13px;padding:8px 0'>Нарушений не обнаружено 🟢</p>";
+    return;
+  }
+  const _TYPE_CSS = {
+    KASPI_FRAUD: "kaspi", FRAUD: "", AGGRESSION: "", UPSELL_GAP: "upsell"
+  };
+  const _TYPE_LABEL = {
+    KASPI_FRAUD: "KASPI FRAUD", FRAUD: "ФРОД", AGGRESSION: "КОНФЛИКТ", UPSELL_GAP: "UPSELL GAP"
+  };
+  feed.innerHTML = data.map(inc => {
+    const typeCSS = _TYPE_CSS[inc.incident_type] || "";
+    const typeLabel = _TYPE_LABEL[inc.incident_type] || inc.incident_type;
+    const minsAgo = inc.minutes_ago < 60
+      ? `${inc.minutes_ago} мин назад`
+      : `${Math.floor(inc.minutes_ago/60)}ч назад`;
+    const phoneHtml = inc.detected_phone
+      ? `<div class="incident-phone">${inc.detected_phone}</div>` : "";
+    const playBtn = inc.proof_s3_url
+      ? `<a class="play-btn" href="${inc.proof_s3_url}" target="_blank" rel="noopener">
+           <span class="play-ico">▶</span><span>Прослушать пруф</span>
+         </a>` : "";
+    const locName = (inc.location_name || "").replace(/</g,"&lt;");
+    const desc    = (inc.description || "").replace(/</g,"&lt;");
+    return `<div class="incident-card ${typeCSS}">
+      <div class="incident-header">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="incident-type-badge ${inc.incident_type.toLowerCase()}">${typeLabel}</span>
+          <span class="incident-loc">${locName}</span>
+        </div>
+        <span class="incident-time">${minsAgo}</span>
+      </div>
+      <div class="incident-desc">${desc}</div>
+      ${phoneHtml}
+      <div class="incident-footer">
+        <span></span>
+        ${playBtn}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ═══════════════════════════════════════════
+//  WORKER STATUS STRIP
+// ═══════════════════════════════════════════
+async function loadStatus() {
+  const data = await apiFetch("/api/v1/health/status");
+  const strip = document.getElementById("statusStrip");
+  if (!strip) return;
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    strip.innerHTML = "";
+    return;
+  }
+  strip.innerHTML = data.map(loc => {
+    const cls = loc.status; // online | offline | unknown
+    const label = loc.status === "online"
+      ? "Онлайн"
+      : loc.status === "offline"
+        ? `Офлайн ${loc.minutes_ago} мин`
+        : "Не подключён";
+    const name = (loc.location_name || loc.name || "Точка")
+      .replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return `<div class="status-chip ${cls}">
+      <div class="sc-dot"></div>
+      <div class="sc-body">
+        <div class="sc-name">${name}</div>
+        <div class="sc-status">${label}</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
 async function loadAll() {
   // Запускаем параллельно — одна ошибка не блокирует остальных
   await Promise.allSettled([
@@ -741,6 +1151,8 @@ async function loadAll() {
     loadLocations(),
     loadDashboard(),
     loadAlerts(),
+    loadSummary(),
+    loadIncidentsPanel(),
   ]);
 }
 
@@ -748,9 +1160,11 @@ async function showApp() {
   document.getElementById("loginWrap").style.display = "none";
   document.getElementById("appWrap").style.display   = "block";
   await loadAll();
-  // Автообновление — стартует ВСЕГДА даже если начальная загрузка упала
-  setInterval(loadDashboard, 30000);
-  setInterval(loadAlerts,    60000);
+  // Автообновление
+  setInterval(loadDashboard,       30000);
+  setInterval(loadAlerts,          60000);
+  setInterval(loadSummary,         30000);  // включает статус воркеров
+  setInterval(loadIncidentsPanel,  30000);
 }
 
 const PLAN_NAMES = { trial: "Пробный", start: "Старт", business: "Бизнес", network: "Сеть" };

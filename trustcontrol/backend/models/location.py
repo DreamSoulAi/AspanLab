@@ -28,12 +28,22 @@ class Location(Base):
     language        = Column(String(10), default="ru")
     custom_phrases  = Column(JSON, default=list)            # доп. фразы владельца
 
+    # Антифрод: настройки владельца
+    allowed_phones   = Column(JSON, default=list)           # белый список Каспи-номеров
+    required_upsells = Column(JSON, default=list)           # обязательные фразы допродажи
+
+    # Анти-спам: Contextual Severity
+    ignore_internal_profanity = Column(Boolean, default=False)
+    # True → мат/конфликт вне обслуживания клиента = тихо в лог (нет Telegram-алерта)
+
     # Статус
     is_active       = Column(Boolean, default=True)
     api_key         = Column(String(64), unique=True)       # ключ для скрипта на кассе
 
     created_at      = Column(DateTime, default=datetime.utcnow)
-    last_seen       = Column(DateTime)                      # последний раз скрипт был онлайн
+    last_seen       = Column(DateTime)                      # последний раз скрипт прислал аудио
+    last_ping_at    = Column(DateTime)                      # последний health-ping от воркера
+    offline_alerted_at = Column(DateTime)                   # когда отправили offline-алерт (анти-спам)
 
     # Связи
     owner           = relationship("User", back_populates="locations")
