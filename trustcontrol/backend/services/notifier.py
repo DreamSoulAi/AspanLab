@@ -123,6 +123,76 @@ async def send_critical_alert(data: dict):
     await _send(chat_id, text, reply_markup=markup)
 
 
+async def send_incident_alert(
+    chat_id: str,
+    location_name: str,
+    incident_type: str,
+    description: str,
+    proof_s3_url: str | None = None,
+    detected_phone: str | None = None,
+    tx_amount: float | None = None,
+    tx_receipt_id: str | None = None,
+    tx_items: list | None = None,
+):
+    """
+    Интерактивный Telegram-алерт об инциденте.
+
+    Формат:
+      🔴 ТРЕВОГА: Подозрение на кражу
+      Точка: "Кофейня на Абая"
+      Продавец продиктовал номер 8707... которого нет в белом списке.
+
+      Кнопки:
+        [🎧 Прослушать запись]   — если есть proof_s3_url
+        [📊 Данные чека]         — если есть tx_amount
+    """
+    if not chat_id:
+        return
+
+    _TYPE_LABELS = {
+        "KASPI_FRAUD": "🔴 ТРЕВОГА: Подозрение на кражу",
+        "FRAUD":       "🚨 КРИТИЧНО: Кассовый разрыв",
+        "AGGRESSION":  "⚠️ НАРУШЕНИЕ: Грубость / конфликт",
+        "UPSELL_GAP":  "📉 Допродажа не пробита",
+    }
+    title = _TYPE_LABELS.get(incident_type, f"⚠️ Инцидент: {incident_type}")
+    ts    = datetime.now().strftime("%d.%m.%Y %H:%M")
+
+    lines = [
+        f"*{title}*",
+        f"",
+        f"🏪 Точка: *{location_name}*",
+        f"🕐 {ts}",
+        f"",
+        f"📋 {description}",
+    ]
+
+    if detected_phone:
+        lines.append(f"\n📱 Продиктованный номер: `{detected_phone}`")
+        lines.append("_Этого номера нет в белом списке владельца_")
+
+    buttons_row = []
+    if proof_s3_url:
+        buttons_row.append(InlineKeyboardButton("🎧 Прослушать запись", url=proof_s3_url))
+
+    # Данные чека — вставляем текстом (нельзя открыть как URL)
+    if tx_amount is not None:
+        lines.append(f"\n📊 *Данные чека:*")
+        lines.append(f"  Сумма: `{tx_amount:,.0f} ₸`")
+        if tx_receipt_id:
+            lines.append(f"  Чек №: `{tx_receipt_id}`")
+        if tx_items:
+            lines.append("  Позиции:")
+            for item in (tx_items or [])[:5]:
+                name  = item.get("name", "?")
+                qty   = item.get("qty") or item.get("quantity") or 1
+                price = item.get("price") or item.get("sum") or "—"
+                lines.append(f"    • {name} × {qty} = {price} ₸")
+
+    markup = InlineKeyboardMarkup([buttons_row]) if buttons_row else None
+    await _send(chat_id, "\n".join(lines), reply_markup=markup)
+
+
 async def send_daily_summary(chat_id: str, location_name: str, stats: dict):
     """
     Вечерний отчёт (отправляется в ~22:00 автоматически).

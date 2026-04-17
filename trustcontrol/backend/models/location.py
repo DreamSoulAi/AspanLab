@@ -28,6 +28,10 @@ class Location(Base):
     language        = Column(String(10), default="ru")
     custom_phrases  = Column(JSON, default=list)            # доп. фразы владельца
 
+    # Антифрод: настройки владельца
+    allowed_phones   = Column(JSON, default=list)           # белый список Каспи-номеров
+    required_upsells = Column(JSON, default=list)           # обязательные фразы допродажи
+
     # Статус
     is_active       = Column(Boolean, default=True)
     api_key         = Column(String(64), unique=True)       # ключ для скрипта на кассе

@@ -21,7 +21,8 @@ from backend.api.auth import get_current_user
 log = logging.getLogger("health")
 router = APIRouter()
 
-OFFLINE_THRESHOLD_MINUTES = 10
+OFFLINE_THRESHOLD_MINUTES  = 10   # воркер офлайн если нет пинга > 10 мин
+RECORDING_INACTIVE_SEC     = 60   # запись неактивна если нет аудио > 60 сек
 
 
 # ── POST /ping ────────────────────────────────────────────────────────────────
@@ -79,20 +80,29 @@ async def get_status(
     statuses = []
 
     for loc in locations:
+        # ── Статус воркера (health ping каждые 5 мин) ─────────
         if not loc.last_ping_at:
             status = "unknown"
             minutes_ago = None
         else:
-            delta = (now - loc.last_ping_at).total_seconds() / 60
-            status = "online" if delta < OFFLINE_THRESHOLD_MINUTES else "offline"
-            minutes_ago = round(delta)
+            delta_min = (now - loc.last_ping_at).total_seconds() / 60
+            status      = "online" if delta_min < OFFLINE_THRESHOLD_MINUTES else "offline"
+            minutes_ago = round(delta_min)
+
+        # ── Активна ли запись (last_seen обновляется с каждым аудио) ──
+        recording_active = False
+        if loc.last_seen:
+            delta_sec = (now - loc.last_seen).total_seconds()
+            recording_active = delta_sec <= RECORDING_INACTIVE_SEC
 
         statuses.append({
-            "location_id":   loc.id,
-            "location_name": loc.name,
-            "status":        status,
-            "last_ping_at":  loc.last_ping_at.isoformat() if loc.last_ping_at else None,
-            "minutes_ago":   minutes_ago,
+            "location_id":      loc.id,
+            "location_name":    loc.name,
+            "status":           status,           # online | offline | unknown
+            "recording_active": recording_active, # True — аудио поступало < 60 сек назад
+            "last_ping_at":     loc.last_ping_at.isoformat() if loc.last_ping_at else None,
+            "last_seen":        loc.last_seen.isoformat()    if loc.last_seen    else None,
+            "minutes_ago":      minutes_ago,
         })
 
     return statuses

@@ -37,6 +37,11 @@ class LocationUpdate(BaseModel):
     vad_level:     Optional[int] = None
 
 
+class AntifraudSettings(BaseModel):
+    allowed_phones:   Optional[list[str]] = None
+    required_upsells: Optional[list[str]] = None
+
+
 @router.get("/")
 async def list_locations(
     user: User = Depends(get_current_user),
@@ -126,6 +131,35 @@ async def update_location(
     if data.vad_level     is not None: loc.vad_level     = data.vad_level
 
     return {"message": "Точка обновлена", "id": loc.id}
+
+
+@router.put("/{location_id}/antifraud")
+async def update_antifraud(
+    location_id: int,
+    data: AntifraudSettings,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Обновляет антифрод-настройки точки:
+      allowed_phones   — белый список Каспи-номеров владельца
+      required_upsells — обязательные фразы допродажи для UPSELL_GAP детектора
+    """
+    loc = await db.get(Location, location_id)
+    if not loc or loc.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Точка не найдена")
+
+    if data.allowed_phones is not None:
+        loc.allowed_phones   = data.allowed_phones
+    if data.required_upsells is not None:
+        loc.required_upsells = data.required_upsells
+
+    await db.commit()
+    return {
+        "message":         "Антифрод-настройки обновлены",
+        "allowed_phones":   loc.allowed_phones,
+        "required_upsells": loc.required_upsells,
+    }
 
 
 @router.delete("/{location_id}")

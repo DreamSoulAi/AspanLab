@@ -9,11 +9,12 @@
 #               API-ключ точки для записи (от кассового ПО).
 # ════════════════════════════════════════════════════════════
 
+import json
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -162,6 +163,150 @@ async def _match_transaction(
                     })
 
         await db.commit()
+
+
+# ── POST /webhook ────────────────────────────────────────────────────────────
+
+def _detect_pos_type(raw: dict) -> str:
+    """
+    Определяет тип POS-системы по структуре входящего JSON.
+    Поддерживает: Rosta, 1C, iiko, r_keeper и любой другой формат (none).
+    """
+    raw_str = json.dumps(raw).lower()
+    if "rostaid" in raw_str or "rosta" in raw:
+        return "rosta"
+    if any(k in raw for k in ("guid", "1c", "УТ")):
+        return "1c"
+    if "iiko" in raw_str or "iikoId" in raw:
+        return "iiko"
+    if "rkeeper" in raw_str or "r_keeper" in raw_str:
+        return "keeper"
+    return "none"
+
+
+def _extract_universal(raw: dict) -> dict:
+    """
+    Универсальный парсер: находит стандартные поля вне зависимости от POS-системы.
+    Поддерживает camelCase, snake_case, русские ключи, разные вложенности.
+    """
+    def _find(*keys):
+        for k in keys:
+            if k in raw and raw[k] is not None:
+                return raw[k]
+        return None
+
+    # Сумма
+    amount = _find("amount", "total", "totalAmount", "total_amount",
+                   "sum", "итого", "сумма", "TotalSum", "summa")
+    try:
+        amount = float(str(amount).replace(",", ".").replace(" ", ""))
+    except Exception:
+        amount = 0.0
+
+    # Позиции чека
+    items_raw = _find("items", "products", "positions", "goods",
+                      "rows", "lines", "товары", "позиции")
+    items = []
+    if isinstance(items_raw, list):
+        for it in items_raw:
+            if isinstance(it, dict):
+                items.append({
+                    "name":  it.get("name") or it.get("title") or it.get("наименование") or "?",
+                    "qty":   it.get("qty") or it.get("quantity") or it.get("count") or 1,
+                    "price": it.get("price") or it.get("sum") or it.get("amount") or 0,
+                })
+
+    # Время
+    ts_raw = _find("date", "timestamp", "created_at", "dateTime",
+                   "time", "check_date", "дата", "время")
+    timestamp = datetime.utcnow()
+    if ts_raw:
+        try:
+            if isinstance(ts_raw, (int, float)):
+                timestamp = datetime.utcfromtimestamp(ts_raw)
+            else:
+                timestamp = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00").replace("+00:00", ""))
+        except Exception:
+            pass
+
+    # Номер чека
+    receipt_id = _find("receipt_id", "id", "check_id", "number",
+                       "receiptNumber", "номер_чека", "ReceiptId")
+    if receipt_id is not None:
+        receipt_id = str(receipt_id)
+
+    return {
+        "amount":     amount,
+        "items":      items,
+        "timestamp":  timestamp,
+        "receipt_id": receipt_id,
+    }
+
+
+@router.post("/webhook")
+async def pos_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    api_key:   Optional[str] = Header(None, alias="X-API-Key"),
+    x_api_key: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Универсальный POS-webhook.
+    Принимает JSON от любой кассовой системы (Rosta, 1C, iiko, r_keeper, кастом).
+    Авторизация: X-API-Key точки.
+
+    Автоматически определяет поля: amount, items, timestamp, receipt_id.
+    """
+    effective_key = (api_key or x_api_key or "").strip()
+    if not effective_key:
+        raise HTTPException(status_code=401, detail="Нужен X-API-Key")
+
+    location = await _get_location_by_key(effective_key, db)
+
+    try:
+        raw: dict[str, Any] = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Невалидный JSON")
+
+    parsed   = _extract_universal(raw)
+    pos_type = _detect_pos_type(raw)
+
+    pos_tx = PosTransaction(
+        location_id=location.id,
+        timestamp=parsed["timestamp"],
+        amount=parsed["amount"],
+        receipt_id=parsed["receipt_id"],
+        currency="KZT",
+        pos_type=pos_type,
+        items=parsed["items"],
+        raw_data=json.dumps(raw, ensure_ascii=False)[:4000],
+    )
+    db.add(pos_tx)
+    await db.commit()
+    await db.refresh(pos_tx)
+
+    log.info(
+        f"[loc={location.id}] Webhook {pos_type}: "
+        f"amount={parsed['amount']} ₸, items={len(parsed['items'])}, "
+        f"receipt={parsed['receipt_id']}"
+    )
+
+    background_tasks.add_task(
+        _match_transaction,
+        pos_tx_id=pos_tx.id,
+        location_id=location.id,
+        location_name=location.name,
+        telegram_chat=location.telegram_chat,
+    )
+
+    return {
+        "status":        "ok",
+        "transaction_id": pos_tx.id,
+        "pos_type":      pos_type,
+        "amount":        parsed["amount"],
+        "items_count":   len(parsed["items"]),
+    }
 
 
 # ── GET /gaps ─────────────────────────────────────────────────────────────────

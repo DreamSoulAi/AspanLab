@@ -31,6 +31,9 @@ from backend.services.analyzer import analyze, get_tone, calculate_score
 from backend.services.audio_analyzer import analyze_audio_with_fallback
 from backend.services.storage import upload_evidence
 from backend.services.pos_matcher import match_report_with_pos
+from backend.services.kaspi_detector import check_kaspi_fraud
+from backend.services.evidence import create_evidence_clip
+from backend.models.incident import Incident
 from backend.services import notifier
 from backend.api.auth import get_current_user
 
@@ -67,7 +70,9 @@ async def _process_submission(
     custom_phrases: list,
     telegram_chat: Optional[str],
     location_name: str,
-    failed_job_id: Optional[int] = None,   # если это повтор из очереди
+    failed_job_id: Optional[int] = None,
+    allowed_phones: Optional[list] = None,
+    required_upsells: Optional[list] = None,
 ) -> None:
     """
     Полный цикл обработки одного аудио-сегмента.
@@ -212,9 +217,47 @@ async def _process_submission(
             await db.commit()
             report_id = report.id
 
-            # POS-матчинг если оплата подтверждена
+            # ── Kaspi Antifraud ───────────────────────────────────
+            kaspi_hits = check_kaspi_fraud(transcript, allowed_phones or [])
+            for hit in kaspi_hits:
+                evidence = {}
+                if wav_bytes:
+                    evidence = await create_evidence_clip(wav_bytes, location_id, report_id)
+                incident = Incident(
+                    location_id=location_id,
+                    report_id=report_id,
+                    incident_type="KASPI_FRAUD",
+                    severity="critical",
+                    description=(
+                        f"Продавец продиктовал номер {hit['phone']}, "
+                        f"которого нет в белом списке Каспи"
+                    ),
+                    detected_phone=hit["phone"],
+                    proof_s3_url=evidence.get("s3_url"),
+                    proof_sha256=evidence.get("sha256"),
+                )
+                db.add(incident)
+                report.fraud_status = "critical_fraud_risk"
+                report.is_priority  = True
+
+                if telegram_chat:
+                    await notifier.send_incident_alert(
+                        chat_id=telegram_chat,
+                        location_name=location_name,
+                        incident_type="KASPI_FRAUD",
+                        description=incident.description,
+                        proof_s3_url=incident.proof_s3_url,
+                        detected_phone=hit["phone"],
+                    )
+
+            if kaspi_hits:
+                await db.commit()
+
+            # ── POS-матчинг если оплата подтверждена ─────────────
             if payment_confirmed:
-                new_fraud_status = await match_report_with_pos(report, db)
+                new_fraud_status = await match_report_with_pos(
+                    report, db, required_upsells=required_upsells or []
+                )
                 if new_fraud_status == "critical_fraud_risk":
                     report.fraud_status = new_fraud_status
                     report.is_priority  = True
@@ -377,6 +420,8 @@ async def submit_audio(
         custom_phrases=location.custom_phrases or [],
         telegram_chat=telegram_chat,
         location_name=location.name,
+        allowed_phones=location.allowed_phones or [],
+        required_upsells=location.required_upsells or [],
     )
 
     return {"status": "queued", "message": "Принято в обработку"}

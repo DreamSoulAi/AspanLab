@@ -6,7 +6,7 @@
 #  с реальными чеками из кассы.
 # ════════════════════════════════════════════════════════════
 
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from backend.database import Base
@@ -24,6 +24,11 @@ class PosTransaction(Base):
     currency     = Column(String(10), default="KZT")
     cashier_id   = Column(String(100), nullable=True)            # ID кассира (если есть)
     raw_data     = Column(Text, nullable=True)                   # сырой JSON от кассы
+
+    # Тип POS-системы (определяется по структуре JSON)
+    pos_type     = Column(String(20), default="none")            # rosta | 1c | iiko | keeper | none
+    # Позиции чека: [{name, qty, price}, ...]
+    items        = Column(JSON, default=list)
 
     # Результат сопоставления с аудио-отчётом
     is_matched        = Column(Boolean, default=False, index=True)

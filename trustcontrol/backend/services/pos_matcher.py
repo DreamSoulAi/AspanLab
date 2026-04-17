@@ -1,11 +1,13 @@
 # ════════════════════════════════════════════════════════════
-#  Сервис: Детектор «Кассового разрыва»
+#  Сервис: Детектор «Кассового разрыва» + UPSELL_GAP
 #
 #  Логика:
 #  1. Из транскрипта извлекаем суммы (regex + слова-числа)
-#  2. Ищем POS-транзакцию в окне ±2 минуты от времени отчёта
+#  2. Ищем POS-транзакцию в окне ±3 минуты от времени отчёта
 #  3. Если payment_confirmed=true НО чека нет → CRITICAL_FRAUD_RISK
-#  4. Если чек есть → is_matched=true на PosTransaction
+#  4. Если чек есть → проверяем UPSELL_GAP:
+#     ИИ услышал required_upsell фразу, но в items чека её нет
+#  5. Создаём Incident-записи для обеих ситуаций
 # ════════════════════════════════════════════════════════════
 
 import re
@@ -16,16 +18,14 @@ from sqlalchemy import select, update
 
 from backend.models.pos_transaction import PosTransaction
 from backend.models.report import Report
+from backend.models.incident import Incident
 
 log = logging.getLogger("pos_matcher")
 
-# Окно сопоставления: ищем чек в ±N минут от времени разговора
-MATCH_WINDOW_MINUTES = 2
+MATCH_WINDOW_MINUTES = 3    # ±3 мин — ТЗ: 3-5 минут
+AMOUNT_TOLERANCE     = 0.10  # 10% допуск на скидки/округления
 
-# Допустимое отклонение суммы (10%) — на случай скидок / округлений
-AMOUNT_TOLERANCE = 0.10
-
-# Числа-слова в русском (упрощённый набор для сумм)
+# Числа-слова в русском (основные суммы)
 _RU_WORDS = {
     "один": 1, "одна": 1, "два": 2, "две": 2, "три": 3, "четыре": 4,
     "пять": 5, "шесть": 6, "семь": 7, "восемь": 8, "девять": 9, "десять": 10,
@@ -49,34 +49,31 @@ _KK_WORDS = {
 
 
 def extract_amounts(text: str) -> list[float]:
-    """
-    Извлекает денежные суммы из транскрипта.
-    Возвращает список чисел (тенге).
-    """
+    """Извлекает денежные суммы из транскрипта."""
     amounts = set()
     t = text.lower()
 
-    # Цифровые паттерны: 5000, 5 000, 5,000, 2500₸, 500 тг, итого 1200
+    # Суммы с явным контекстом
     for m in re.finditer(
         r"(?:итого|с\s+вас|сумма|оплата|чек|стоит|цена|всего)[\s:]*"
         r"([\d\s,]+)",
-        t
+        t,
     ):
         raw = m.group(1).replace(" ", "").replace(",", "")
         if raw.isdigit():
             amounts.add(float(raw))
 
-    # Любые числа рядом с ₸ / тенге / тг
+    # Числа рядом с символами тенге
     for m in re.finditer(r"(\d[\d\s,]*)\s*(?:₸|тенге|тг\b)", t):
         raw = m.group(1).replace(" ", "").replace(",", "")
         if raw.isdigit():
             amounts.add(float(raw))
 
-    # Просто числа 3+ знаков (возможные суммы)
+    # Числа 3+ знаков
     for m in re.finditer(r"\b(\d{3,6})\b", t):
         amounts.add(float(m.group(1)))
 
-    # Слова-числа (ru + kk)
+    # Слова-числа
     for word, val in {**_RU_WORDS, **_KK_WORDS}.items():
         if re.search(r"\b" + re.escape(word) + r"\b", t):
             amounts.add(float(val))
@@ -85,17 +82,52 @@ def extract_amounts(text: str) -> list[float]:
 
 
 def _amounts_match(extracted: list[float], pos_amount: float) -> bool:
-    """Проверяет совпадение суммы с допуском AMOUNT_TOLERANCE."""
     tol = pos_amount * AMOUNT_TOLERANCE
     return any(abs(a - pos_amount) <= max(tol, 50) for a in extracted)
+
+
+def _check_upsell_gap(
+    transcript: str,
+    required_upsells: list[str],
+    tx_items: list[dict],
+) -> list[dict]:
+    """
+    Проверяет UPSELL_GAP: фраза прозвучала, но в чеке позиции нет.
+
+    Возвращает список gap-ов:
+      [{"heard": "пакет", "missing_in_receipt": True}]
+    """
+    if not required_upsells or not transcript:
+        return []
+
+    tl = transcript.lower()
+    # Все позиции чека в нижнем регистре для сравнения
+    item_names = " ".join(
+        (i.get("name") or "").lower()
+        for i in (tx_items or [])
+    )
+
+    gaps = []
+    for phrase in required_upsells:
+        phrase_l = phrase.lower().strip()
+        if not phrase_l:
+            continue
+        heard_in_transcript = phrase_l in tl
+        found_in_receipt    = phrase_l in item_names
+        if heard_in_transcript and not found_in_receipt:
+            gaps.append({"heard": phrase, "missing_in_receipt": True})
+            log.info(f"UPSELL_GAP: '{phrase}' — в разговоре есть, в чеке нет")
+
+    return gaps
 
 
 async def match_report_with_pos(
     report: Report,
     db: AsyncSession,
+    required_upsells: list[str] | None = None,
 ) -> str:
     """
-    Сопоставляет один отчёт с POS-транзакциями.
+    Сопоставляет отчёт с POS-транзакциями.
     Возвращает новый fraud_status: "normal" | "critical_fraud_risk".
 
     Вызывается только когда report.payment_confirmed = True.
@@ -115,9 +147,16 @@ async def match_report_with_pos(
 
     if not candidates:
         log.warning(
-            f"[report={report.id}] payment_confirmed=True но POS-чека нет "
+            f"[report={report.id}] payment_confirmed=True, POS-чека нет "
             f"в окне ±{MATCH_WINDOW_MINUTES} мин → CRITICAL_FRAUD_RISK"
         )
+        db.add(Incident(
+            location_id=report.location_id,
+            report_id=report.id,
+            incident_type="FRAUD",
+            severity="critical",
+            description="payment_confirmed=True но POS-чека нет в ±3 мин",
+        ))
         return "critical_fraud_risk"
 
     # Пробуем найти совпадение по сумме
@@ -129,16 +168,34 @@ async def match_report_with_pos(
                 .where(PosTransaction.id == tx.id)
                 .values(is_matched=True, matched_report_id=report.id)
             )
-            log.info(
-                f"[report={report.id}] Сопоставлен с POS-чеком #{tx.id} "
-                f"на сумму {tx.amount} ₸"
-            )
+            log.info(f"[report={report.id}] Сопоставлен с POS #{tx.id} на {tx.amount} ₸")
+
+            # Проверяем UPSELL_GAP
+            gaps = _check_upsell_gap(report.transcript or "", required_upsells or [], tx.items or [])
+            for gap in gaps:
+                db.add(Incident(
+                    location_id=report.location_id,
+                    report_id=report.id,
+                    incident_type="UPSELL_GAP",
+                    severity="medium",
+                    description=f"Фраза «{gap['heard']}» прозвучала, но в чеке отсутствует",
+                    upsell_phrase=gap["heard"],
+                    missing_item=gap["heard"],
+                ))
+
             return "normal"
 
     log.warning(
         f"[report={report.id}] Чек есть, но сумма не совпадает "
         f"(extracted={extracted}) → CRITICAL_FRAUD_RISK"
     )
+    db.add(Incident(
+        location_id=report.location_id,
+        report_id=report.id,
+        incident_type="FRAUD",
+        severity="critical",
+        description=f"Чек есть но сумма не совпадает (в голосе: {extracted})",
+    ))
     return "critical_fraud_risk"
 
 
@@ -146,11 +203,11 @@ async def run_pos_matching_for_location(
     location_id: int,
     db: AsyncSession,
     lookback_minutes: int = 30,
+    required_upsells: list[str] | None = None,
 ) -> int:
     """
-    Пакетная проверка: проходит по всем несопоставленным
-    payment_confirmed=true отчётам за последние N минут.
-    Возвращает количество отчётов со статусом CRITICAL_FRAUD_RISK.
+    Пакетная проверка: несопоставленные payment_confirmed=true отчёты за последние N минут.
+    Возвращает количество CRITICAL_FRAUD_RISK.
     """
     since = datetime.utcnow() - timedelta(minutes=lookback_minutes)
 
@@ -166,7 +223,7 @@ async def run_pos_matching_for_location(
     critical_count = 0
 
     for report in reports:
-        new_status = await match_report_with_pos(report, db)
+        new_status = await match_report_with_pos(report, db, required_upsells=required_upsells)
         if new_status != report.fraud_status:
             report.fraud_status = new_status
             if new_status == "critical_fraud_risk":
