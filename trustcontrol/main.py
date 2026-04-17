@@ -234,51 +234,54 @@ async def _daily_report_worker():
 
 async def _run_migrations():
     """
-    Adds columns that were introduced after initial deploy.
-    Safe to run multiple times — uses IF NOT EXISTS / ignores duplicates.
+    Adds columns introduced after initial deploy.
+    Runs each ALTER TABLE via a raw AUTOCOMMIT connection so DDL is
+    never rolled back by a surrounding transaction.
     """
     from sqlalchemy import text
+    from backend.database import engine
 
     _migrations = [
         # locations — v3.0
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS allowed_phones          JSON    DEFAULT '[]'",
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS required_upsells        JSON    DEFAULT '[]'",
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS allowed_phones           JSON    DEFAULT '[]'",
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS required_upsells         JSON    DEFAULT '[]'",
         "ALTER TABLE locations ADD COLUMN IF NOT EXISTS ignore_internal_profanity BOOLEAN DEFAULT false",
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS last_ping_at            TIMESTAMP",
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS offline_alerted_at      TIMESTAMP",
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS last_ping_at             TIMESTAMP",
+        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS offline_alerted_at       TIMESTAMP",
         # reports — v3.0
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS payment_confirmed         BOOLEAN",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS upsell_attempt            BOOLEAN",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS customer_satisfaction     INTEGER",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_personal_talk          BOOLEAN DEFAULT false",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_hidden                 BOOLEAN DEFAULT false",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS fraud_status              VARCHAR(30) DEFAULT 'normal'",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS s3_deleted_at             TIMESTAMP",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_score                 INTEGER",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_summary               TEXT",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_details               JSON",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS speakers                  JSON",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS conversation_context      VARCHAR(30) DEFAULT 'unknown'",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS context_score             FLOAT",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS payment_confirmed          BOOLEAN",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS upsell_attempt             BOOLEAN",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS customer_satisfaction      INTEGER",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_personal_talk           BOOLEAN DEFAULT false",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_hidden                  BOOLEAN DEFAULT false",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS fraud_status               VARCHAR(30) DEFAULT 'normal'",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS s3_deleted_at              TIMESTAMP",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_score                  INTEGER",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_summary                TEXT",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_details                JSON",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS speakers                   JSON",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS conversation_context       VARCHAR(30) DEFAULT 'unknown'",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS context_score              FLOAT",
         # pos_transactions — v3.0
-        "ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS pos_type         VARCHAR(20) DEFAULT 'none'",
-        "ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS items            JSON DEFAULT '[]'",
+        "ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS pos_type          VARCHAR(20) DEFAULT 'none'",
+        "ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS items             JSON DEFAULT '[]'",
         # users — auth v2.0
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified                 BOOLEAN DEFAULT false",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified                  BOOLEAN DEFAULT false",
     ]
 
     ok = 0
-    for sql in _migrations:
-        # Each statement in its own session+transaction so a failure
-        # (e.g. column already exists in older PG) doesn't abort the rest.
-        try:
-            async with AsyncSessionLocal() as db:
-                await db.execute(text(sql))
-                await db.commit()
-            ok += 1
-        except Exception as exc:
-            log.debug(f"Migration skipped ({exc.__class__.__name__}): {sql[:60]}")
-    log.info(f"✅ DB migrations: {ok}/{len(_migrations)} applied")
+    # Use a raw connection with AUTOCOMMIT so each DDL statement commits
+    # immediately and a duplicate-column error never aborts subsequent ones.
+    async with engine.connect() as conn:
+        await conn.execution_options(isolation_level="AUTOCOMMIT")
+        for sql in _migrations:
+            try:
+                await conn.execute(text(sql))
+                ok += 1
+            except Exception as exc:
+                log.debug(f"Migration skipped ({exc.__class__.__name__}): {sql[:55]}")
+
+    print(f"✅ DB migrations: {ok}/{len(_migrations)} applied")
 
 
 # ── Lifecycle ─────────────────────────────────────────────────
