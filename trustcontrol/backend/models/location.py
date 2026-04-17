@@ -32,6 +32,10 @@ class Location(Base):
     allowed_phones   = Column(JSON, default=list)           # белый список Каспи-номеров
     required_upsells = Column(JSON, default=list)           # обязательные фразы допродажи
 
+    # Анти-спам: Contextual Severity
+    ignore_internal_profanity = Column(Boolean, default=False)
+    # True → мат/конфликт вне обслуживания клиента = тихо в лог (нет Telegram-алерта)
+
     # Статус
     is_active       = Column(Boolean, default=True)
     api_key         = Column(String(64), unique=True)       # ключ для скрипта на кассе

@@ -53,6 +53,11 @@ class Report(Base):
     is_personal_talk      = Column(Boolean, default=False, index=True)  # личный разговор
     is_hidden             = Column(Boolean, default=False, index=True)  # скрыт от дашборда
 
+    # ── Contextual Severity (детектор клиента) ───────────────
+    conversation_context = Column(String(30), default="unknown", index=True)
+    # customer_service | internal_talk | unknown
+    context_score        = Column(Float, nullable=True)   # сигнальный счёт (-1..+1)
+
     # ── Статус мошенничества (POS-матчер) ────────────────────
     fraud_status    = Column(String(30), default="normal", index=True)
     # normal | critical_fraud_risk | cleared

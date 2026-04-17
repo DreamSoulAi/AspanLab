@@ -33,6 +33,7 @@ from backend.services.storage import upload_evidence
 from backend.services.pos_matcher import match_report_with_pos
 from backend.services.kaspi_detector import check_kaspi_fraud
 from backend.services.evidence import create_evidence_clip
+from backend.services.context_analyzer import analyze_context, check_pos_window
 from backend.models.incident import Incident
 from backend.services import notifier
 from backend.api.auth import get_current_user
@@ -73,6 +74,7 @@ async def _process_submission(
     failed_job_id: Optional[int] = None,
     allowed_phones: Optional[list] = None,
     required_upsells: Optional[list] = None,
+    ignore_internal_profanity: bool = False,
 ) -> None:
     """
     Полный цикл обработки одного аудио-сегмента.
@@ -146,6 +148,27 @@ async def _process_submission(
         upsell_attempt        = result.get("upsell_attempt")
         customer_satisfaction = result.get("customer_satisfaction")
 
+        # ── Contextual Severity: определяем контекст разговора ──
+        # Нужен async-доступ к БД для проверки POS-окна
+        async with AsyncSessionLocal() as _ctx_db:
+            has_pos_nearby = await check_pos_window(location_id, datetime.utcnow(), _ctx_db)
+
+        ctx = analyze_context(
+            transcript=transcript,
+            events=result.get("events", {}),
+            speakers=result.get("speakers", []),
+            has_pos_nearby=has_pos_nearby,
+            customer_satisfaction=result.get("customer_satisfaction"),
+            is_personal_talk=result.get("is_personal_talk", False),
+        )
+        conversation_context = ctx["context"]
+        context_score        = ctx["score"]
+
+        log.info(
+            f"[loc={location_id}] context={conversation_context} "
+            f"score={context_score:.2f} | {ctx['reason']}"
+        )
+
         # ── priority=1: архив S3 + SHA-256 ───────────────────────
         audio_sha256 = s3_url = None
         if priority == 1 and wav_bytes:
@@ -168,8 +191,30 @@ async def _process_submission(
 
         is_priority_flag = bool(priority == 1 or has_fraud or has_bad)
 
+        # ── Contextual Severity: понижаем приоритет для внутренних разговоров ──
+        #
+        # Если детектор определил что рядом НЕТ клиента (internal_talk)
+        # И тумблер ignore_internal_profanity включён владельцем:
+        #   → мат/конфликт пишем в БД с тегом internal_talk
+        #   → но NOT отправляем Telegram-алерт (только тихий лог)
+        #
+        # Это принципиальная позиция продукта:
+        # «Ребята матерятся между собой когда зал пуст — не наше дело.
+        #  Но если клиент слышит мат — вы узнаете через секунду.»
+
         effective_tone = gpt_tone if gpt_tone in ("positive", "negative", "neutral") else tone
         tone_score_val = 1.0 if effective_tone == "positive" else 0.0 if effective_tone == "negative" else 0.5
+
+        is_internal_talk = (conversation_context == "internal_talk")
+        suppress_alert   = is_internal_talk and ignore_internal_profanity
+
+        if suppress_alert and (has_bad or effective_tone == "negative"):
+            has_bad          = False          # не создаём Alert
+            is_priority_flag = False          # не ставим priority
+            log.info(
+                f"[loc={location_id}] INTERNAL_TALK: мат/конфликт подавлен "
+                f"(ignore_internal_profanity=True). Записано в БД тихо."
+            )
 
         hour = datetime.utcnow().hour
         shift_number = 1 if 6 <= hour < 14 else 2 if 14 <= hour < 22 else 3
@@ -197,6 +242,8 @@ async def _process_submission(
                 is_personal_talk=False,
                 is_hidden=False,
                 fraud_status="normal",
+                conversation_context=conversation_context,
+                context_score=context_score,
             )
             db.add(report)
             await db.flush()
@@ -424,6 +471,7 @@ async def submit_audio(
         location_name=location.name,
         allowed_phones=location.allowed_phones or [],
         required_upsells=location.required_upsells or [],
+        ignore_internal_profanity=bool(location.ignore_internal_profanity),
     )
 
     return {"status": "queued", "message": "Принято в обработку"}
