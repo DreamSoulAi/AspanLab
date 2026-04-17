@@ -118,6 +118,58 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
 .pulse { display:inline-block; width:8px; height:8px; background:var(--green); border-radius:50%; animation:pulse 2s infinite; margin-right:6px; }
 @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }
 
+/* ── СТАТУС ТОЧЕК (лента воркеров) ─────────────────────── */
+.status-strip {
+  display:flex; gap:10px; overflow-x:auto; padding-bottom:4px;
+  margin-bottom:20px; scrollbar-width:none;
+  -webkit-overflow-scrolling:touch;
+}
+.status-strip::-webkit-scrollbar { display:none; }
+.status-chip {
+  display:flex; align-items:center; gap:8px; flex-shrink:0;
+  background:var(--card); border:1px solid var(--bdr);
+  padding:10px 14px; border-radius:2px; min-width:170px;
+}
+.status-chip.online  { border-left:3px solid var(--green); }
+.status-chip.offline { border-left:3px solid var(--red);   }
+.status-chip.unknown { border-left:3px solid var(--gray);  }
+.sc-dot {
+  width:8px; height:8px; border-radius:50%; flex-shrink:0;
+}
+.online  .sc-dot { background:var(--green); animation:pulse 2s infinite; }
+.offline .sc-dot { background:var(--red); }
+.unknown .sc-dot { background:var(--gray); }
+.sc-body { overflow:hidden; }
+.sc-name {
+  font-size:12px; font-weight:700; color:var(--txt);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:130px;
+}
+.sc-status { font-size:11px; margin-top:2px; }
+.online  .sc-status { color:var(--green); }
+.offline .sc-status { color:var(--red);   }
+.unknown .sc-status { color:var(--gray);  }
+
+/* Мобильный: чипы стекуются вертикально при ширине <400px */
+@media(max-width:400px){
+  .status-strip { flex-direction:column; }
+  .status-chip  { min-width:0; width:100%; }
+}
+
+/* Удобные нижние карточки метрик на мобиле */
+@media(max-width:768px){
+  .cards { grid-template-columns:repeat(2,1fr); }
+  .card-value { font-size:28px; }
+
+  /* Таблица: скрываем колонку ТОН на маленьких экранах */
+  .table .col-hide-sm { display:none; }
+
+  /* Score card — горизонтальный на мобиле */
+  .score-card { padding:14px; gap:12px; }
+  .score-ring { width:64px; height:64px; }
+  .score-ring svg { width:64px; height:64px; }
+  .score-ring .score-text { font-size:15px; }
+}
+
 /* MODAL */
 .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:200; align-items:center; justify-content:center; }
 .modal-overlay.open { display:flex; }
@@ -376,6 +428,17 @@ html, body { background:var(--bg); color:var(--txt); font-family:-apple-system,B
             <option value="">Все точки</option>
           </select>
           <button class="btn btn-gold" onclick="loadDashboard()">Обновить</button>
+        </div>
+      </div>
+
+      <!-- СТАТУС ВОРКЕРОВ -->
+      <div class="status-strip" id="statusStrip">
+        <div class="status-chip unknown">
+          <div class="sc-dot"></div>
+          <div class="sc-body">
+            <div class="sc-name">Загрузка...</div>
+            <div class="sc-status">Проверка связи</div>
+          </div>
         </div>
       </div>
 
@@ -734,6 +797,36 @@ function showLogin() {
 // ═══════════════════════════════════════════
 //  APP — параллельная загрузка
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+//  WORKER STATUS STRIP
+// ═══════════════════════════════════════════
+async function loadStatus() {
+  const data = await apiFetch("/api/v1/health/status");
+  const strip = document.getElementById("statusStrip");
+  if (!strip) return;
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    strip.innerHTML = "";
+    return;
+  }
+  strip.innerHTML = data.map(loc => {
+    const cls = loc.status; // online | offline | unknown
+    const label = loc.status === "online"
+      ? "Онлайн"
+      : loc.status === "offline"
+        ? `Офлайн ${loc.minutes_ago} мин`
+        : "Не подключён";
+    const name = (loc.location_name || loc.name || "Точка")
+      .replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return `<div class="status-chip ${cls}">
+      <div class="sc-dot"></div>
+      <div class="sc-body">
+        <div class="sc-name">${name}</div>
+        <div class="sc-status">${label}</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
 async function loadAll() {
   // Запускаем параллельно — одна ошибка не блокирует остальных
   await Promise.allSettled([
@@ -741,6 +834,7 @@ async function loadAll() {
     loadLocations(),
     loadDashboard(),
     loadAlerts(),
+    loadStatus(),
   ]);
 }
 
@@ -751,6 +845,7 @@ async function showApp() {
   // Автообновление — стартует ВСЕГДА даже если начальная загрузка упала
   setInterval(loadDashboard, 30000);
   setInterval(loadAlerts,    60000);
+  setInterval(loadStatus,    30000);
 }
 
 const PLAN_NAMES = { trial: "Пробный", start: "Старт", business: "Бизнес", network: "Сеть" };
