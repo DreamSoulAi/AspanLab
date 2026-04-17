@@ -16,6 +16,10 @@
 ЗАПУСК (локальная транскрипция, бесплатно):
   py -3.13 monitor.py --api-url https://... --api-key ВАШ_КЛЮЧ --local-whisper
 
+ЗАПУСК (IP-камера через RTSP, без микрофона):
+  py -3.13 monitor.py --api-url https://... --api-key ВАШ_КЛЮЧ --rtsp rtsp://admin:pass@192.168.1.100/stream1
+  Требует: ffmpeg в PATH (https://ffmpeg.org/download.html)
+
 АВТОЗАПУСК Windows:
   Дважды кликни на run.bat (не забудь заполнить API_KEY внутри)
 """
@@ -68,6 +72,9 @@ _parser.add_argument("--device", default=None,
                           "По умолчанию — системный микрофон по умолчанию.")
 _parser.add_argument("--list-devices", action="store_true",
                      help="Показать все доступные устройства записи и выйти")
+_parser.add_argument("--rtsp", default=None,
+                     help="RTSP URL IP-камеры (например rtsp://admin:pass@192.168.1.100/stream1). "
+                          "При использовании микрофон не нужен. Требуется ffmpeg в PATH.")
 _args = _parser.parse_args()
 
 # ════════════════════════════════════════════════════════════
@@ -86,6 +93,7 @@ SILENCE_SECONDS  = _args.silence
 MAX_MINUTES      = _args.max_minutes
 COMPRESS_FORMAT  = _args.compress_format
 DEVICE_ARG       = _args.device      # None = системный по умолчанию
+RTSP_URL         = _args.rtsp        # None = микрофон; URL = RTSP-камера
 SAMPLE_RATE      = 16000
 FRAME_DURATION   = 30          # ms
 
@@ -495,6 +503,134 @@ def _open_stream(pa: pyaudio.PyAudio, device_index: int | None = None,
 
 
 # ════════════════════════════════════════════════════════════
+#  RTSP-РЕЖИМ (IP-камера через ffmpeg)
+# ════════════════════════════════════════════════════════════
+
+def _open_rtsp(url: str):
+    """
+    Запускает ffmpeg, декодирующий аудио из RTSP в сырой PCM 16kHz mono int16.
+    Возвращает subprocess.Popen — читаем PCM байты из .stdout.
+
+    ffmpeg флаги:
+      -rtsp_transport tcp   — надёжнее UDP, проходит через NAT/firewall
+      -vn                   — игнорируем видеопоток (экономим CPU)
+      -acodec pcm_s16le     — декодируем в сырой 16-bit LE PCM
+      -ar 16000             — частота дискретизации как у VAD
+      -ac 1                 — моно
+      -f s16le pipe:1       — пишем raw PCM в stdout
+    """
+    import subprocess
+    cmd = [
+        "ffmpeg",
+        "-loglevel",       "warning",
+        "-rtsp_transport", "tcp",
+        "-i",              url,
+        "-vn",
+        "-acodec",         "pcm_s16le",
+        "-ar",             str(SAMPLE_RATE),
+        "-ac",             "1",
+        "-f",              "s16le",
+        "pipe:1",
+    ]
+    return subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,  # stderr в /dev/null — ffmpeg очень многословен
+    )
+
+
+def run_rtsp(url: str):
+    """
+    Основной цикл для RTSP-режима.
+    Вместо PyAudio читает PCM-кадры из ffmpeg subprocess.
+    При обрыве потока или смерти процесса — автопереподключение.
+    """
+    vad = webrtcvad.Vad(VAD_LEVEL)
+
+    mode = "local faster-whisper" if LOCAL_WHISPER else f"сервер ({SERVER_URL})"
+    log.info(f"RTSP-режим | {url}")
+    log.info(f"Транскрипция: {mode}")
+
+    threading.Thread(target=_ping_loop, daemon=True, name="ping").start()
+
+    BYTES_PER_FRAME = FRAME_SIZE * 2  # int16 = 2 байта/сэмпл
+
+    voiced    = []
+    silence   = 0
+    in_speech = False
+
+    def flush(reason=""):
+        nonlocal voiced, silence, in_speech
+        if not voiced:
+            return
+        if len(voiced) < 100:
+            log.debug(f"Сегмент слишком короткий ({len(voiced)} кадров) — пропускаем")
+            voiced = []; silence = 0; in_speech = False
+            return
+        log.info(f"Обрабатываю сегмент ({reason}), кадров: {len(voiced)}")
+        clean   = denoise(voiced)
+        raw_wav = frames_to_wav(clean)
+        process_segment(raw_wav)
+        voiced = []; silence = 0; in_speech = False
+
+    proc = None
+    try:
+        while True:
+            # ── Запуск / переподключение ────────────────────────
+            if proc is None or proc.poll() is not None:
+                if proc is not None:
+                    log.warning("ffmpeg завершился. Переподключение через 5 сек...")
+                    time.sleep(5)
+                log.info(f"Подключаюсь к RTSP: {url}")
+                try:
+                    proc = _open_rtsp(url)
+                except FileNotFoundError:
+                    log.error("ffmpeg не найден! Установите: https://ffmpeg.org/download.html")
+                    log.error("Windows: choco install ffmpeg  |  Ubuntu: sudo apt install ffmpeg")
+                    sys.exit(1)
+
+            # ── Читаем фрейм из ffmpeg stdout ───────────────────
+            try:
+                frame = proc.stdout.read(BYTES_PER_FRAME)
+            except Exception as e:
+                log.warning(f"Ошибка чтения RTSP-потока: {e}")
+                flush("ошибка потока")
+                proc = None
+                continue
+
+            if not frame or len(frame) < BYTES_PER_FRAME:
+                log.warning("RTSP поток оборван (EOF)")
+                flush("обрыв потока")
+                proc = None
+                continue
+
+            # ── VAD: детектируем речь ────────────────────────────
+            try:
+                is_speech = vad.is_speech(frame, SAMPLE_RATE)
+            except Exception:
+                is_speech = False
+
+            if is_speech:
+                voiced.append(frame)
+                silence   = 0
+                in_speech = True
+            elif in_speech:
+                voiced.append(frame)
+                silence += 1
+                if silence >= SILENCE_LIMIT:
+                    flush("конец речи")
+                elif len(voiced) >= MAX_FRAMES:
+                    flush("макс. длина")
+
+    except KeyboardInterrupt:
+        log.info("Остановлено пользователем.")
+        flush("принудительная остановка")
+    finally:
+        if proc and proc.poll() is None:
+            proc.terminate()
+
+
+# ════════════════════════════════════════════════════════════
 #  ОСНОВНОЙ ЦИКЛ
 # ════════════════════════════════════════════════════════════
 
@@ -610,9 +746,10 @@ def run():
 # ════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    _main = (lambda: run_rtsp(RTSP_URL)) if RTSP_URL else run
     while True:
         try:
-            run()
+            _main()
         except KeyboardInterrupt:
             log.info("Выход.")
             break
