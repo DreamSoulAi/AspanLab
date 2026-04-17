@@ -725,11 +725,12 @@ html, body {
                 <th>Время</th>
                 <th>Транскрипция</th>
                 <th>Тон</th>
+                <th>AI оценка</th>
                 <th>Статус</th>
               </tr>
             </thead>
             <tbody id="reportsTable">
-              <tr><td colspan="4" style="text-align:center;padding:24px;color:var(--gray)">Загрузка...</td></tr>
+              <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gray)">Загрузка...</td></tr>
             </tbody>
           </table>
         </div>
@@ -1449,27 +1450,36 @@ async function loadDashboard() {
   const reports = await apiFetch(`/api/reports/?limit=10${locId ? `&location_id=${locId}` : ""}`);
   const tbody = document.getElementById("reportsTable");
   if (!reports || !Array.isArray(reports)) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--gray)">Нет данных</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--gray)">Нет данных</td></tr>`;
     return;
   }
+
+  const _scoreLabel = s => {
+    if (s == null) return `<span style="color:var(--gray)">—</span>`;
+    if (s >= 85) return `<span class="badge good"  title="${s}">🟢 Отлично</span>`;
+    if (s >= 65) return `<span class="badge neu"   title="${s}" style="background:rgba(74,158,255,.15);color:#4a9eff">🔵 Хорошо</span>`;
+    if (s >= 45) return `<span class="badge neu"   title="${s}">🟡 Норма</span>`;
+    return               `<span class="badge fraud" title="${s}">🔴 Слабо</span>`;
+  };
 
   tbody.innerHTML = reports.map(r => `
     <tr>
       <td>${new Date(r.timestamp).toLocaleTimeString("ru")}</td>
-      <td class="txt" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.transcript}</td>
+      <td class="txt" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.transcript}</td>
       <td>
-        ${r.tone === "positive" ? '<span style="color:var(--green)">😊</span>' :
-          r.tone === "negative" ? '<span style="color:var(--red)">😤</span>' :
-          '<span style="color:var(--gray)">😐</span>'}
+        ${r.tone === "positive" ? '<span class="badge good">😊 Позитивный</span>' :
+          r.tone === "negative" ? '<span class="badge fraud">😤 Негативный</span>' :
+          '<span class="badge neu">😐 Нейтральный</span>'}
       </td>
+      <td>${_scoreLabel(r.gpt_score)}</td>
       <td>
-        ${r.has_fraud ? '<span class="badge fraud">🚨 Левак</span>' :
+        ${r.has_fraud ? '<span class="badge fraud">🚨 Мошенн.</span>' :
           r.has_bad   ? '<span class="badge bad">⚠️ Грубость</span>' :
           r.has_bonus ? '<span class="badge good">⭐ Допродажа</span>' :
-          '<span class="badge neu">Норма</span>'}
+          '<span class="badge neu">—</span>'}
       </td>
     </tr>
-  `).join("") || `<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--gray)">Нет данных за сегодня</td></tr>`;
+  `).join("") || `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gray)">Нет данных за сегодня</td></tr>`;
 }
 
 async function loadAlerts() {
@@ -1654,12 +1664,20 @@ async function loadReportsPage() {
   const toneLabel = t => t === "positive" ? `<span class="badge good">😊 Позитивный</span>` :
                          t === "negative" ? `<span class="badge fraud">😤 Негативный</span>` :
                                             `<span class="badge neu">😐 Нейтральный</span>`;
+
+  const scoreLabel = s => {
+    if (s == null) return `<span style="color:var(--gray)">—</span>`;
+    if (s >= 85) return `<span class="badge good"  title="${s}">🟢 Отлично</span>`;
+    if (s >= 65) return `<span class="badge neu"   title="${s}" style="background:rgba(74,158,255,.15);color:#4a9eff">🔵 Хорошо</span>`;
+    if (s >= 45) return `<span class="badge neu"   title="${s}">🟡 Норма</span>`;
+    return               `<span class="badge fraud" title="${s}">🔴 Слабо</span>`;
+  };
   tbody.innerHTML = reports.map(r => `
     <tr>
       <td class="txt" style="white-space:nowrap">${new Date(r.timestamp).toLocaleString("ru")}</td>
       <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.transcript || "—"}</td>
       <td>${toneLabel(r.tone)}</td>
-      <td>${r.gpt_score != null ? `<b style="color:var(--gold)">${r.gpt_score}</b>` : "—"}</td>
+      <td>${scoreLabel(r.gpt_score)}</td>
       <td>
         ${r.has_fraud ? `<span class="badge fraud">🚨 Мошенн.</span> ` : ""}
         ${r.has_bad   ? `<span class="badge bad">⚠️ Грубость</span> ` : ""}
