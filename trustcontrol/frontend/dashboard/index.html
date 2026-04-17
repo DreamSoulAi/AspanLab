@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TrustControl — Дашборд</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
@@ -28,17 +29,26 @@
   --glow-g: rgba(0,230,118,.5);
 }
 html, body {
-  background: var(--bg);
+  background: #080808;
   background-image:
-    radial-gradient(at 15% 10%, rgba(201,168,76,.05) 0, transparent 55%),
-    radial-gradient(at 85% 90%, rgba(74,158,255,.03) 0, transparent 55%);
+    radial-gradient(ellipse at 20% 0%,   rgba(201,168,76,.15) 0, transparent 45%),
+    radial-gradient(ellipse at 80% 100%, rgba(74,158,255,.10) 0, transparent 45%),
+    radial-gradient(ellipse at 50% 60%,  rgba(201,168,76,.04) 0, transparent 60%);
+  background-attachment: fixed;
   color: var(--txt);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
   min-height: 100vh;
 }
 
 /* SIDEBAR */
-.sidebar { position:fixed; left:0; top:0; bottom:0; width:220px; background:var(--dark); border-right:1px solid var(--bdr); padding:24px 0; z-index:100; }
+.sidebar {
+  position:fixed; left:0; top:0; bottom:0; width:220px; padding:24px 0; z-index:100;
+  background: linear-gradient(180deg, rgba(20,18,14,0.97) 0%, rgba(10,10,10,0.97) 100%);
+  border-right: 1px solid rgba(255,255,255,0.1);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  box-shadow: 1px 0 0 rgba(201,168,76,.08), 4px 0 32px rgba(0,0,0,.8);
+}
 .s-logo { padding:0 24px 24px; font-size:18px; font-weight:900; letter-spacing:3px; color:var(--gold); text-transform:uppercase; border-bottom:1px solid var(--bdr); }
 .s-logo span { color:var(--txt); }
 .s-menu { padding:16px 0; }
@@ -55,7 +65,8 @@ html, body {
 
 /* TOPBAR */
 .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:32px; }
-.page-title { font-size:28px; font-weight:900; text-transform:uppercase; letter-spacing:-1px; }
+.page-title { font-size:28px; font-weight:900; text-transform:uppercase; letter-spacing:-0.04em; }
+.card-value  { letter-spacing:-0.03em; }
 .topbar-right { display:flex; align-items:center; gap:16px; }
 .location-select { background:var(--card); border:1px solid var(--bdr); color:var(--txt); padding:8px 14px; font-size:13px; cursor:pointer; }
 .btn { padding:9px 20px; font-size:13px; font-weight:600; cursor:pointer; border:none; letter-spacing:.3px; }
@@ -65,16 +76,16 @@ html, body {
 /* CARDS — glassmorphism */
 .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; margin-bottom:24px; }
 .card {
-  background: var(--glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--bdr);
-  padding: 22px 20px;
-  border-radius: 4px;
-  box-shadow: 0 4px 24px rgba(0,0,0,.35);
-  transition: border-color .2s;
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255,255,255,0.09);
+  padding: 24px 22px;
+  border-radius: 24px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+  transition: border-color .2s, box-shadow .2s, transform .2s;
 }
-.card:hover { border-color: rgba(255,255,255,.13); }
+.card:hover { border-color: rgba(255,255,255,.16); box-shadow: 0 24px 60px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.08); transform: translateY(-1px); }
 .card-label { font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--gray); margin-bottom:10px; font-weight:600; }
 .card-value { font-size:36px; font-weight:900; color:var(--gold); line-height:1; }
 .card-sub { font-size:12px; color:var(--gray); margin-top:6px; }
@@ -83,9 +94,9 @@ html, body {
 
 /* SCORE RING */
 .score-card {
-  background: var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
-  border:1px solid var(--bdr); padding:24px; display:flex; align-items:center; gap:20px;
-  border-radius:4px; box-shadow:0 4px 24px rgba(0,0,0,.35);
+  background: rgba(255,255,255,0.03); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
+  border:1px solid rgba(255,255,255,0.09); padding:24px; display:flex; align-items:center; gap:20px;
+  border-radius:24px; box-shadow:0 20px 50px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
 }
 .score-ring { position:relative; width:80px; height:80px; flex-shrink:0; }
 .score-ring svg { transform:rotate(-90deg); }
@@ -97,9 +108,9 @@ html, body {
 .kpi-rings-row { display:flex; gap:16px; margin-bottom:20px; overflow-x:auto; padding-bottom:4px; }
 .kpi-ring-wrap {
   flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:8px;
-  background:var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
-  border:1px solid var(--bdr); border-radius:4px; padding:18px 20px;
-  min-width:130px; box-shadow:0 4px 24px rgba(0,0,0,.3);
+  background: rgba(255,255,255,0.03); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
+  border:1px solid rgba(255,255,255,0.09); border-radius:24px; padding:18px 20px;
+  min-width:130px; box-shadow:0 20px 50px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
 }
 .kpi-svg-outer { position:relative; width:90px; height:90px; }
 .kpi-svg { width:90px; height:90px; transform:rotate(-90deg); }
@@ -116,9 +127,9 @@ html, body {
 .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px; }
 .grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px; margin-bottom:20px; }
 .panel {
-  background:var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
-  border:1px solid var(--bdr); padding:24px; border-radius:4px;
-  box-shadow:0 4px 24px rgba(0,0,0,.35);
+  background: rgba(255,255,255,0.03); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
+  border:1px solid rgba(255,255,255,0.09); padding:24px; border-radius:24px;
+  box-shadow:0 20px 50px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
 }
 .panel h3 { font-size:14px; font-weight:700; margin-bottom:16px; color:var(--txt); letter-spacing:.3px; }
 .panel.full { grid-column:1/-1; }
@@ -126,15 +137,16 @@ html, body {
 /* INCIDENT FEED */
 .incident-feed { margin-bottom:20px; }
 .incident-card {
-  background: rgba(255,77,77,.04);
+  background: rgba(255,77,77,.05);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255,77,77,.18);
+  border: 1px solid rgba(255,77,77,.2);
   border-left: 3px solid var(--red);
-  border-radius: 4px;
-  padding: 14px 18px;
-  margin-bottom: 10px;
-  transition: border-color .2s, background .2s;
+  border-radius: 20px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  transition: border-color .2s, background .2s, box-shadow .2s;
+  box-shadow: 0 8px 32px rgba(0,0,0,.4);
 }
 .incident-card:hover { background: rgba(255,77,77,.07); border-color: rgba(255,77,77,.3); }
 .incident-card.kaspi { border-left-color: #ff9800; border-color: rgba(255,152,0,.18); background: rgba(255,152,0,.04); }
@@ -210,9 +222,10 @@ html, body {
 /* LOGIN */
 .login-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); }
 .login-box {
-  background:var(--glass); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
-  border:1px solid var(--bdr); padding:48px 40px; width:380px;
-  box-shadow: 0 8px 40px rgba(0,0,0,.6);
+  background: rgba(255,255,255,0.04); backdrop-filter:blur(32px); -webkit-backdrop-filter:blur(32px);
+  border:1px solid rgba(255,255,255,0.1); padding:48px 40px; width:380px;
+  border-radius: 24px;
+  box-shadow: 0 32px 80px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.08);
 }
 .login-logo { font-size:22px; font-weight:900; letter-spacing:3px; color:var(--gold); text-align:center; margin-bottom:32px; text-transform:uppercase; }
 .login-logo span { color:var(--txt); }
@@ -238,9 +251,10 @@ html, body {
 .status-strip::-webkit-scrollbar { display:none; }
 .status-chip {
   display:flex; align-items:center; gap:10px; flex-shrink:0;
-  background:var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
-  border:1px solid var(--bdr); padding:12px 16px; border-radius:6px; min-width:180px;
+  background: rgba(255,255,255,0.03); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
+  border:1px solid rgba(255,255,255,0.09); padding:12px 16px; border-radius:16px; min-width:180px;
   transition:border-color .2s, box-shadow .2s;
+  box-shadow: 0 8px 32px rgba(0,0,0,.45);
 }
 .status-chip.online  {
   border-left:3px solid var(--green);
@@ -380,6 +394,119 @@ html, body {
     padding:24px 18px; max-height:88vh; overflow-y:auto;
   }
 }
+
+/* ── rc card enhanced ────────────────────────────────────── */
+
+/* ── Mobile nav — glass ──────────────────────────────────── */
+@media(max-width:768px){
+  .mobile-header {
+    background: rgba(6,6,6,0.9) !important;
+    backdrop-filter: blur(32px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(32px) saturate(180%) !important;
+    border-bottom: 1px solid rgba(255,255,255,0.08) !important;
+  }
+  .mobile-nav {
+    background: rgba(6,6,6,0.92) !important;
+    backdrop-filter: blur(32px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(32px) saturate(180%) !important;
+    border-top: 1px solid rgba(255,255,255,0.08) !important;
+  }
+}
+
+/* ── Page-transition fade ────────────────────────────────── */
+.page.active { animation: pageFadeIn .22s ease both; }
+@keyframes pageFadeIn {
+  from { opacity:0; transform:translateY(8px); }
+  to   { opacity:1; transform:translateY(0);   }
+}
+
+/* ── Badge micro-glow ────────────────────────────────────── */
+.badge.fraud { box-shadow: 0 0 8px rgba(255,77,77,.22);  }
+.badge.good  { box-shadow: 0 0 8px rgba(0,230,118,.2);   }
+.badge.bad   { box-shadow: 0 0 6px rgba(255,100,100,.12);}
+
+/* ── Radius system ───────────────────────────────────────── */
+.modal-box   { border-radius: 24px !important; }
+.login-box   { border-radius: 24px !important; }
+.play-btn    { border-radius: 24px !important; }
+.status-chip { border-radius: 16px !important; }
+
+/* ── UPSELL GAP — hero widget ────────────────────────────── */
+.upsell-hero {
+  position: relative; overflow: hidden;
+  background: linear-gradient(135deg, rgba(255,152,0,.18) 0%, rgba(200,80,0,.1) 100%);
+  border: 1px solid rgba(255,152,0,.5) !important;
+  border-radius: 24px !important;
+  padding: 22px 24px;
+  min-width: 180px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  box-shadow: 0 0 0 1px rgba(255,152,0,.1),
+              0 0 50px rgba(255,152,0,.25),
+              0 20px 50px rgba(0,0,0,.6);
+  animation: upsellGlow 2.5s ease-in-out infinite;
+}
+@keyframes upsellGlow {
+  0%,100% { box-shadow: 0 0 0 1px rgba(255,152,0,.1), 0 0 40px rgba(255,152,0,.2),  0 20px 50px rgba(0,0,0,.6); }
+  50%      { box-shadow: 0 0 0 1px rgba(255,152,0,.2), 0 0 70px rgba(255,152,0,.45), 0 20px 50px rgba(0,0,0,.6); }
+}
+.upsell-hero::before {
+  content:'';
+  position:absolute; top:-20%; left:-10%; width:120%; height:65%;
+  background: radial-gradient(ellipse, rgba(255,200,80,.15) 0%, transparent 70%);
+  pointer-events: none;
+}
+.upsell-hero-ico {
+  font-size: 32px; line-height:1;
+  animation: coinPulse 1.8s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(255,152,0,.7));
+}
+@keyframes coinPulse {
+  0%,100% { transform: scale(1);    filter: drop-shadow(0 0 6px rgba(255,152,0,.6)); }
+  50%      { transform: scale(1.18); filter: drop-shadow(0 0 14px rgba(255,200,0,.9)); }
+}
+.upsell-hero-label {
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+  color: rgba(255,180,60,.85); font-weight: 800;
+}
+.upsell-hero-val {
+  font-size: 34px; font-weight: 900; color: #ffaa00; line-height: 1;
+  letter-spacing: -0.03em;
+  text-shadow: 0 0 20px rgba(255,152,0,.6), 0 0 50px rgba(255,152,0,.3);
+}
+.upsell-hero-sub {
+  font-size: 10px; color: rgba(255,152,0,.6); letter-spacing: .5px; font-weight: 600;
+}
+
+/* ── Report mobile cards ─────────────────────────────────── */
+.report-cards-wrap { display: none; }
+@media(max-width:768px) {
+  .report-table-wrap { display: none !important; }
+  .report-cards-wrap { display: block; }
+}
+.rc {
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 20px;
+  padding: 18px;
+  margin-bottom: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06);
+  animation: rcFadeIn .28s ease both;
+}
+.rc:nth-child(2) { animation-delay: .04s; }
+.rc:nth-child(3) { animation-delay: .08s; }
+.rc:nth-child(4) { animation-delay: .12s; }
+.rc:nth-child(5) { animation-delay: .16s; }
+@keyframes rcFadeIn {
+  from { opacity:0; transform:translateY(-10px); }
+  to   { opacity:1; transform:translateY(0);     }
+}
+.rc-top    { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.rc-time   { font-size:12px; color:var(--gray); }
+.rc-quote  { font-size:14px; color:var(--txt); line-height:1.55; margin-bottom:12px;
+             display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.rc-footer { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 </style>
 </head>
 <body>
@@ -533,6 +660,23 @@ html, body {
       <label class="form-label">Город</label>
       <input class="form-input" type="text" id="editLocCity" placeholder="Алматы">
     </div>
+    <div style="border-top:1px solid rgba(255,255,255,.08);margin:16px 0 12px;padding-top:14px">
+      <div style="font-size:12px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Антифрод / допродажи</div>
+      <div class="form-group">
+        <label class="form-label">Белый список Kaspi-телефонов</label>
+        <textarea class="form-input" id="editLocPhones" rows="3" placeholder="+77001234567&#10;+77009876543" style="resize:vertical;font-size:13px;line-height:1.6"></textarea>
+        <div style="font-size:11px;color:var(--gray);margin-top:4px">По одному номеру в строке — не будут помечаться как фрод</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Обязательные фразы допродажи</label>
+        <textarea class="form-input" id="editLocUpsells" rows="3" placeholder="Хотите добавить десерт?&#10;Попробуйте нашу новинку?" style="resize:vertical;font-size:13px;line-height:1.6"></textarea>
+        <div style="font-size:11px;color:var(--gray);margin-top:4px">По одной фразе в строке — если не сказана, инцидент UPSELL_GAP</div>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:10px;margin-bottom:0">
+        <input type="checkbox" id="editLocIgnoreProf" style="width:16px;height:16px;cursor:pointer;flex-shrink:0">
+        <label for="editLocIgnoreProf" class="form-label" style="margin:0;cursor:pointer">Игнорировать брань вне обслуживания клиента</label>
+      </div>
+    </div>
     <div class="error-msg" id="editLocError"></div>
     <button class="form-btn" onclick="saveLocation()">Сохранить</button>
   </div>
@@ -652,10 +796,11 @@ html, body {
           </div>
           <div class="kpi-label-outer">AI оценка</div>
         </div>
-        <div class="kpi-ring-wrap" style="border-color:rgba(255,152,0,.2)">
-          <div style="font-size:11px;color:var(--gray);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-weight:600">Упущено</div>
-          <div id="kpiMissedRev" style="font-size:26px;font-weight:900;color:#ff9800">—</div>
-          <div style="font-size:10px;color:var(--gray);margin-top:4px">тенге (UPSELL GAP)</div>
+        <div class="upsell-hero">
+          <div class="upsell-hero-ico">💰</div>
+          <div class="upsell-hero-label">Упущено</div>
+          <div class="upsell-hero-val" id="kpiMissedRev">—</div>
+          <div class="upsell-hero-sub">тенге · UPSELL GAP</div>
         </div>
       </div>
 
@@ -770,7 +915,10 @@ html, body {
         </div>
       </div>
       <div class="panel">
-        <div class="table-wrap">
+        <!-- Mobile cards (shown only on ≤768px) -->
+        <div class="report-cards-wrap" id="reportsCards"></div>
+        <!-- Desktop table -->
+        <div class="report-table-wrap table-wrap">
           <table class="table">
             <thead>
               <tr>
@@ -1216,6 +1364,20 @@ async function loadIncidentsPanel() {
          </a>` : "";
     const locName = (inc.location_name || "").replace(/</g,"&lt;");
     const desc    = (inc.description || "").replace(/</g,"&lt;");
+    const actionArea = inc.status === "open"
+      ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
+           <button class="play-btn" onclick="resolveIncident(${inc.id},'resolved')"
+                   style="background:rgba(0,200,100,.12);color:#00c864;border-color:rgba(0,200,100,.3)">
+             ✅ Подтвердить
+           </button>
+           <button class="play-btn" onclick="resolveIncident(${inc.id},'false_positive')"
+                   style="background:rgba(255,200,0,.1);color:#c8a000;border-color:rgba(255,200,0,.25)">
+             ❌ Ложная тревога
+           </button>
+         </div>`
+      : `<span class="badge ${inc.status === 'resolved' ? 'good' : 'neu'}" style="font-size:11px">
+           ${inc.status === 'resolved' ? '✅ Закрыт' : '❎ Ложная тревога'}
+         </span>`;
     return `<div class="incident-card ${typeCSS}">
       <div class="incident-header">
         <div style="display:flex;align-items:center;gap:8px">
@@ -1227,11 +1389,19 @@ async function loadIncidentsPanel() {
       <div class="incident-desc">${desc}</div>
       ${phoneHtml}
       <div class="incident-footer">
-        <span></span>
+        ${actionArea}
         ${playBtn}
       </div>
     </div>`;
   }).join("");
+}
+
+async function resolveIncident(id, status) {
+  const r = await apiFetch(`/api/v1/incidents/${id}/resolve`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+  if (r) await loadIncidentsPanel();
 }
 
 // ═══════════════════════════════════════════
@@ -1530,7 +1700,11 @@ function showPage(name, el) {
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.querySelectorAll(".s-item").forEach(i => i.classList.remove("active"));
   document.querySelectorAll(".mn-item").forEach(i => i.classList.remove("active"));
-  document.getElementById(`page-${name}`).classList.add("active");
+  const newPage = document.getElementById(`page-${name}`);
+  newPage.classList.add("active");
+  newPage.style.animation = "none";
+  newPage.offsetHeight; // reflow
+  newPage.style.animation = "";
   if (el) el.classList.add("active");
   const mn = document.getElementById(`mn-${name}`);
   if (mn) mn.classList.add("active");
@@ -1604,6 +1778,9 @@ function openEditLocation(loc) {
   document.getElementById("editLocCity").value  = loc.city || "Алматы";
   document.getElementById("editLocLang").value  = loc.language || "ru";
   document.getElementById("editLocType").value  = loc.business_type || "coffee";
+  document.getElementById("editLocPhones").value   = (loc.allowed_phones || []).join("\n");
+  document.getElementById("editLocUpsells").value  = (loc.required_upsells || []).join("\n");
+  document.getElementById("editLocIgnoreProf").checked = !!loc.ignore_internal_profanity;
   document.getElementById("editLocError").style.display = "none";
   document.getElementById("editLocationModal").classList.add("open");
 }
@@ -1625,16 +1802,20 @@ async function saveLocation() {
     city:          document.getElementById("editLocCity").value.trim(),
     language:      document.getElementById("editLocLang").value,
     business_type: document.getElementById("editLocType").value,
+    ignore_internal_profanity: document.getElementById("editLocIgnoreProf").checked,
   };
 
-  const r = await apiFetch(`/api/locations/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify(body),
-  });
+  const phones  = document.getElementById("editLocPhones").value.split("\n").map(s => s.trim()).filter(Boolean);
+  const upsells = document.getElementById("editLocUpsells").value.split("\n").map(s => s.trim()).filter(Boolean);
+
+  const [r1, r2] = await Promise.all([
+    apiFetch(`/api/locations/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    apiFetch(`/api/locations/${id}/antifraud`, { method: "PUT", body: JSON.stringify({ allowed_phones: phones, required_upsells: upsells }) }),
+  ]);
 
   btn.disabled = false; btn.textContent = "Сохранить";
 
-  if (r) {
+  if (r1 && r2) {
     closeEditLocation();
     await loadLocations();
   } else {
@@ -1686,6 +1867,30 @@ async function loadReportsPage() {
       </td>
     </tr>
   `).join("");
+
+  // Mobile cards
+  const cards = document.getElementById("reportsCards");
+  if (cards) {
+    cards.innerHTML = reports.map((r, i) => {
+      const flags = [
+        r.has_fraud ? `<span class="badge fraud">🚨 Мошенн.</span>` : "",
+        r.has_bad   ? `<span class="badge bad">⚠️ Грубость</span>` : "",
+        r.has_bonus ? `<span class="badge good">⭐ Допрод.</span>` : "",
+      ].filter(Boolean).join("") || `<span class="badge neu">Норма</span>`;
+      return `<div class="rc" style="animation-delay:${i * 0.04}s">
+        <div class="rc-top">
+          <span class="rc-time">${new Date(r.timestamp).toLocaleString("ru",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span>
+          ${scoreLabel(r.gpt_score)}
+        </div>
+        <div class="rc-quote">${(r.transcript || "Нет транскрипции").replace(/</g,"&lt;")}</div>
+        <div class="rc-footer">
+          ${toneLabel(r.tone)}
+          ${flags}
+        </div>
+      </div>`;
+    }).join("");
+  }
+
   // Синхронизируем фильтр точек
   const sel = document.getElementById("reportsFilter");
   if (sel && sel.options.length < 2) {

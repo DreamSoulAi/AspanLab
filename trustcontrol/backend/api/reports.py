@@ -524,14 +524,24 @@ async def get_reports(
     result = await db.execute(query)
     rows = result.scalars().all()
 
+    locs_r = await db.execute(
+        select(Location.id, Location.name).where(Location.id.in_(user_locs))
+    )
+    loc_names = {r[0]: r[1] for r in locs_r.all()}
+
     return [
         {
             "id":                    r.id,
+            "location_id":           r.location_id,
+            "location_name":         loc_names.get(r.location_id, ""),
             "timestamp":             r.timestamp.isoformat(),
             "transcript":            (r.transcript or "")[:300],
             "tone":                  r.tone,
             "gpt_score":             r.gpt_score,
             "gpt_summary":           r.gpt_summary,
+            "has_greeting":          r.has_greeting,
+            "has_thanks":            r.has_thanks,
+            "has_goodbye":           r.has_goodbye,
             "has_fraud":             r.has_fraud,
             "has_bad":               r.has_bad,
             "has_bonus":             r.has_bonus,
