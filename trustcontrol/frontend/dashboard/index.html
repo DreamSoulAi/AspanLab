@@ -507,6 +507,94 @@ html, body {
 .rc-quote  { font-size:14px; color:var(--txt); line-height:1.55; margin-bottom:12px;
              display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
 .rc-footer { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+
+/* ── BILLING PAGE ─────────────────────────────────────────── */
+.billing-hero {
+  text-align:center; padding:48px 24px 32px;
+  background: linear-gradient(135deg,rgba(201,168,76,.08) 0%,rgba(74,158,255,.05) 100%);
+  border:1px solid rgba(201,168,76,.15); border-radius:28px; margin-bottom:32px;
+}
+.billing-hero h1 { font-size:clamp(24px,4vw,40px); font-weight:900; letter-spacing:-.03em;
+  background:linear-gradient(135deg,var(--gold) 0%,var(--gold2) 60%,#fff 100%);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:12px; }
+.billing-hero p { font-size:16px; color:var(--gray); max-width:520px; margin:0 auto 24px; line-height:1.6; }
+.pain-row { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+.pain-item { background:rgba(255,77,77,.07); border:1px solid rgba(255,77,77,.15);
+  border-radius:14px; padding:12px 18px; font-size:13px; color:var(--txt); display:flex; align-items:center; gap:8px; }
+.pain-item b { color:var(--red); }
+
+/* Plans grid */
+.plans-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:20px; margin-bottom:32px; }
+.plan-card {
+  background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.09);
+  border-radius:24px; padding:28px 24px;
+  box-shadow:0 20px 50px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
+  display:flex; flex-direction:column; transition:transform .2s,box-shadow .2s;
+}
+.plan-card:hover { transform:translateY(-3px); box-shadow:0 28px 60px rgba(0,0,0,.55); }
+.plan-card.featured {
+  border-color:rgba(201,168,76,.4);
+  background:linear-gradient(160deg,rgba(201,168,76,.10) 0%,rgba(201,168,76,.04) 100%);
+  box-shadow:0 20px 50px rgba(0,0,0,.5), 0 0 0 1px rgba(201,168,76,.25), inset 0 1px 0 rgba(201,168,76,.15);
+}
+.plan-badge { font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
+  padding:3px 10px; border-radius:20px; margin-bottom:16px; display:inline-block; width:fit-content; }
+.plan-badge.hot { background:rgba(201,168,76,.18); color:var(--gold); border:1px solid rgba(201,168,76,.3); }
+.plan-badge.new { background:rgba(74,158,255,.15); color:var(--blue); border:1px solid rgba(74,158,255,.25); }
+.plan-badge.free { background:rgba(0,230,118,.12); color:var(--green); border:1px solid rgba(0,230,118,.2); }
+.plan-badge.ent { background:rgba(168,85,247,.12); color:#a855f7; border:1px solid rgba(168,85,247,.2); }
+.plan-name { font-size:20px; font-weight:800; margin-bottom:6px; }
+.plan-desc { font-size:12px; color:var(--gray); margin-bottom:20px; line-height:1.5; }
+.plan-price { font-size:38px; font-weight:900; color:var(--gold); letter-spacing:-.03em; line-height:1; margin-bottom:4px; }
+.plan-price span { font-size:14px; font-weight:400; color:var(--gray); }
+.plan-period { font-size:11px; color:var(--gray); margin-bottom:24px; }
+.plan-features { list-style:none; margin-bottom:24px; flex:1; }
+.plan-features li { font-size:13px; color:var(--txt); padding:6px 0;
+  border-bottom:1px solid rgba(255,255,255,.04); display:flex; align-items:flex-start; gap:8px; }
+.plan-features li:last-child { border-bottom:none; }
+.plan-features li .fi { color:var(--green); font-size:14px; flex-shrink:0; margin-top:1px; }
+.plan-features li .fno { color:var(--gray); font-size:14px; flex-shrink:0; margin-top:1px; }
+.plan-cta { width:100%; padding:13px; font-size:14px; font-weight:700; border:none; border-radius:14px;
+  cursor:pointer; transition:all .2s; letter-spacing:.3px; }
+.plan-cta.gold { background:linear-gradient(135deg,var(--gold) 0%,var(--gold2) 100%); color:#0a0a0a; }
+.plan-cta.gold:hover { filter:brightness(1.1); transform:translateY(-1px); }
+.plan-cta.outline { background:transparent; color:var(--txt); border:1px solid rgba(255,255,255,.15); }
+.plan-cta.outline:hover { border-color:var(--gold); color:var(--gold); }
+.plan-cta.blue { background:rgba(74,158,255,.15); color:var(--blue); border:1px solid rgba(74,158,255,.25); }
+
+/* UTP section */
+.utp-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin-bottom:32px; }
+.utp-card {
+  background:rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.07); border-radius:20px;
+  padding:20px; display:flex; flex-direction:column; gap:10px;
+}
+.utp-icon { font-size:28px; }
+.utp-title { font-size:14px; font-weight:700; color:var(--txt); }
+.utp-text { font-size:12px; color:var(--gray); line-height:1.55; }
+
+/* How it works */
+.steps-row { display:flex; gap:0; margin-bottom:32px; flex-wrap:wrap; }
+.step { flex:1; min-width:180px; padding:24px; position:relative; text-align:center; }
+.step:not(:last-child)::after { content:"→"; position:absolute; right:-8px; top:50%; transform:translateY(-50%);
+  font-size:20px; color:var(--gray); opacity:.4; }
+.step-num { width:44px; height:44px; border-radius:50%; background:rgba(201,168,76,.15);
+  border:1px solid rgba(201,168,76,.3); color:var(--gold); font-size:18px; font-weight:900;
+  display:flex; align-items:center; justify-content:center; margin:0 auto 12px; }
+.step-title { font-size:14px; font-weight:700; margin-bottom:6px; }
+.step-text { font-size:12px; color:var(--gray); line-height:1.5; }
+
+/* Kaspi modal */
+.kaspi-modal-inner { text-align:center; }
+.kaspi-amount { font-size:48px; font-weight:900; color:var(--gold); letter-spacing:-.03em; margin:16px 0 4px; }
+.kaspi-num { font-size:22px; font-weight:700; color:var(--txt); letter-spacing:2px; margin:12px 0 4px;
+  background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:12px; padding:10px 20px; display:inline-block; }
+.kaspi-copy { font-size:11px; color:var(--gray); margin-bottom:20px; cursor:pointer; }
+.kaspi-copy:hover { color:var(--gold); }
+
+@media(max-width:768px) {
+  .steps-row { flex-direction:column; }
+  .step:not(:last-child)::after { content:"↓"; right:auto; top:auto; bottom:-12px; left:50%; transform:translateX(-50%); }
+}
 </style>
 </head>
 <body>
@@ -585,6 +673,36 @@ html, body {
       <div class="login-switch" style="margin-top:8px">
         <a onclick="showLogin()">← Назад</a>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Kaspi оплата -->
+<div class="modal-overlay" id="kaspiModal" onclick="if(event.target===this)closeKaspiModal()">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-title">Оплата через Kaspi <span class="modal-close" onclick="closeKaspiModal()">×</span></div>
+    <div class="kaspi-modal-inner">
+      <div style="font-size:13px;color:var(--gray);margin-bottom:4px">Тариф</div>
+      <div id="kaspiPlanName" style="font-size:18px;font-weight:700;color:var(--txt);margin-bottom:2px"></div>
+      <div class="kaspi-amount"><span id="kaspiAmountVal"></span> ₸</div>
+      <div style="font-size:13px;color:var(--gray);margin-bottom:16px">в месяц</div>
+
+      <div style="font-size:12px;color:var(--gray);margin-bottom:6px;text-align:left">Переведи на Kaspi Gold:</div>
+      <div class="kaspi-num" id="kaspiNum">—</div>
+      <div class="kaspi-copy" onclick="copyKaspiNum()">📋 Нажми чтобы скопировать номер</div>
+      <div style="font-size:12px;color:var(--gray);margin-bottom:4px" id="kaspiNameLine"></div>
+
+      <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px;margin:16px 0;text-align:left;font-size:12px;color:var(--gray);line-height:1.7">
+        1. Открой Kaspi.kz → Платежи → Переводы по номеру<br>
+        2. Введи номер выше и сумму <b style="color:var(--gold)" id="kaspiAmountHint"></b> ₸<br>
+        3. В комментарии напиши свой номер телефона<br>
+        4. Напиши нам в Telegram — активируем в течение часа
+      </div>
+
+      <button id="kaspiTgBtn" class="form-btn" style="background:#229ED9;margin-bottom:8px" onclick="openSupportTelegram()">
+        Написать в Telegram после оплаты 💬
+      </button>
+      <button class="btn btn-outline" style="width:100%" onclick="closeKaspiModal()">Закрыть</button>
     </div>
   </div>
 </div>
@@ -704,6 +822,7 @@ html, body {
       <a class="s-item" onclick="showPage('reports', this)"><span class="s-ico">📝</span> Отчёты</a>
       <a class="s-item" onclick="showPage('alerts', this)"><span class="s-ico">🚨</span> Тревоги <span class="s-badge" id="alertsBadge">0</span></a>
       <a class="s-item" onclick="showPage('locations', this)"><span class="s-ico">🏪</span> Точки</a>
+      <a class="s-item" onclick="showPage('billing', this)"><span class="s-ico">💳</span> Тарифы</a>
       <a class="s-item" onclick="showPage('settings', this)"><span class="s-ico">⚙️</span> Настройки</a>
     </div>
     <div style="position:absolute;bottom:24px;left:24px;right:24px;">
@@ -942,6 +1061,169 @@ html, body {
     </div>
 
     <!-- SETTINGS PAGE -->
+    <!-- BILLING PAGE -->
+    <div class="page" id="page-billing">
+      <div class="topbar"><div class="page-title">Тарифы</div></div>
+
+      <!-- HERO -->
+      <div class="billing-hero">
+        <h1>Узнай что происходит у кассы,<br>пока тебя нет рядом</h1>
+        <p>ИИ слушает каждый разговор, ловит мошенников, считает оценки и присылает всё в Telegram — без камер, без скандалов, без лишних вопросов</p>
+        <div class="pain-row">
+          <div class="pain-item">😤 <div>Кассир грубит —<br><b>ты узнаёшь первым</b></div></div>
+          <div class="pain-item">💸 <div>Оплата мимо кассы —<br><b>мгновенная тревога</b></div></div>
+          <div class="pain-item">📉 <div>Выручка упала —<br><b>видишь точную причину</b></div></div>
+        </div>
+      </div>
+
+      <!-- PLANS -->
+      <div class="plans-grid">
+
+        <!-- TRIAL -->
+        <div class="plan-card">
+          <span class="plan-badge free">Бесплатно</span>
+          <div class="plan-name">Пробный</div>
+          <div class="plan-desc">Попробуй без риска — никакой карты не нужно</div>
+          <div class="plan-price">0 <span>₸</span></div>
+          <div class="plan-period">14 дней, 1 касса</div>
+          <ul class="plan-features">
+            <li><span class="fi">✓</span> 1 касса / точка</li>
+            <li><span class="fi">✓</span> ИИ-анализ всех разговоров</li>
+            <li><span class="fi">✓</span> Telegram-уведомления</li>
+            <li><span class="fi">✓</span> Детектор грубости и мата</li>
+            <li><span class="fi">✓</span> Бесплатная установка</li>
+            <li><span class="fno">—</span> <span style="color:var(--gray)">Детектор мошенничества</span></li>
+            <li><span class="fno">—</span> <span style="color:var(--gray)">Аналитика по сменам</span></li>
+          </ul>
+          <button class="plan-cta outline" onclick="showPage('locations',null)">Уже активен → Мои точки</button>
+        </div>
+
+        <!-- START -->
+        <div class="plan-card">
+          <span class="plan-badge new">Старт</span>
+          <div class="plan-name">Старт</div>
+          <div class="plan-desc">Одна точка под полным контролем — идеально для кофейни, магазина или салона</div>
+          <div class="plan-price">17 000 <span>₸</span></div>
+          <div class="plan-period">в месяц · 1 касса · установка бесплатно</div>
+          <ul class="plan-features">
+            <li><span class="fi">✓</span> 1 касса / точка</li>
+            <li><span class="fi">✓</span> ИИ-анализ 24/7</li>
+            <li><span class="fi">✓</span> Telegram-уведомления</li>
+            <li><span class="fi">✓</span> <b>Детектор мошенничества</b></li>
+            <li><span class="fi">✓</span> Оценка каждого разговора</li>
+            <li><span class="fi">✓</span> Аналитика по сменам</li>
+            <li><span class="fi">✓</span> Бесплатная установка</li>
+          </ul>
+          <button class="plan-cta outline" onclick="openKaspiModal('Старт',17000)">Оплатить через Kaspi</button>
+        </div>
+
+        <!-- BUSINESS -->
+        <div class="plan-card featured">
+          <span class="plan-badge hot">★ Популярный</span>
+          <div class="plan-name">Бизнес</div>
+          <div class="plan-desc">До 5 касс в одной подписке — выгоднее в 3× чем покупать по одной</div>
+          <div class="plan-price">27 000 <span>₸</span></div>
+          <div class="plan-period">в месяц · до 5 касс · установка бесплатно</div>
+          <ul class="plan-features">
+            <li><span class="fi">✓</span> До 5 касс / точек</li>
+            <li><span class="fi">✓</span> Всё из тарифа Старт</li>
+            <li><span class="fi">✓</span> <b>Сравнение точек между собой</b></li>
+            <li><span class="fi">✓</span> Рейтинг смен и кассиров</li>
+            <li><span class="fi">✓</span> Еженедельный сводный отчёт</li>
+            <li><span class="fi">✓</span> Антифрод: белый список номеров</li>
+            <li><span class="fi">✓</span> Приоритетная поддержка</li>
+          </ul>
+          <button class="plan-cta gold" onclick="openKaspiModal('Бизнес',27000)">Оплатить через Kaspi</button>
+        </div>
+
+        <!-- NETWORK -->
+        <div class="plan-card">
+          <span class="plan-badge ent">Сеть</span>
+          <div class="plan-name">Сеть / Франшиза</div>
+          <div class="plan-desc">От 5 точек — цена обсуждается индивидуально под ваш масштаб</div>
+          <div class="plan-price" style="font-size:28px;margin-bottom:8px">Индивидуально</div>
+          <div class="plan-period">от 5 касс · персональный договор</div>
+          <ul class="plan-features">
+            <li><span class="fi">✓</span> Неограниченное кол-во касс</li>
+            <li><span class="fi">✓</span> Всё из тарифа Бизнес</li>
+            <li><span class="fi">✓</span> Выделенный менеджер</li>
+            <li><span class="fi">✓</span> Интеграция с вашей POS-системой</li>
+            <li><span class="fi">✓</span> Кастомные фразы и стандарты</li>
+            <li><span class="fi">✓</span> SLA и отчётность</li>
+            <li><span class="fi">✓</span> Обучение персонала</li>
+          </ul>
+          <button class="plan-cta blue" id="networkContactBtn" onclick="openNetworkContact()">Обсудить условия</button>
+        </div>
+      </div>
+
+      <!-- UTP БЛОК -->
+      <div class="panel" style="margin-bottom:24px">
+        <h3 style="margin-bottom:20px;font-size:18px">Почему TrustControl — это выгодно</h3>
+        <div class="utp-grid">
+          <div class="utp-card">
+            <div class="utp-icon">🤖</div>
+            <div class="utp-title">ИИ не устаёт и не врёт</div>
+            <div class="utp-text">Работает 24/7 без выходных, больничных и плохого настроения. Слышит каждое слово и оценивает объективно.</div>
+          </div>
+          <div class="utp-card">
+            <div class="utp-icon">🚨</div>
+            <div class="utp-title">Мошенничество = мгновенная тревога</div>
+            <div class="utp-text">Кассир называет чужой Kaspi-номер или принимает наличку мимо терминала — ты получаешь уведомление в ту же секунду.</div>
+          </div>
+          <div class="utp-card">
+            <div class="utp-icon">📱</div>
+            <div class="utp-title">Всё в Telegram — без приложений</div>
+            <div class="utp-text">Отчёты, тревоги и итоги смены приходят прямо в мессенджер. Не нужно заходить никуда — ты всегда в курсе.</div>
+          </div>
+          <div class="utp-card">
+            <div class="utp-icon">🎙️</div>
+            <div class="utp-title">Только микрофон — без камер</div>
+            <div class="utp-text">Никаких юридических вопросов. USB-микрофон на кассе — это всё оборудование. Установка за 15 минут.</div>
+          </div>
+          <div class="utp-card">
+            <div class="utp-icon">🇰🇿</div>
+            <div class="utp-title">Казахстан первый</div>
+            <div class="utp-text">Понимает казахский, русский и их микс. Знает местные реалии: Kaspi, Halyk, терминалы, стандартные фразы.</div>
+          </div>
+          <div class="utp-card">
+            <div class="utp-icon">📊</div>
+            <div class="utp-title">Цифры вместо ощущений</div>
+            <div class="utp-text">Оценка каждого разговора, рейтинг смен, процент приветствий и допродаж. Управляй командой на основе данных, а не интуиции.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- КАК ЭТО РАБОТАЕТ -->
+      <div class="panel" style="margin-bottom:24px">
+        <h3 style="margin-bottom:20px;font-size:18px">Как это работает</h3>
+        <div class="steps-row">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-title">Установка за 15 минут</div>
+            <div class="step-text">Подключаешь USB-микрофон к кассовому ПК. Мы помогаем настроить — бесплатно и удалённо.</div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-title">ИИ слушает и анализирует</div>
+            <div class="step-text">Каждый разговор транскрибируется и оценивается. Система ищет грубость, мошенничество и пропущенные стандарты.</div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-title">Ты получаешь всё в Telegram</div>
+            <div class="step-text">Тревоги — мгновенно. Итоги смены — вечером. Аналитика за неделю — по понедельникам. Всё автоматически.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ГАРАНТИЯ -->
+      <div style="text-align:center;padding:24px;background:rgba(0,230,118,.04);border:1px solid rgba(0,230,118,.12);border-radius:20px;margin-bottom:8px">
+        <div style="font-size:24px;margin-bottom:8px">🛡️</div>
+        <div style="font-size:16px;font-weight:700;color:var(--green);margin-bottom:6px">14 дней бесплатно — без обязательств</div>
+        <div style="font-size:13px;color:var(--gray)">Если за 14 дней ты не поймаешь ни одного нарушения и не увидишь пользы — просто не продлевай. Никаких вопросов.</div>
+      </div>
+    </div>
+
+    <!-- SETTINGS PAGE -->
     <div class="page" id="page-settings">
       <div class="topbar"><div class="page-title">Настройки</div></div>
 
@@ -1008,6 +1290,9 @@ html, body {
     </div>
     <div class="mn-item" id="mn-locations" onclick="showPage('locations',null)">
       <span class="mn-ico">🏪</span><span>Точки</span>
+    </div>
+    <div class="mn-item" id="mn-billing" onclick="showPage('billing',null)">
+      <span class="mn-ico">💳</span><span>Тарифы</span>
     </div>
     <div class="mn-item" id="mn-settings" onclick="showPage('settings',null)">
       <span class="mn-ico">⚙️</span><span>Настройки</span>
@@ -1092,11 +1377,14 @@ function maskPhoneKZ(input) {
 let _otpPhone = "";   // телефон ожидающий OTP-подтверждения
 let _tgBotUsername = "";
 
-// Загружаем публичный конфиг (bot username, otp_bypass)
+// Загружаем публичный конфиг (bot username, otp_bypass, kaspi)
 (async () => {
   try {
     const cfg = await fetch(`${API}/api/auth/app-config`).then(r => r.json());
     _tgBotUsername = cfg.tg_bot_username || "";
+    _kaspiNumber   = cfg.kaspi_number   || "";
+    _kaspiName     = cfg.kaspi_name     || "";
+    _tgSupport     = cfg.tg_bot_username || "";
     if (_tgBotUsername) {
       document.getElementById("tgOtpBtn").style.display = "block";
     }
@@ -1257,6 +1545,46 @@ function doLogout() {
   document.getElementById("otpForm").style.display   = "none";
   token = null;
 }
+// ═══════════════════════════════════════════
+//  BILLING
+// ═══════════════════════════════════════════
+let _kaspiNumber = "";
+let _kaspiName   = "";
+let _tgSupport   = "";  // username поддержки для кнопки "написать"
+
+function openKaspiModal(planName, amount) {
+  document.getElementById("kaspiPlanName").textContent  = planName;
+  document.getElementById("kaspiAmountVal").textContent = amount.toLocaleString("ru-RU");
+  document.getElementById("kaspiAmountHint").textContent = amount.toLocaleString("ru-RU");
+  document.getElementById("kaspiNum").textContent        = _kaspiNumber || "Уточните у менеджера";
+  document.getElementById("kaspiNameLine").textContent   = _kaspiName ? `Получатель: ${_kaspiName}` : "";
+  document.getElementById("kaspiModal").style.display   = "flex";
+}
+
+function closeKaspiModal() {
+  document.getElementById("kaspiModal").style.display = "none";
+}
+
+function copyKaspiNum() {
+  if (!_kaspiNumber) return;
+  navigator.clipboard.writeText(_kaspiNumber).then(() => {
+    const el = document.querySelector(".kaspi-copy");
+    el.textContent = "✅ Номер скопирован!";
+    setTimeout(() => { el.textContent = "📋 Нажми чтобы скопировать номер"; }, 2000);
+  });
+}
+
+function openSupportTelegram() {
+  const u = _tgSupport || _tgBotUsername;
+  if (u) window.open(`https://t.me/${u}`, "_blank");
+}
+
+function openNetworkContact() {
+  const u = _tgSupport || _tgBotUsername;
+  if (u) window.open(`https://t.me/${u}`, "_blank");
+  else alert("Напишите нам: ваш менеджер уточнит условия для сетей");
+}
+
 function showRegister() {
   document.getElementById("loginForm").style.display    = "none";
   document.getElementById("otpForm").style.display      = "none";

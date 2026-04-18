@@ -190,6 +190,8 @@ async def app_config():
     return {
         "otp_bypass":      settings.OTP_BYPASS,
         "tg_bot_username": settings.TELEGRAM_BOT_USERNAME,
+        "kaspi_number":    settings.KASPI_NUMBER,
+        "kaspi_name":      settings.KASPI_NAME,
     }
 
 
