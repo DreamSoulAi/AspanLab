@@ -21,9 +21,6 @@ python-multipart>=0.0.9
 # OpenAI
 openai>=1.30.0
 
-# Anthropic
-anthropic>=0.25.0
-
 # Telegram (21+ с InlineKeyboard)
 python-telegram-bot>=21.0
 
