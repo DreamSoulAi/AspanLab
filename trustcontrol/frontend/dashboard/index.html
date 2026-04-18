@@ -836,6 +836,56 @@ html, body {
 
     <!-- OVERVIEW PAGE -->
     <div class="page active" id="page-overview">
+
+      <!-- WELCOME SCREEN (только когда 0 точек) -->
+      <div id="welcomeScreen" style="display:none;min-height:80vh;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 16px">
+        <div style="font-size:56px;margin-bottom:20px;filter:drop-shadow(0 0 24px rgba(201,168,76,.4))">🛡️</div>
+        <h1 id="welcomeTitle" style="font-size:clamp(22px,5vw,36px);font-weight:900;letter-spacing:-.03em;margin-bottom:12px;
+            background:linear-gradient(135deg,var(--gold) 0%,var(--gold2) 60%,#fff 100%);
+            -webkit-background-clip:text;-webkit-text-fill-color:transparent">
+          Добро пожаловать!
+        </h1>
+        <p style="font-size:15px;color:var(--gray);max-width:460px;margin:0 auto 32px;line-height:1.65">
+          Чтобы начать мониторинг — добавь свою первую кассу или точку.<br>
+          Установка занимает 15 минут, первые отчёты придут сразу после.
+        </p>
+
+        <!-- 3 шага -->
+        <div style="display:flex;gap:12px;margin-bottom:36px;flex-wrap:wrap;justify-content:center;max-width:600px">
+          <div style="flex:1;min-width:150px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:18px 16px">
+            <div style="font-size:24px;margin-bottom:8px">1️⃣</div>
+            <div style="font-size:13px;font-weight:700;margin-bottom:4px">Добавь точку</div>
+            <div style="font-size:11px;color:var(--gray)">Название, тип бизнеса и Telegram для уведомлений</div>
+          </div>
+          <div style="flex:1;min-width:150px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:18px 16px">
+            <div style="font-size:24px;margin-bottom:8px">2️⃣</div>
+            <div style="font-size:13px;font-weight:700;margin-bottom:4px">Подключи микрофон</div>
+            <div style="font-size:11px;color:var(--gray)">USB-микрофон на кассу + наш скрипт. Поможем установить.</div>
+          </div>
+          <div style="flex:1;min-width:150px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:18px 16px">
+            <div style="font-size:24px;margin-bottom:8px">3️⃣</div>
+            <div style="font-size:13px;font-weight:700;margin-bottom:4px">Получай отчёты</div>
+            <div style="font-size:11px;color:var(--gray)">ИИ анализирует разговоры и шлёт всё в Telegram</div>
+          </div>
+        </div>
+
+        <button class="form-btn" style="max-width:320px;margin-bottom:12px;font-size:15px" onclick="openAddLocation()">
+          + Добавить первую точку
+        </button>
+        <button onclick="showPage('billing',null)" style="background:none;border:none;color:var(--gray);font-size:13px;cursor:pointer;text-decoration:underline">
+          Посмотреть тарифы →
+        </button>
+
+        <!-- Триал баннер -->
+        <div id="trialBanner" style="display:none;margin-top:28px;padding:14px 24px;
+             background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.2);border-radius:16px;
+             font-size:13px;color:var(--gray);max-width:420px">
+          У тебя активен <b style="color:var(--gold)">пробный период 14 дней</b> — добавь первую точку и начни прямо сейчас бесплатно
+        </div>
+      </div>
+
+      <!-- ОБЫЧНЫЙ ДАШБОРД (скрываем пока 0 точек) -->
+      <div id="dashboardContent">
       <div class="topbar">
         <div class="page-title">Обзор <span class="pulse"></span></div>
         <div class="topbar-right">
@@ -1003,6 +1053,7 @@ html, body {
           </table>
         </div>
       </div>
+      </div><!-- /dashboardContent -->
     </div>
 
     <!-- ALERTS PAGE -->
@@ -1851,7 +1902,28 @@ async function loadUserInfo() {
 
 async function loadLocations() {
   const locs = await apiFetch("/api/locations/");
-  if (!locs || !Array.isArray(locs)) return;  // ← защита от краша
+  if (!locs || !Array.isArray(locs)) return;
+
+  // Welcome screen логика
+  const welcome   = document.getElementById("welcomeScreen");
+  const dashboard = document.getElementById("dashboardContent");
+  if (locs.length === 0) {
+    welcome.style.display   = "flex";
+    dashboard.style.display = "none";
+    // Показываем баннер триала если нужно
+    apiFetch("/api/auth/me").then(u => {
+      if (u && u.is_trial_active) {
+        document.getElementById("trialBanner").style.display = "block";
+      }
+      if (u && u.name) {
+        document.getElementById("welcomeTitle").textContent = `Привет, ${u.name.split(" ")[0]}! 👋`;
+      }
+    });
+    return;
+  } else {
+    welcome.style.display   = "none";
+    dashboard.style.display = "block";
+  }
 
   // Заполняем все селекты точек на всех страницах
   ["locationFilter", "reportsFilter"].forEach(id => {
@@ -1863,7 +1935,7 @@ async function loadLocations() {
 
   const list = document.getElementById("locationsList");
   if (locs.length === 0) {
-    list.innerHTML = `<div class="panel"><p style="color:var(--gray)">У вас пока нет точек. Добавьте первую точку.</p></div>`;
+    list.innerHTML = `<div class="panel"><p style="color:var(--gray)">Добавьте первую точку.</p></div>`;
     return;
   }
 
