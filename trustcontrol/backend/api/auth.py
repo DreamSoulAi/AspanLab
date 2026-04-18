@@ -75,6 +75,8 @@ def normalize_phone(raw: str) -> str | None:
 # ── OTP helpers ───────────────────────────────────────────────────────────────
 
 def _generate_otp() -> str:
+    if settings.OTP_BYPASS:
+        return "000000"
     return "".join(random.choices(string.digits, k=6))
 
 
@@ -194,7 +196,7 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
         existing_user.hashed_password = hash_password(data.password)
         await _create_and_send_otp(data.email, data.name, db)
         await db.commit()
-        return {"status": "otp_sent", "email": data.email}
+        return {"status": "otp_sent", "email": data.email, "bypass": settings.OTP_BYPASS}
 
     user = User(
         name=data.name,

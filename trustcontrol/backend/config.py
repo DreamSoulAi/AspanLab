@@ -69,6 +69,10 @@ class Settings:
     KASPI_NUMBER: str = os.getenv("KASPI_NUMBER", "")
     KASPI_NAME:   str = os.getenv("KASPI_NAME", "")
 
+    # ── OTP режим ────────────────────────────────────────────
+    # OTP_BYPASS=true → код всегда 000000, письмо не шлётся (только для теста!)
+    OTP_BYPASS: bool = os.getenv("OTP_BYPASS", "false").lower() == "true"
+
     # ── Email (OTP-письма) ───────────────────────────────────
     # Вариант 1 (рекомендуется): Resend HTTP API — работает на Render
     RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
