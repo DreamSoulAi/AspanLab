@@ -11,22 +11,21 @@
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 :root {
-  --bg:     #121212;
-  --dark:   #0e0e0e;
-  --card:   #1e1e1e;
-  --glass:  rgba(30,30,30,0.75);
-  --bdr:    rgba(255,255,255,0.07);
-  --bdr2:   #2a2a2a;
-  --gold:   #c9a84c;
-  --gold2:  #e8c468;
-  --txt:    #edeae2;
-  --gray:   #7a7a72;
-  --green:  #00e676;
-  --red:    #ff4d4d;
-  --blue:   #4a9eff;
-  --glow-g: 0 0 12px rgba(0,230,118,.5), 0 0 28px rgba(0,230,118,.2);
-  --glow-r: 0 0 12px rgba(255,77,77,.5),  0 0 28px rgba(255,77,77,.2);
-  --glow-g: rgba(0,230,118,.5);
+  --bg:     #090910;
+  --dark:   #07070e;
+  --card:   #10101a;
+  --glass:  rgba(255,255,255,0.04);
+  --bdr:    rgba(255,255,255,0.08);
+  --bdr2:   #1a1a28;
+  --gold:   #D4A843;
+  --gold2:  #F0C060;
+  --txt:    #EEEAE0;
+  --gray:   #6B6B7A;
+  --green:  #00E676;
+  --red:    #FF4D6A;
+  --blue:   #4A9EFF;
+  --purple: #A855F7;
+  --orange: #FF9800;
 }
 html, body {
   background: #080808;
@@ -507,6 +506,106 @@ html, body {
 .rc-quote  { font-size:14px; color:var(--txt); line-height:1.55; margin-bottom:12px;
              display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
 .rc-footer { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+
+/* ── New color-coded card accents ────────────────────────── */
+.card-icon-wrap {
+  width: 38px; height: 38px; border-radius: 10px;
+  display:flex; align-items:center; justify-content:center;
+  margin-bottom: 14px; flex-shrink: 0;
+}
+.card-blue   { border-top: 2px solid rgba(74,158,255,.5) !important; }
+.card-red    { border-top: 2px solid rgba(255,77,106,.5) !important; }
+.card-orange { border-top: 2px solid rgba(255,152,0,.5)  !important; }
+.card-purple { border-top: 2px solid rgba(168,85,247,.5) !important; }
+.card-blue   .card-value { color: #6ab8ff !important; }
+.card-red    .card-value { color: var(--red) !important; }
+.card-orange .card-value { color: var(--orange) !important; }
+.card-purple .card-value { color: var(--purple) !important; }
+.card-value { font-size: 48px !important; letter-spacing: -0.04em; }
+
+/* ── Sidebar user bottom section ─────────────────────────── */
+.s-user-bottom {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255,255,255,.06);
+  background: rgba(0,0,0,.3);
+}
+.s-avatar {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--gold), #8B6914);
+  display: flex; align-items:center; justify-content:center;
+  font-size: 14px; font-weight: 800; color: #0a0a0a;
+  text-transform: uppercase;
+}
+.s-user-info { flex:1; min-width:0; }
+.s-user-name { font-size:13px; font-weight:700; color:var(--txt); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.s-user-plan { font-size:11px; color:var(--gold); margin-top:1px; text-transform:uppercase; letter-spacing:.5px; }
+.s-logout-btn {
+  background: none; border: none; color: var(--gray); cursor: pointer;
+  padding: 6px; border-radius: 8px; display:flex; align-items:center;
+  transition: color .2s, background .2s;
+}
+.s-logout-btn:hover { color: var(--red); background: rgba(255,77,106,.1); }
+
+/* ── Sidebar items — cleaner active state ────────────────── */
+.s-item {
+  display:flex; align-items:center; gap:10px; padding:11px 20px;
+  color:var(--gray); font-size:13.5px; cursor:pointer;
+  transition: all .18s; text-decoration:none;
+  border-radius: 10px; margin: 2px 10px; font-weight:500;
+  border-left: none !important;
+}
+.s-item:hover { background: rgba(255,255,255,.05); color: var(--txt); }
+.s-item.active {
+  background: linear-gradient(90deg, rgba(212,168,67,.15), rgba(212,168,67,.05));
+  color: var(--gold) !important;
+  border-left: none !important;
+}
+.s-ico { width:20px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.s-menu { padding: 12px 0; }
+
+/* ── Logo upgrade ────────────────────────────────────────── */
+.s-logo {
+  padding: 0 20px 20px;
+  font-size: 16px; font-weight: 900; letter-spacing: 2px;
+  color: var(--gold); text-transform: uppercase;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.s-logo span { color: var(--txt); }
+
+/* ── Page title upgrade ──────────────────────────────────── */
+.page-title {
+  font-size: 26px !important; font-weight: 900;
+  letter-spacing: -0.04em;
+  background: linear-gradient(90deg, var(--txt) 60%, rgba(212,168,67,.6));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Topbar upgrade ──────────────────────────────────────── */
+.topbar { margin-bottom: 24px !important; }
+.btn-gold {
+  background: linear-gradient(135deg, #D4A843, #A07825) !important;
+  color: #0a0a0a !important; font-weight: 700;
+  border-radius: 10px !important; padding: 9px 20px !important;
+  box-shadow: 0 4px 16px rgba(212,168,67,.25) !important;
+  transition: box-shadow .2s, transform .15s !important;
+}
+.btn-gold:hover { box-shadow: 0 6px 24px rgba(212,168,67,.4) !important; transform: translateY(-1px); }
+
+/* ── Location select upgrade ─────────────────────────────── */
+.location-select {
+  border-radius: 10px !important; padding: 9px 14px !important;
+  border-color: rgba(255,255,255,.1) !important;
+}
+
+/* ── Panel header ────────────────────────────────────────── */
+.panel h3 {
+  font-size: 13px !important; font-weight: 700;
+  letter-spacing: .4px; color: var(--txt);
+  display: flex; align-items: center; gap: 8px;
+}
 </style>
 </head>
 <body>
@@ -696,15 +795,37 @@ html, body {
   <div class="sidebar">
     <div class="s-logo">Trust<span>Control</span></div>
     <div class="s-menu">
-      <a class="s-item active" onclick="showPage('overview', this)"><span class="s-ico">📊</span> Обзор</a>
-      <a class="s-item" onclick="showPage('reports', this)"><span class="s-ico">📝</span> Отчёты</a>
-      <a class="s-item" onclick="showPage('alerts', this)"><span class="s-ico">🚨</span> Тревоги <span class="s-badge" id="alertsBadge">0</span></a>
-      <a class="s-item" onclick="showPage('locations', this)"><span class="s-ico">🏪</span> Точки</a>
-      <a class="s-item" onclick="showPage('settings', this)"><span class="s-ico">⚙️</span> Настройки</a>
+      <a class="s-item active" onclick="showPage('overview', this)">
+        <span class="s-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+        Обзор
+      </a>
+      <a class="s-item" onclick="showPage('reports', this)">
+        <span class="s-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg></span>
+        Отчёты
+      </a>
+      <a class="s-item" onclick="showPage('alerts', this)">
+        <span class="s-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>
+        Тревоги
+        <span class="s-badge" id="alertsBadge">0</span>
+      </a>
+      <a class="s-item" onclick="showPage('locations', this)">
+        <span class="s-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg></span>
+        Точки
+      </a>
+      <a class="s-item" onclick="showPage('settings', this)">
+        <span class="s-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+        Настройки
+      </a>
     </div>
-    <div style="position:absolute;bottom:24px;left:24px;right:24px;">
-      <div style="font-size:11px;color:var(--gray);margin-bottom:8px" id="userInfo"></div>
-      <button class="btn btn-outline" style="width:100%;font-size:12px" onclick="doLogout()">Выйти</button>
+    <div class="s-user-bottom">
+      <div class="s-avatar" id="sAvatarLetter">A</div>
+      <div class="s-user-info">
+        <div class="s-user-name" id="sUserName">—</div>
+        <div class="s-user-plan" id="sUserPlan">—</div>
+      </div>
+      <button class="s-logout-btn" onclick="doLogout()" title="Выйти">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
     </div>
   </div>
 
@@ -736,10 +857,34 @@ html, body {
 
       <!-- COUNT CARDS -->
       <div class="cards" id="statsCards">
-        <div class="card"><div class="card-label">Разговоров сегодня</div><div class="card-value" id="statTotal">—</div></div>
-        <div class="card red"><div class="card-label">Нарушения</div><div class="card-value" id="statBad">—</div></div>
-        <div class="card red"><div class="card-label">🚨 Фрод</div><div class="card-value" id="statFraud">—</div></div>
-        <div class="card"><div class="card-label">Инциденты открыты</div><div class="card-value" id="statIncidents">—</div></div>
+        <div class="card card-blue">
+          <div class="card-icon-wrap" style="background:rgba(74,158,255,.12);color:#4a9eff">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <div class="card-label">Разговоров сегодня</div>
+          <div class="card-value" id="statTotal">—</div>
+        </div>
+        <div class="card card-red">
+          <div class="card-icon-wrap" style="background:rgba(255,77,106,.12);color:#FF4D6A">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          <div class="card-label">Нарушения</div>
+          <div class="card-value" id="statBad">—</div>
+        </div>
+        <div class="card card-orange">
+          <div class="card-icon-wrap" style="background:rgba(255,152,0,.12);color:#FF9800">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div class="card-label">Фрод-риски</div>
+          <div class="card-value" id="statFraud">—</div>
+        </div>
+        <div class="card card-purple">
+          <div class="card-icon-wrap" style="background:rgba(168,85,247,.12);color:#A855F7">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <div class="card-label">Инциденты открыты</div>
+          <div class="card-value" id="statIncidents">—</div>
+        </div>
       </div>
 
       <!-- KPI PROGRESS RINGS -->
@@ -1465,13 +1610,22 @@ async function loadUserInfo() {
 
   const planName = PLAN_NAMES[u.plan] || u.plan;
 
-  // Сайдбар
-  document.getElementById("userInfo").innerHTML =
+  // Сайдбар (legacy element kept for compatibility)
+  const userInfoEl = document.getElementById("userInfo");
+  if (userInfoEl) userInfoEl.innerHTML =
     `<b style="color:var(--txt)">${u.name}</b><br>Тариф: <span style="color:var(--gold)">${planName}</span>`;
+
+  // Новый сайдбар — аватар, имя, тариф
+  const avatarEl = document.getElementById("sAvatarLetter");
+  const nameEl   = document.getElementById("sUserName");
+  const planEl   = document.getElementById("sUserPlan");
+  if (avatarEl && u.name) avatarEl.textContent = u.name.charAt(0).toUpperCase();
+  if (nameEl   && u.name) nameEl.textContent   = u.name;
+  if (planEl   && u.plan) planEl.textContent   = u.plan === "trial" ? "Пробный период" : planName;
 
   // Мобильная шапка
   const mob = document.getElementById("mobileUserInfo");
-  if (mob) mob.textContent = u.name;
+  if (mob) mob.textContent = `${u.name} · ${planName}`;
 
   // Страница настроек
   document.getElementById("sName").textContent  = u.name;
