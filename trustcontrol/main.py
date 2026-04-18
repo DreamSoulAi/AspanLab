@@ -230,81 +230,30 @@ async def _daily_report_worker():
             log.error(f"Daily report worker ошибка: {e}")
 
 
-# ── Schema migrations (ADD COLUMN IF NOT EXISTS) ──────────────
-
-async def _run_migrations():
-    """
-    Adds columns introduced after the initial deploy.
-    Uses a direct asyncpg connection (bypasses SQLAlchemy transaction
-    wrapping) so each ALTER TABLE is fully independent.
-    """
-    import asyncpg
-
-    _migrations = [
-        # ── locations ─────────────────────────────────────────
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS silence_seconds           INTEGER  DEFAULT 3",
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS custom_phrases            JSON     DEFAULT '[]'",
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS allowed_phones            JSON     DEFAULT '[]'",
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS required_upsells          JSON     DEFAULT '[]'",
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS ignore_internal_profanity BOOLEAN  DEFAULT false",
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS last_ping_at              TIMESTAMP",
-        "ALTER TABLE locations ADD COLUMN IF NOT EXISTS offline_alerted_at        TIMESTAMP",
-        # ── reports v2.0 ──────────────────────────────────────
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS duration_sec                FLOAT",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS audio_size_kb               INTEGER",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS tone_score                  FLOAT    DEFAULT 0.5",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_score                   INTEGER",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_summary                 TEXT",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS gpt_details                 JSON",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS speakers                    JSON",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS shift_number                INTEGER",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_priority                 BOOLEAN  DEFAULT false",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS audio_sha256                VARCHAR(64)",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS s3_url                      TEXT",
-        # ── reports v3.0 ──────────────────────────────────────
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS payment_confirmed           BOOLEAN",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS upsell_attempt              BOOLEAN",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS customer_satisfaction       INTEGER",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_personal_talk            BOOLEAN  DEFAULT false",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS is_hidden                   BOOLEAN  DEFAULT false",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS fraud_status                VARCHAR(30) DEFAULT 'normal'",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS s3_deleted_at               TIMESTAMP",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS conversation_context        VARCHAR(30) DEFAULT 'unknown'",
-        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS context_score               FLOAT",
-        # ── pos_transactions ──────────────────────────────────
-        "ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS pos_type           VARCHAR(20) DEFAULT 'none'",
-        "ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS items              JSON     DEFAULT '[]'",
-        # ── users ─────────────────────────────────────────────
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified                   BOOLEAN  DEFAULT false",
-    ]
-
-    # Strip SQLAlchemy driver prefix to get a plain asyncpg DSN
-    dsn = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
-
-    ok = 0
-    try:
-        conn = await asyncpg.connect(dsn)
-        for sql in _migrations:
-            try:
-                await conn.execute(sql)
-                ok += 1
-            except asyncpg.exceptions.DuplicateColumnError:
-                pass  # already exists — fine
-            except Exception as exc:
-                log.warning(f"Migration warning: {exc.__class__.__name__}: {sql[:60]}")
-        await conn.close()
-    except Exception as exc:
-        log.error(f"Migration connection failed: {exc}")
-
-    print(f"✅ DB migrations: {ok}/{len(_migrations)} applied")
-
-
 # ── Lifecycle ─────────────────────────────────────────────────
+
+async def _run_alembic():
+    """Run Alembic migrations asynchronously at startup."""
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _upgrade():
+        from alembic.config import Config
+        from alembic import command
+        from pathlib import Path
+        cfg = Config(str(Path(__file__).parent / "alembic.ini"))
+        cfg.set_main_option("script_location", str(Path(__file__).parent / "alembic"))
+        command.upgrade(cfg, "head")
+
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        await loop.run_in_executor(pool, _upgrade)
+    print("✅ Alembic migrations applied")
+
 
 @app.on_event("startup")
 async def startup():
-    await init_db()
-    await _run_migrations()
+    await _run_alembic()
 
     # Запускаем фоновые задачи
     asyncio.create_task(_retry_worker())
