@@ -523,14 +523,15 @@ html, body {
     <div class="login-logo">Trust<span>Control</span></div>
     <div id="loginForm">
       <div class="form-group">
-        <label class="form-label">Email</label>
-        <input class="form-input" type="email" id="loginEmail" placeholder="owner@business.kz">
+        <label class="form-label">Номер телефона</label>
+        <input class="form-input" type="tel" id="loginPhone" placeholder="+7 7XX XXX XX XX"
+               oninput="maskPhoneKZ(this)" maxlength="18">
       </div>
       <div class="form-group">
         <label class="form-label">Пароль</label>
         <input class="form-input" type="password" id="loginPass" placeholder="••••••••">
       </div>
-      <div class="error-msg" id="loginError">Неверный email или пароль</div>
+      <div class="error-msg" id="loginError">Неверный номер или пароль</div>
       <button class="form-btn" onclick="doLogin()">Войти</button>
       <div class="login-switch">Нет аккаунта? <a onclick="showRegister()">Зарегистрироваться</a></div>
     </div>
@@ -540,13 +541,9 @@ html, body {
         <input class="form-input" type="text" id="regName" placeholder="Иван Иванов">
       </div>
       <div class="form-group">
-        <label class="form-label">Телефон</label>
+        <label class="form-label">Номер телефона</label>
         <input class="form-input" type="tel" id="regPhone" placeholder="+7 7XX XXX XX XX"
                oninput="maskPhoneKZ(this)" maxlength="18">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Email</label>
-        <input class="form-input" type="email" id="regEmail" placeholder="owner@business.kz">
       </div>
       <div class="form-group">
         <label class="form-label">Пароль</label>
@@ -557,17 +554,20 @@ html, body {
       <div class="login-switch">Уже есть аккаунт? <a onclick="showLogin()">Войти</a></div>
     </div>
 
-    <!-- OTP STEP (после регистрации и при неподтверждённом входе) -->
+    <!-- OTP STEP -->
     <div id="otpForm" style="display:none">
       <div style="text-align:center;margin-bottom:20px">
-        <div style="font-size:32px;margin-bottom:8px">📬</div>
-        <p style="color:var(--txt);font-size:15px;margin:0 0 6px">
-          Код отправлен на
-        </p>
-        <p style="color:var(--gold);font-size:14px;margin:0" id="otpEmailLabel"></p>
+        <div style="font-size:32px;margin-bottom:8px">📱</div>
+        <p style="color:var(--txt);font-size:15px;margin:0 0 6px">Код подтверждения для</p>
+        <p style="color:var(--gold);font-size:15px;font-weight:700;margin:0;letter-spacing:1px" id="otpPhoneLabel"></p>
+        <div id="otpBypassBanner" style="display:none;margin-top:10px;padding:8px 14px;
+             background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.3);border-radius:10px;
+             font-size:12px;color:var(--gold)">
+          Тестовый режим — код всегда <b>000000</b>
+        </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Код из письма</label>
+        <label class="form-label">Код подтверждения</label>
         <input class="form-input" type="text" id="otpCode"
                placeholder="000000" maxlength="6" inputmode="numeric"
                style="letter-spacing:10px;font-size:28px;text-align:center;font-weight:700"
@@ -575,8 +575,12 @@ html, body {
       </div>
       <div class="error-msg" id="otpError"></div>
       <button class="form-btn" onclick="doVerifyOtp()">Подтвердить →</button>
-      <div class="login-switch">
-        Не пришло письмо? <a onclick="doResendOtp()">Отправить ещё раз</a>
+      <button id="tgOtpBtn" onclick="openTelegramBot()" class="form-btn"
+              style="display:none;margin-top:10px;background:#229ED9;color:#fff">
+        Получить код в Telegram 💬
+      </button>
+      <div class="login-switch" style="margin-top:12px">
+        <a onclick="doResendOtp()">Отправить код ещё раз</a>
       </div>
       <div class="login-switch" style="margin-top:8px">
         <a onclick="showLogin()">← Назад</a>
@@ -950,12 +954,12 @@ html, body {
             <span id="sName" style="color:var(--txt);font-weight:600">—</span>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
-            <span style="font-size:11px;color:var(--gray);width:80px;text-transform:uppercase;letter-spacing:1px">Email</span>
-            <span id="sEmail" style="color:var(--txt)">—</span>
+            <span style="font-size:11px;color:var(--gray);width:80px;text-transform:uppercase;letter-spacing:1px">Телефон</span>
+            <span id="sPhone" style="color:var(--txt);font-weight:600">—</span>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
-            <span style="font-size:11px;color:var(--gray);width:80px;text-transform:uppercase;letter-spacing:1px">Телефон</span>
-            <span id="sPhone" style="color:var(--txt)">—</span>
+            <span style="font-size:11px;color:var(--gray);width:80px;text-transform:uppercase;letter-spacing:1px">Email</span>
+            <span id="sEmail" style="color:var(--gray);font-size:12px">—</span>
           </div>
         </div>
       </div>
@@ -1085,16 +1089,32 @@ function maskPhoneKZ(input) {
 // ═══════════════════════════════════════════
 //  AUTH
 // ═══════════════════════════════════════════
-let _otpEmail = "";   // email ожидающий OTP-подтверждения
+let _otpPhone = "";   // телефон ожидающий OTP-подтверждения
+let _tgBotUsername = "";
+
+// Загружаем публичный конфиг (bot username, otp_bypass)
+(async () => {
+  try {
+    const cfg = await fetch(`${API}/api/auth/app-config`).then(r => r.json());
+    _tgBotUsername = cfg.tg_bot_username || "";
+    if (_tgBotUsername) {
+      document.getElementById("tgOtpBtn").style.display = "block";
+    }
+  } catch(_) {}
+})();
+
+function openTelegramBot() {
+  if (_tgBotUsername) window.open(`https://t.me/${_tgBotUsername}`, "_blank");
+}
 
 async function doLogin() {
-  const email = document.getElementById("loginEmail").value.trim();
+  const phone = document.getElementById("loginPhone").value.trim();
   const pass  = document.getElementById("loginPass").value;
   const err   = document.getElementById("loginError");
   const btn   = document.querySelector("#loginForm .form-btn");
   err.style.display = "none";
-  if (!email || !pass) {
-    err.textContent = "Введите email и пароль";
+  if (!phone || !pass) {
+    err.textContent = "Введите номер телефона и пароль";
     err.style.display = "block";
     return;
   }
@@ -1103,7 +1123,7 @@ async function doLogin() {
     const r = await fetch(`${API}/api/auth/login`, {
       method: "POST",
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
-      body: `username=${encodeURIComponent(email)}&password=${encodeURIComponent(pass)}`,
+      body: `username=${encodeURIComponent(phone)}&password=${encodeURIComponent(pass)}`,
     });
     if (r.ok) {
       const d = await r.json();
@@ -1112,15 +1132,14 @@ async function doLogin() {
       showApp();
     } else if (r.status === 403) {
       const e = await r.json().catch(() => ({}));
-      if (e.detail === "EMAIL_NOT_VERIFIED") {
-        // Код уже переотправлен сервером — показываем OTP экран
-        _showOtpForm(email);
+      if (e.detail === "PHONE_NOT_VERIFIED") {
+        _showOtpForm(phone, false);
       } else {
         err.textContent = e.detail || "Доступ запрещён";
         err.style.display = "block";
       }
     } else {
-      let msg = "Неверный email или пароль";
+      let msg = "Неверный номер или пароль";
       try { const e = await r.json(); msg = e.detail || msg; } catch(_) {}
       err.textContent = msg; err.style.display = "block";
     }
@@ -1139,10 +1158,9 @@ async function doRegister() {
   const body = {
     name:     document.getElementById("regName").value.trim(),
     phone:    document.getElementById("regPhone").value.trim(),
-    email:    document.getElementById("regEmail").value.trim(),
     password: document.getElementById("regPass").value,
   };
-  if (!body.name || !body.email || !body.password || !body.phone) {
+  if (!body.name || !body.phone || !body.password) {
     err.textContent = "Заполните все поля"; err.style.display = "block"; return;
   }
   btn.disabled = true; btn.textContent = "Регистрируемся...";
@@ -1154,8 +1172,7 @@ async function doRegister() {
     });
     if (r.ok) {
       const d = await r.json();
-      // Server returns {status:"otp_sent", email:...} — show OTP step
-      _showOtpForm(d.email || body.email);
+      _showOtpForm(d.phone || body.phone, d.bypass === true);
     } else {
       let msg = "Ошибка регистрации";
       try { const e = await r.json(); msg = e.detail || msg; } catch(_) {}
@@ -1169,11 +1186,13 @@ async function doRegister() {
 }
 
 // ── OTP helpers ────────────────────────────────────────────
-function _showOtpForm(email) {
-  _otpEmail = email;
-  document.getElementById("otpEmailLabel").textContent = email;
-  document.getElementById("otpCode").value = "";
+function _showOtpForm(phone, bypass) {
+  _otpPhone = phone;
+  document.getElementById("otpPhoneLabel").textContent = phone;
+  document.getElementById("otpCode").value = bypass ? "000000" : "";
   document.getElementById("otpError").style.display = "none";
+  document.getElementById("otpBypassBanner").style.display = bypass ? "block" : "none";
+  document.getElementById("tgOtpBtn").style.display = (!bypass && _tgBotUsername) ? "block" : "none";
   document.getElementById("loginForm").style.display    = "none";
   document.getElementById("registerForm").style.display = "none";
   document.getElementById("otpForm").style.display      = "block";
@@ -1192,7 +1211,7 @@ async function doVerifyOtp() {
     const r = await fetch(`${API}/api/auth/verify-otp`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({email: _otpEmail, code}),
+      body: JSON.stringify({phone: _otpPhone, code}),
     });
     if (r.ok) {
       const d = await r.json();
@@ -1219,7 +1238,7 @@ async function doResendOtp() {
     await fetch(`${API}/api/auth/send-otp`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({email: _otpEmail}),
+      body: JSON.stringify({phone: _otpPhone}),
     });
     err.style.background = "transparent";
     err.style.color = "var(--green)";
@@ -1475,8 +1494,8 @@ async function loadUserInfo() {
 
   // Страница настроек
   document.getElementById("sName").textContent  = u.name;
-  document.getElementById("sEmail").textContent = u.email;
   document.getElementById("sPhone").textContent = u.phone || "—";
+  document.getElementById("sEmail").textContent = u.email || "не указан";
 
   // Тариф бейдж
   const badge = document.getElementById("sPlanBadge");

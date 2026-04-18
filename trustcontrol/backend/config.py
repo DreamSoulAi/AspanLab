@@ -76,6 +76,10 @@ class Settings:
     SMTP_PASS: str = os.getenv("SMTP_PASS", "")      # app-password
     SMTP_FROM: str = os.getenv("SMTP_FROM", "")      # "TrustControl <noreply@...>"
 
+    # ── Telegram бот ─────────────────────────────────────────
+    # Имя бота без @ — показывается кнопкой "Получить код в Telegram"
+    TELEGRAM_BOT_USERNAME: str = os.getenv("TELEGRAM_BOT_USERNAME", "")
+
     def validate(self):
         """Проверяем что все обязательные переменные заданы."""
         errors = []

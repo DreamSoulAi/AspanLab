@@ -1,20 +1,19 @@
 # ════════════════════════════════════════════════════════════
-#  API: Авторизация v2.0 — OTP Email Verification
+#  API: Авторизация v3.0 — Phone OTP
 #
 #  Флоу регистрации:
-#    POST /register  → создаёт юзера (is_verified=False), шлёт OTP на почту
+#    POST /register  → создаёт юзера (is_verified=False), OTP_BYPASS=000000
 #    POST /verify-otp → проверяет OTP, ставит is_verified=True, возвращает JWT
 #
 #  Флоу входа:
-#    POST /login     → email+password, если is_verified=False → 403 EMAIL_NOT_VERIFIED
-#    POST /send-otp  → (переотправка) генерирует и шлёт новый код
+#    POST /login     → phone+password, если is_verified=False → 403 PHONE_NOT_VERIFIED
+#    POST /send-otp  → (переотправка) генерирует новый код
 #
 #  SECURITY:
 #    - Rate limit: 5 попыток логина / 60 сек
 #    - Пароль: минимум 8 символов
-#    - Email: EmailStr (Pydantic)
-#    - Телефон: нормализация в +7XXXXXXXXXX (KZ формат)
-#    - OTP: 6 цифр, 10 минут, одноразовый
+#    - Телефон: нормализация в +7XXXXXXXXXX (KZ формат), уникальный ключ
+#    - OTP: 6 цифр, 10 минут, одноразовый (OTP_BYPASS=true → всегда 000000)
 # ════════════════════════════════════════════════════════════
 
 import re
@@ -28,14 +27,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update as sa_update
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, field_validator
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 
 from backend.database import get_db
 from backend.models.user import User
 from backend.models.otp_code import OtpCode
-from backend.services.email_sender import send_otp_email
 from backend.config import settings
 
 router    = APIRouter()
@@ -75,33 +73,39 @@ def normalize_phone(raw: str) -> str | None:
 # ── OTP helpers ───────────────────────────────────────────────────────────────
 
 def _generate_otp() -> str:
+    if settings.OTP_BYPASS:
+        return "000000"
     return "".join(random.choices(string.digits, k=6))
 
 
-async def _create_and_send_otp(email: str, name: str, db: AsyncSession) -> None:
-    """Invalidate old codes, generate a new one and email it."""
+async def _create_and_send_otp(phone: str, name: str, db: AsyncSession) -> None:
+    """Invalidate old codes, generate a new one. SMS delivery bypassed via OTP_BYPASS."""
     await db.execute(
         sa_update(OtpCode)
-        .where(OtpCode.email == email, OtpCode.used == False)  # noqa: E712
+        .where(OtpCode.phone == phone, OtpCode.used == False)  # noqa: E712
         .values(used=True)
     )
     code = _generate_otp()
     db.add(OtpCode(
-        email=email,
+        phone=phone,
         code=code,
         expires_at=datetime.utcnow() + timedelta(minutes=10),
     ))
     await db.flush()
-    await send_otp_email(email, code, name)
+
+    if settings.OTP_BYPASS:
+        import logging
+        logging.getLogger("auth").info(f"OTP BYPASS: phone={phone} code={code}")
+    # Future: await send_sms(phone, code, name)
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
     name:     str
-    email:    EmailStr
     phone:    str
     password: str
+    email:    str = ""   # опциональный, только для уведомлений
 
     @field_validator("password")
     @classmethod
@@ -127,11 +131,11 @@ class RegisterRequest(BaseModel):
 
 
 class OtpSendRequest(BaseModel):
-    email: EmailStr
+    phone: str
 
 
 class OtpVerifyRequest(BaseModel):
-    email: EmailStr
+    phone: str
     code:  str
 
 
@@ -180,16 +184,35 @@ async def get_current_user(
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+@router.get("/app-config")
+async def app_config():
+    """Public config returned to frontend on load."""
+    return {
+        "otp_bypass":      settings.OTP_BYPASS,
+        "tg_bot_username": settings.TELEGRAM_BOT_USERNAME,
+    }
+
+
 @router.post("/register")
 async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(User).where(User.email == data.email))
-    if existing.scalar():
-        raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
+    existing = await db.execute(select(User).where(User.phone == data.phone))
+    existing_user = existing.scalar()
+
+    if existing_user:
+        if existing_user.is_verified:
+            raise HTTPException(status_code=400, detail="Номер уже зарегистрирован")
+        # Незаверифицированный — обновляем данные и переотправляем OTP
+        existing_user.name            = data.name
+        existing_user.email           = data.email or None
+        existing_user.hashed_password = hash_password(data.password)
+        await _create_and_send_otp(data.phone, data.name, db)
+        await db.commit()
+        return {"status": "otp_sent", "phone": data.phone, "bypass": settings.OTP_BYPASS}
 
     user = User(
         name=data.name,
-        email=data.email,
         phone=data.phone,
+        email=data.email or None,
         hashed_password=hash_password(data.password),
         plan="trial",
         plan_expires=datetime.utcnow() + timedelta(days=14),
@@ -198,31 +221,32 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.flush()
 
-    await _create_and_send_otp(data.email, data.name, db)
+    await _create_and_send_otp(data.phone, data.name, db)
     await db.commit()
 
-    return {"status": "otp_sent", "email": data.email}
+    return {"status": "otp_sent", "phone": data.phone, "bypass": settings.OTP_BYPASS}
 
 
 @router.post("/send-otp")
 async def send_otp(data: OtpSendRequest, db: AsyncSession = Depends(get_db)):
-    """Resend (or first-send) OTP for an existing unverified account."""
-    result = await db.execute(select(User).where(User.email == data.email))
+    phone = normalize_phone(data.phone) or data.phone.strip()
+    result = await db.execute(select(User).where(User.phone == phone))
     user = result.scalar()
     if not user:
-        # Don't reveal whether email exists
         return {"status": "sent"}
 
-    await _create_and_send_otp(data.email, user.name, db)
+    await _create_and_send_otp(phone, user.name, db)
     await db.commit()
-    return {"status": "sent"}
+    return {"status": "sent", "bypass": settings.OTP_BYPASS}
 
 
 @router.post("/verify-otp", response_model=TokenResponse)
 async def verify_otp(data: OtpVerifyRequest, db: AsyncSession = Depends(get_db)):
+    phone = normalize_phone(data.phone) or data.phone.strip()
+
     result = await db.execute(
         select(OtpCode).where(
-            OtpCode.email      == data.email,
+            OtpCode.phone      == phone,
             OtpCode.code       == data.code.strip(),
             OtpCode.used       == False,           # noqa: E712
             OtpCode.expires_at >  datetime.utcnow(),
@@ -234,7 +258,7 @@ async def verify_otp(data: OtpVerifyRequest, db: AsyncSession = Depends(get_db))
 
     otp.used = True
 
-    result = await db.execute(select(User).where(User.email == data.email))
+    result = await db.execute(select(User).where(User.phone == phone))
     user = result.scalar()
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
@@ -260,20 +284,22 @@ async def login(
     client_ip = request.client.host if request.client else "unknown"
     _check_rate_limit(client_ip)
 
-    result = await db.execute(select(User).where(User.email == form.username))
+    # username field = phone number (raw or normalized)
+    phone = normalize_phone(form.username) or form.username.strip()
+
+    result = await db.execute(select(User).where(User.phone == phone))
     user = result.scalar()
 
     if not user or not verify_password(form.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Неверный email или пароль")
+        raise HTTPException(status_code=401, detail="Неверный номер или пароль")
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
 
     if not user.is_verified:
-        # Auto-resend so the user can verify without extra steps
-        await _create_and_send_otp(user.email, user.name, db)
+        await _create_and_send_otp(user.phone, user.name, db)
         await db.commit()
-        raise HTTPException(status_code=403, detail="EMAIL_NOT_VERIFIED")
+        raise HTTPException(status_code=403, detail="PHONE_NOT_VERIFIED")
 
     user.last_login = datetime.utcnow()
     _login_attempts[client_ip] = []
@@ -292,8 +318,8 @@ async def me(user: User = Depends(get_current_user)):
     return {
         "id":              user.id,
         "name":            user.name,
-        "email":           user.email,
         "phone":           user.phone,
+        "email":           user.email or "",
         "plan":            user.plan,
         "is_verified":     user.is_verified,
         "plan_expires":    user.plan_expires.isoformat() if user.plan_expires else None,
