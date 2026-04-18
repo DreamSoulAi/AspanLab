@@ -69,12 +69,15 @@ class Settings:
     KASPI_NUMBER: str = os.getenv("KASPI_NUMBER", "")
     KASPI_NAME:   str = os.getenv("KASPI_NAME", "")
 
-    # ── SMTP (OTP-письма) ────────────────────────────────────
-    SMTP_HOST: str = os.getenv("SMTP_HOST", "")      # smtp.gmail.com / smtp.yandex.ru
+    # ── Email (OTP-письма) ───────────────────────────────────
+    # Вариант 1 (рекомендуется): Resend HTTP API — работает на Render
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
+    # Вариант 2: любой SMTP (Gmail, Yandex, Brevo…)
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", 587))
-    SMTP_USER: str = os.getenv("SMTP_USER", "")      # login
-    SMTP_PASS: str = os.getenv("SMTP_PASS", "")      # app-password
-    SMTP_FROM: str = os.getenv("SMTP_FROM", "")      # "TrustControl <noreply@...>"
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASS: str = os.getenv("SMTP_PASS", "")
+    SMTP_FROM: str = os.getenv("SMTP_FROM", "")
 
     def validate(self):
         """Проверяем что все обязательные переменные заданы."""

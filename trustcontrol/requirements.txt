@@ -32,6 +32,7 @@ pydantic[email]>=2.7.0
 
 # Email (OTP-письма)
 aiosmtplib>=3.0.0
+httpx>=0.27.0
 
 # Config
 python-dotenv>=1.0.0
