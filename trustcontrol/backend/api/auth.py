@@ -183,8 +183,18 @@ async def get_current_user(
 @router.post("/register")
 async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(select(User).where(User.email == data.email))
-    if existing.scalar():
-        raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
+    existing_user = existing.scalar()
+
+    if existing_user:
+        if existing_user.is_verified:
+            raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
+        # Незаверифицированный — обновляем данные и переотправляем OTP
+        existing_user.name            = data.name
+        existing_user.phone           = data.phone
+        existing_user.hashed_password = hash_password(data.password)
+        await _create_and_send_otp(data.email, data.name, db)
+        await db.commit()
+        return {"status": "otp_sent", "email": data.email}
 
     user = User(
         name=data.name,
