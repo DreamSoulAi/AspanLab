@@ -219,8 +219,82 @@ html, body {
 /* SIDEBAR — glass */
 .sidebar { background: rgba(14,14,14,0.92); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px); border-right:1px solid var(--bdr); }
 
-/* LOGIN */
-.login-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); }
+/* LANDING */
+.ln-nav {
+  position:fixed; top:0; left:0; right:0; z-index:100;
+  display:flex; align-items:center; justify-content:space-between; padding:0 32px;
+  height:64px;
+  background:rgba(8,8,8,.85); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+.ln-logo { font-size:18px; font-weight:900; letter-spacing:3px; color:var(--gold); text-transform:uppercase; }
+.ln-logo span { color:var(--txt); }
+.ln-nav-links { display:flex; gap:8px; align-items:center; }
+.ln-btn-ghost { background:transparent; border:1px solid rgba(255,255,255,.15); color:var(--txt);
+  padding:8px 20px; font-size:13px; font-weight:600; cursor:pointer; border-radius:10px;
+  transition:all .2s; }
+.ln-btn-ghost:hover { border-color:var(--gold); color:var(--gold); }
+.ln-btn-cta { background:var(--gold); color:#0a0a0a; padding:9px 22px; font-size:13px;
+  font-weight:700; cursor:pointer; border:none; border-radius:10px; transition:all .2s; }
+.ln-btn-cta:hover { filter:brightness(1.1); transform:translateY(-1px); }
+
+.ln-hero {
+  min-height:100vh; display:flex; align-items:center; justify-content:center;
+  flex-direction:column; text-align:center; padding:100px 24px 60px;
+  position:relative;
+}
+.ln-hero h1 {
+  font-size:clamp(32px,6vw,68px); font-weight:900; letter-spacing:-.04em;
+  line-height:1.08; margin-bottom:20px;
+  background:linear-gradient(135deg,#fff 0%,var(--gold2) 50%,var(--gold) 100%);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+}
+.ln-hero p { font-size:clamp(15px,2vw,19px); color:var(--gray); max-width:580px;
+  margin:0 auto 36px; line-height:1.65; }
+.ln-hero-btns { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+.ln-hero-cta { background:linear-gradient(135deg,var(--gold) 0%,var(--gold2) 100%);
+  color:#0a0a0a; padding:16px 36px; font-size:16px; font-weight:800; border:none;
+  border-radius:14px; cursor:pointer; transition:all .2s; letter-spacing:.3px; }
+.ln-hero-cta:hover { filter:brightness(1.12); transform:translateY(-2px);
+  box-shadow:0 12px 40px rgba(201,168,76,.35); }
+.ln-hero-sec { background:transparent; border:1px solid rgba(255,255,255,.18); color:var(--txt);
+  padding:15px 32px; font-size:15px; font-weight:600; border-radius:14px; cursor:pointer;
+  transition:all .2s; }
+.ln-hero-sec:hover { border-color:var(--gold); color:var(--gold); }
+.ln-trust { display:flex; gap:32px; justify-content:center; margin-top:48px; flex-wrap:wrap; }
+.ln-trust-item { text-align:center; }
+.ln-trust-num { font-size:28px; font-weight:900; color:var(--gold); }
+.ln-trust-lbl { font-size:11px; color:var(--gray); letter-spacing:1px; text-transform:uppercase; margin-top:2px; }
+
+.ln-section { padding:80px 32px; max-width:1100px; margin:0 auto; }
+.ln-section-title { font-size:clamp(22px,3.5vw,38px); font-weight:900; letter-spacing:-.03em;
+  text-align:center; margin-bottom:12px; }
+.ln-section-sub { text-align:center; color:var(--gray); font-size:15px; max-width:500px;
+  margin:0 auto 48px; line-height:1.6; }
+.ln-features { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px; }
+.ln-feat {
+  background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.08); border-radius:22px;
+  padding:28px 24px; transition:border-color .2s, transform .2s;
+}
+.ln-feat:hover { border-color:rgba(201,168,76,.25); transform:translateY(-3px); }
+.ln-feat-ico { font-size:32px; margin-bottom:14px; }
+.ln-feat-title { font-size:16px; font-weight:700; margin-bottom:8px; }
+.ln-feat-text { font-size:13px; color:var(--gray); line-height:1.6; }
+
+.ln-cta-band {
+  margin:0 32px 80px; border-radius:28px; padding:60px 32px; text-align:center;
+  background:linear-gradient(135deg,rgba(201,168,76,.12) 0%,rgba(201,168,76,.04) 100%);
+  border:1px solid rgba(201,168,76,.2);
+}
+.ln-footer { text-align:center; padding:32px; font-size:12px; color:rgba(255,255,255,.2);
+  border-top:1px solid rgba(255,255,255,.05); }
+
+/* LOGIN — теперь модальное окно поверх лендинга */
+.login-wrap {
+  display:none; position:fixed; inset:0; z-index:200;
+  align-items:center; justify-content:center;
+  background:rgba(0,0,0,.75); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+}
 .login-box {
   background: rgba(255,255,255,0.04); backdrop-filter:blur(32px); -webkit-backdrop-filter:blur(32px);
   border:1px solid rgba(255,255,255,0.1); padding:48px 40px; width:380px;
@@ -605,10 +679,180 @@ html, body {
   <button onclick="retryConnection()" style="background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.4);color:inherit;padding:4px 14px;cursor:pointer;font-size:12px;font-weight:700">Повторить</button>
 </div>
 
-<!-- LOGIN -->
-<div id="loginWrap" class="login-wrap">
+<!-- ═══════════ LANDING PAGE ═══════════ -->
+<div id="landingWrap" style="display:none">
+
+  <!-- NAVBAR -->
+  <nav class="ln-nav">
+    <div class="ln-logo">Trust<span>Control</span></div>
+    <div class="ln-nav-links">
+      <button class="ln-btn-ghost" onclick="openAuthModal('login')">Войти</button>
+      <button class="ln-btn-cta"   onclick="openAuthModal('register')">14 дней бесплатно</button>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="ln-hero">
+    <h1>Узнай что происходит<br>у кассы пока тебя нет</h1>
+    <p>ИИ слушает каждый разговор, ловит мошенников и присылает отчёт в Telegram — без камер, без скандалов, за 15 минут до запуска</p>
+    <div class="ln-hero-btns">
+      <button class="ln-hero-cta" onclick="openAuthModal('register')">Попробовать бесплатно →</button>
+      <button class="ln-hero-sec" onclick="document.getElementById('lnPricing').scrollIntoView({behavior:'smooth'})">Смотреть тарифы</button>
+    </div>
+    <div class="ln-trust">
+      <div class="ln-trust-item"><div class="ln-trust-num">24/7</div><div class="ln-trust-lbl">Мониторинг</div></div>
+      <div class="ln-trust-item"><div class="ln-trust-num">15 мин</div><div class="ln-trust-lbl">До запуска</div></div>
+      <div class="ln-trust-item"><div class="ln-trust-num">14 дней</div><div class="ln-trust-lbl">Бесплатно</div></div>
+      <div class="ln-trust-item"><div class="ln-trust-num">0 ₸</div><div class="ln-trust-lbl">Установка</div></div>
+    </div>
+  </section>
+
+  <!-- ПРОБЛЕМЫ -->
+  <section style="padding:0 32px 80px;max-width:1100px;margin:0 auto">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">
+      <div style="background:rgba(255,77,77,.06);border:1px solid rgba(255,77,77,.15);border-radius:22px;padding:28px 24px">
+        <div style="font-size:28px;margin-bottom:12px">😤</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px">Кассир грубит — ты не знаешь</div>
+        <div style="font-size:13px;color:var(--gray);line-height:1.6">Клиент уходит и не возвращается. Ты теряешь постоянных покупателей, не понимая почему.</div>
+      </div>
+      <div style="background:rgba(255,77,77,.06);border:1px solid rgba(255,77,77,.15);border-radius:22px;padding:28px 24px">
+        <div style="font-size:28px;margin-bottom:12px">💸</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px">Деньги уходят мимо кассы</div>
+        <div style="font-size:13px;color:var(--gray);line-height:1.6">Кассир называет свой Kaspi-номер или берёт наличку мимо терминала. Каждый день — прямые убытки.</div>
+      </div>
+      <div style="background:rgba(255,77,77,.06);border:1px solid rgba(255,77,77,.15);border-radius:22px;padding:28px 24px">
+        <div style="font-size:28px;margin-bottom:12px">📉</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px">Выручка упала — причина неясна</div>
+        <div style="font-size:13px;color:var(--gray);line-height:1.6">Меньше клиентов или плохой сервис? Без данных только догадки и конфликты с персоналом.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ПРЕИМУЩЕСТВА -->
+  <section class="ln-section">
+    <div class="ln-section-title">TrustControl решает всё это</div>
+    <div class="ln-section-sub">Один USB-микрофон на кассе — и ты всегда в курсе что происходит</div>
+    <div class="ln-features">
+      <div class="ln-feat">
+        <div class="ln-feat-ico">🤖</div>
+        <div class="ln-feat-title">ИИ-анализ каждого разговора</div>
+        <div class="ln-feat-text">Система слышит каждое слово, оценивает тон, считает приветствия и допродажи. Объективно, без человеческого фактора.</div>
+      </div>
+      <div class="ln-feat">
+        <div class="ln-feat-ico">🚨</div>
+        <div class="ln-feat-title">Мошенничество = тревога мгновенно</div>
+        <div class="ln-feat-text">Кассир называет чужой Kaspi-номер или принимает наличку мимо терминала — ты получаешь уведомление в ту же секунду.</div>
+      </div>
+      <div class="ln-feat">
+        <div class="ln-feat-ico">📱</div>
+        <div class="ln-feat-title">Всё приходит в Telegram</div>
+        <div class="ln-feat-text">Тревоги — сразу. Итоги смены — вечером. Аналитика за неделю — по понедельникам. Не нужно заходить никуда дополнительно.</div>
+      </div>
+      <div class="ln-feat">
+        <div class="ln-feat-ico">🎙️</div>
+        <div class="ln-feat-title">Только микрофон, без камер</div>
+        <div class="ln-feat-text">Никаких юридических вопросов. USB-микрофон на кассе — это всё оборудование. Устанавливаем удалённо за 15 минут.</div>
+      </div>
+      <div class="ln-feat">
+        <div class="ln-feat-ico">🇰🇿</div>
+        <div class="ln-feat-title">Сделано для Казахстана</div>
+        <div class="ln-feat-text">Понимает казахский, русский и их микс. Знает Kaspi, Halyk и местные стандарты обслуживания.</div>
+      </div>
+      <div class="ln-feat">
+        <div class="ln-feat-ico">📊</div>
+        <div class="ln-feat-title">Данные вместо ощущений</div>
+        <div class="ln-feat-text">Оценка каждого разговора, рейтинг смен, процент приветствий. Управляй командой на цифрах, а не на интуиции.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ТАРИФЫ -->
+  <section class="ln-section" id="lnPricing">
+    <div class="ln-section-title">Прозрачные тарифы</div>
+    <div class="ln-section-sub">Бесплатная установка. Без скрытых платежей. Отмена в любой момент.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px">
+
+      <div class="plan-card">
+        <span class="plan-badge free">14 дней бесплатно</span>
+        <div class="plan-name">Пробный</div>
+        <div class="plan-price">0 <span>₸</span></div>
+        <div class="plan-period">14 дней · 1 касса</div>
+        <ul class="plan-features">
+          <li><span class="fi">✓</span> ИИ-анализ всех разговоров</li>
+          <li><span class="fi">✓</span> Telegram-уведомления</li>
+          <li><span class="fi">✓</span> Бесплатная установка</li>
+        </ul>
+        <button class="plan-cta outline" onclick="openAuthModal('register')">Начать бесплатно</button>
+      </div>
+
+      <div class="plan-card">
+        <span class="plan-badge new">Старт</span>
+        <div class="plan-name">Старт</div>
+        <div class="plan-price">17 000 <span>₸</span></div>
+        <div class="plan-period">в месяц · 1 касса</div>
+        <ul class="plan-features">
+          <li><span class="fi">✓</span> Всё из Пробного</li>
+          <li><span class="fi">✓</span> Детектор мошенничества</li>
+          <li><span class="fi">✓</span> Аналитика по сменам</li>
+          <li><span class="fi">✓</span> Оценка каждого разговора</li>
+        </ul>
+        <button class="plan-cta outline" onclick="openAuthModal('register')">Попробовать</button>
+      </div>
+
+      <div class="plan-card featured">
+        <span class="plan-badge hot">★ Популярный</span>
+        <div class="plan-name">Бизнес</div>
+        <div class="plan-price">27 000 <span>₸</span></div>
+        <div class="plan-period">в месяц · до 5 касс</div>
+        <ul class="plan-features">
+          <li><span class="fi">✓</span> Всё из Старта</li>
+          <li><span class="fi">✓</span> До 5 касс в одной подписке</li>
+          <li><span class="fi">✓</span> Сравнение точек между собой</li>
+          <li><span class="fi">✓</span> Приоритетная поддержка</li>
+        </ul>
+        <button class="plan-cta gold" onclick="openAuthModal('register')">Выбрать</button>
+      </div>
+
+      <div class="plan-card">
+        <span class="plan-badge ent">Сеть</span>
+        <div class="plan-name">Сеть / Франшиза</div>
+        <div class="plan-price" style="font-size:26px">Индивидуально</div>
+        <div class="plan-period">от 5 касс</div>
+        <ul class="plan-features">
+          <li><span class="fi">✓</span> Неограниченно касс</li>
+          <li><span class="fi">✓</span> Выделенный менеджер</li>
+          <li><span class="fi">✓</span> Интеграция с POS</li>
+        </ul>
+        <button class="plan-cta blue" onclick="openNetworkContact()">Обсудить</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ФИНАЛЬНЫЙ CTA -->
+  <div style="padding:0 32px;max-width:1100px;margin:0 auto 80px">
+    <div class="ln-cta-band">
+      <div style="font-size:clamp(22px,4vw,36px);font-weight:900;margin-bottom:12px;letter-spacing:-.03em">
+        Поймай первое нарушение уже сегодня
+      </div>
+      <div style="font-size:15px;color:var(--gray);margin-bottom:28px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6">
+        14 дней бесплатно. Установка за 15 минут. Карта не нужна.
+      </div>
+      <button class="ln-hero-cta" onclick="openAuthModal('register')">Зарегистрироваться бесплатно →</button>
+    </div>
+  </div>
+
+  <footer class="ln-footer">
+    TrustControl © 2025 · ИИ-мониторинг качества обслуживания · Казахстан
+  </footer>
+</div>
+
+<!-- LOGIN MODAL -->
+<div id="loginWrap" class="login-wrap" onclick="if(event.target===this)closeAuthModal()">
   <div class="login-box">
-    <div class="login-logo">Trust<span>Control</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:28px">
+      <div class="login-logo" style="margin-bottom:0">Trust<span>Control</span></div>
+      <button onclick="closeAuthModal()" style="background:none;border:none;color:var(--gray);font-size:22px;cursor:pointer;line-height:1;padding:0 4px">&times;</button>
+    </div>
     <div id="loginForm">
       <div class="form-group">
         <label class="form-label">Номер телефона</label>
@@ -1591,9 +1835,10 @@ async function doResendOtp() {
 
 function doLogout() {
   localStorage.removeItem("tc_token");
-  document.getElementById("appWrap").style.display  = "none";
-  document.getElementById("loginWrap").style.display = "flex";
-  document.getElementById("otpForm").style.display   = "none";
+  document.getElementById("appWrap").style.display    = "none";
+  document.getElementById("loginWrap").style.display  = "none";
+  document.getElementById("landingWrap").style.display = "block";
+  document.getElementById("otpForm").style.display    = "none";
   token = null;
 }
 // ═══════════════════════════════════════════
@@ -1845,8 +2090,9 @@ async function loadAll() {
 }
 
 async function showApp() {
-  document.getElementById("loginWrap").style.display = "none";
-  document.getElementById("appWrap").style.display   = "block";
+  document.getElementById("landingWrap").style.display = "none";
+  document.getElementById("loginWrap").style.display   = "none";
+  document.getElementById("appWrap").style.display     = "block";
   await loadAll();
   // Автообновление
   setInterval(loadDashboard,       30000);
@@ -2319,11 +2565,26 @@ async function loadReportsPage() {
 }
 
 // ═══════════════════════════════════════════
+//  AUTH MODAL HELPERS
+// ═══════════════════════════════════════════
+function openAuthModal(mode) {
+  document.getElementById("loginWrap").style.display = "flex";
+  if (mode === "register") {
+    showRegister();
+  } else {
+    showLogin();
+  }
+}
+function closeAuthModal() {
+  document.getElementById("loginWrap").style.display = "none";
+}
+
+// ═══════════════════════════════════════════
 //  INIT — validate token before showing app
 // ═══════════════════════════════════════════
 (async () => {
   if (!token) {
-    document.getElementById("loginWrap").style.display = "flex";
+    document.getElementById("landingWrap").style.display = "block";
     return;
   }
   try {
@@ -2335,10 +2596,9 @@ async function loadReportsPage() {
     } else {
       localStorage.removeItem("tc_token");
       token = null;
-      document.getElementById("loginWrap").style.display = "flex";
+      document.getElementById("landingWrap").style.display = "block";
     }
   } catch (_) {
-    // Network error on cold start — show app, let it fail gracefully
     showApp();
   }
 })();
