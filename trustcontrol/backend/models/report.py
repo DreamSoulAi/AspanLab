@@ -12,7 +12,6 @@ class Report(Base):
 
     timestamp       = Column(DateTime, default=datetime.utcnow, index=True)
     transcript      = Column(Text, nullable=False)
-    duration_sec    = Column(Float)
     audio_size_kb   = Column(Integer)
 
     # Найденные категории

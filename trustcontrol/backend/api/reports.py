@@ -37,6 +37,7 @@ from backend.services.context_analyzer import analyze_context, check_pos_window
 from backend.models.incident import Incident
 from backend.services import notifier
 from backend.api.auth import get_current_user
+from backend.api.deps import get_location_by_api_key
 
 log = logging.getLogger("reports")
 router = APIRouter()
@@ -44,19 +45,6 @@ router = APIRouter()
 MAX_AUDIO_SIZE_MB = 10
 RETRY_DIR = Path("uploads/retry")
 RETRY_DIR.mkdir(parents=True, exist_ok=True)
-
-
-async def get_location_by_key(api_key: str, db: AsyncSession) -> Location:
-    result = await db.execute(
-        select(Location).where(
-            Location.api_key  == api_key,
-            Location.is_active == True,
-        )
-    )
-    loc = result.scalar()
-    if not loc:
-        raise HTTPException(status_code=401, detail="Неверный API ключ точки")
-    return loc
 
 
 # ── Фоновая обработка ─────────────────────────────────────────────────────────
@@ -208,11 +196,13 @@ async def _process_submission(
         is_internal_talk = (conversation_context == "internal_talk")
         suppress_alert   = is_internal_talk and ignore_internal_profanity
 
-        if suppress_alert and (has_bad or effective_tone == "negative"):
-            has_bad          = False          # не создаём Alert
-            is_priority_flag = False          # не ставим priority
+        if suppress_alert:
+            # Внутренний разговор сотрудников — глушим все флаги тревоги
+            has_bad          = False
+            has_fraud        = False
+            is_priority_flag = False
             log.info(
-                f"[loc={location_id}] INTERNAL_TALK: мат/конфликт подавлен "
+                f"[loc={location_id}] INTERNAL_TALK: флаги подавлены "
                 f"(ignore_internal_profanity=True). Записано в БД тихо."
             )
 
@@ -248,31 +238,16 @@ async def _process_submission(
             db.add(report)
             await db.flush()
 
-            # Тревоги
-            if has_fraud:
-                db.add(Alert(location_id=location_id, report_id=report.id,
-                             alert_type="fraud", severity="high", transcript=transcript,
-                             trigger_phrase=", ".join(found.get("🚨 МОШЕННИЧЕСТВО", [])[:5])))
-            if has_bad:
-                db.add(Alert(location_id=location_id, report_id=report.id,
-                             alert_type="bad_language", severity="high", transcript=transcript,
-                             trigger_phrase=", ".join(found.get("⚠️ Грубость", [])[:5])))
-            if effective_tone == "negative" and not has_bad:
-                db.add(Alert(location_id=location_id, report_id=report.id,
-                             alert_type="negative_tone", severity="medium", transcript=transcript))
-
-            await db.commit()
-            report_id = report.id
-
-            # ── Kaspi Antifraud ───────────────────────────────────
-            kaspi_hits = check_kaspi_fraud(transcript, allowed_phones or [])
+            # ── Kaspi Antifraud (до regex-Alert, чтобы исключить дублирование) ──
+            # При internal_talk с включённым suppress_alert пропускаем — сотрудники говорят между собой
+            kaspi_hits = [] if suppress_alert else check_kaspi_fraud(transcript, allowed_phones or [])
             for hit in kaspi_hits:
                 evidence = {}
                 if wav_bytes:
-                    evidence = await create_evidence_clip(wav_bytes, location_id, report_id)
+                    evidence = await create_evidence_clip(wav_bytes, location_id, report.id)
                 incident = Incident(
                     location_id=location_id,
-                    report_id=report_id,
+                    report_id=report.id,
                     incident_type="KASPI_FRAUD",
                     severity="critical",
                     description=(
@@ -284,7 +259,7 @@ async def _process_submission(
                     proof_sha256=evidence.get("sha256"),
                 )
                 db.add(incident)
-                await db.flush()  # получаем incident.id до Telegram
+                await db.flush()
                 report.fraud_status = "critical_fraud_risk"
                 report.is_priority  = True
 
@@ -301,6 +276,25 @@ async def _process_submission(
 
             if kaspi_hits:
                 await db.commit()
+                # Kaspi уже создал Incident и отправил Telegram —
+                # сбрасываем has_fraud чтобы не добавлять дублирующий Alert ниже
+                has_fraud = False
+
+            # Тревоги (regex)
+            if has_fraud:
+                db.add(Alert(location_id=location_id, report_id=report.id,
+                             alert_type="fraud", severity="high", transcript=transcript,
+                             trigger_phrase=", ".join(found.get("🚨 МОШЕННИЧЕСТВО", [])[:5])))
+            if has_bad:
+                db.add(Alert(location_id=location_id, report_id=report.id,
+                             alert_type="bad_language", severity="high", transcript=transcript,
+                             trigger_phrase=", ".join(found.get("⚠️ Грубость", [])[:5])))
+            if effective_tone == "negative" and not has_bad:
+                db.add(Alert(location_id=location_id, report_id=report.id,
+                             alert_type="negative_tone", severity="medium", transcript=transcript))
+
+            await db.commit()
+            report_id = report.id
 
             # ── POS-матчинг если оплата подтверждена ─────────────
             if payment_confirmed:
@@ -433,7 +427,7 @@ async def submit_audio(
     if not effective_key:
         raise HTTPException(status_code=401, detail="API ключ обязателен")
 
-    location = await get_location_by_key(effective_key, db)
+    location = await get_location_by_api_key(effective_key, db)
     location.last_seen = datetime.utcnow()
 
     wav_bytes: Optional[bytes] = None

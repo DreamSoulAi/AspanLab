@@ -19,24 +19,14 @@ class Shift(Base):
 
     shift_date      = Column(Date, nullable=False, index=True)
     shift_number    = Column(Integer, nullable=False)       # 1=утро 2=день 3=вечер
-    shift_start     = Column(DateTime)
-    shift_end       = Column(DateTime)
 
     # Статистика
     total_conversations = Column(Integer, default=0)
 
     greetings_count = Column(Integer, default=0)
-    greetings_pct   = Column(Float, default=0)
-
     thanks_count    = Column(Integer, default=0)
-    thanks_pct      = Column(Float, default=0)
-
     goodbye_count   = Column(Integer, default=0)
-    goodbye_pct     = Column(Float, default=0)
-
     bonus_count     = Column(Integer, default=0)
-    bonus_pct       = Column(Float, default=0)
-
     bad_count       = Column(Integer, default=0)
     fraud_count     = Column(Integer, default=0)
 

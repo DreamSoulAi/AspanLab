@@ -34,8 +34,6 @@ class Alert(Base):
     # Статус
     is_resolved     = Column(Boolean, default=False)
     resolved_at     = Column(DateTime)
-    resolved_by     = Column(String(100))                   # кто разрешил
-    manager_notes   = Column(Text)                          # заметка менеджера
 
     # Связи
     location        = relationship("Location", back_populates="alerts")

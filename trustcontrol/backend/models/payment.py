@@ -26,13 +26,9 @@ class Payment(Base):
     # Kaspi
     kaspi_phone     = Column(String(20))                    # номер отправителя
     screenshot_path = Column(String(255))                   # путь к скрину чека
-    transaction_id  = Column(String(100))                   # ID транзакции
 
     # Даты
     created_at      = Column(DateTime, default=datetime.utcnow)
-    confirmed_at    = Column(DateTime)
-    confirmed_by    = Column(String(100))                   # кто подтвердил
-    notes           = Column(Text)
 
     user            = relationship("User", back_populates="payments")
 

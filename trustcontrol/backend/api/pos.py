@@ -26,6 +26,7 @@ from backend.models.location import Location
 from backend.models.alert import Alert
 from backend.models.user import User
 from backend.api.auth import get_current_user
+from backend.api.deps import get_location_by_api_key
 from backend.services.pos_matcher import match_report_with_pos
 from backend.services import notifier
 
@@ -40,19 +41,6 @@ class TransactionIn(BaseModel):
     cashier_id: Optional[str] = None     # ID кассира
     currency:   str = "KZT"
     raw_data:   Optional[str] = None     # любой JSON от кассы (строка)
-
-
-async def _get_location_by_key(api_key: str, db: AsyncSession) -> Location:
-    result = await db.execute(
-        select(Location).where(
-            Location.api_key  == api_key,
-            Location.is_active == True,
-        )
-    )
-    loc = result.scalar()
-    if not loc:
-        raise HTTPException(status_code=401, detail="Неверный API ключ точки")
-    return loc
 
 
 # ── POST /transaction ─────────────────────────────────────────────────────────
@@ -73,7 +61,7 @@ async def receive_transaction(
     if not effective_key:
         raise HTTPException(status_code=401, detail="Нужен X-API-Key")
 
-    location = await _get_location_by_key(effective_key, db)
+    location = await get_location_by_api_key(effective_key, db)
 
     pos_tx = PosTransaction(
         location_id=location.id,
@@ -262,7 +250,7 @@ async def pos_webhook(
     if not effective_key:
         raise HTTPException(status_code=401, detail="Нужен X-API-Key")
 
-    location = await _get_location_by_key(effective_key, db)
+    location = await get_location_by_api_key(effective_key, db)
 
     try:
         raw: dict[str, Any] = await request.json()
