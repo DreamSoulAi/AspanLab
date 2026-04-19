@@ -693,6 +693,14 @@ html, body {
 
   <!-- HERO -->
   <section class="ln-hero">
+    <!-- Social proof badge -->
+    <div style="display:inline-flex;align-items:center;gap:8px;padding:7px 16px;
+         background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.2);border-radius:40px;
+         font-size:12px;font-weight:600;color:#00e676;letter-spacing:.3px;margin-bottom:24px">
+      <span style="width:7px;height:7px;background:#00e676;border-radius:50%;display:inline-block;
+            box-shadow:0 0 8px #00e676;animation:pulse 2s infinite"></span>
+      Уже защищаем 50+ точек в Алматы
+    </div>
     <h1>Узнай что происходит<br>у кассы пока тебя нет</h1>
     <p>ИИ слушает каждый разговор, ловит мошенников и присылает отчёт в Telegram — без камер, без скандалов, за 15 минут до запуска</p>
     <div class="ln-hero-btns">
@@ -700,8 +708,8 @@ html, body {
       <button class="ln-hero-sec" onclick="document.getElementById('lnPricing').scrollIntoView({behavior:'smooth'})">Смотреть тарифы</button>
     </div>
     <div class="ln-trust">
+      <div class="ln-trust-item"><div class="ln-trust-num">50+</div><div class="ln-trust-lbl">Точек</div></div>
       <div class="ln-trust-item"><div class="ln-trust-num">24/7</div><div class="ln-trust-lbl">Мониторинг</div></div>
-      <div class="ln-trust-item"><div class="ln-trust-num">15 мин</div><div class="ln-trust-lbl">До запуска</div></div>
       <div class="ln-trust-item"><div class="ln-trust-num">14 дней</div><div class="ln-trust-lbl">Бесплатно</div></div>
       <div class="ln-trust-item"><div class="ln-trust-num">0 ₸</div><div class="ln-trust-lbl">Установка</div></div>
     </div>
@@ -782,7 +790,7 @@ html, body {
           <li><span class="fi">✓</span> Telegram-уведомления</li>
           <li><span class="fi">✓</span> Бесплатная установка</li>
         </ul>
-        <button class="plan-cta outline" onclick="openAuthModal('register')">Начать бесплатно</button>
+        <button class="plan-cta outline" onclick="openAuthModal('register','Пробный — бесплатно 14 дней')">Начать бесплатно</button>
       </div>
 
       <div class="plan-card">
@@ -796,7 +804,7 @@ html, body {
           <li><span class="fi">✓</span> Аналитика по сменам</li>
           <li><span class="fi">✓</span> Оценка каждого разговора</li>
         </ul>
-        <button class="plan-cta outline" onclick="openAuthModal('register')">Попробовать</button>
+        <button class="plan-cta outline" onclick="openAuthModal('register','Старт — 17 000 ₸/мес')">Попробовать</button>
       </div>
 
       <div class="plan-card featured">
@@ -810,7 +818,7 @@ html, body {
           <li><span class="fi">✓</span> Сравнение точек между собой</li>
           <li><span class="fi">✓</span> Приоритетная поддержка</li>
         </ul>
-        <button class="plan-cta gold" onclick="openAuthModal('register')">Выбрать</button>
+        <button class="plan-cta gold" onclick="openAuthModal('register','Бизнес — 27 000 ₸/мес')">Выбрать</button>
       </div>
 
       <div class="plan-card">
@@ -868,6 +876,12 @@ html, body {
       <div class="login-switch">Нет аккаунта? <a onclick="showRegister()">Зарегистрироваться</a></div>
     </div>
     <div id="registerForm" style="display:none">
+      <!-- Smart redirect: выбранный тариф -->
+      <div id="selectedPlanBanner" style="display:none;margin-bottom:18px;padding:10px 14px;
+           background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.25);border-radius:12px;
+           font-size:13px;color:var(--gold);gap:8px;align-items:center">
+        ★ <span id="selectedPlanText"></span>
+      </div>
       <div class="form-group">
         <label class="form-label">Имя</label>
         <input class="form-input" type="text" id="regName" placeholder="Иван Иванов">
@@ -1834,12 +1848,16 @@ async function doResendOtp() {
 }
 
 function doLogout() {
+  isLoggedIn = false;
   localStorage.removeItem("tc_token");
+  token = null;
   document.getElementById("appWrap").style.display    = "none";
   document.getElementById("loginWrap").style.display  = "none";
-  document.getElementById("landingWrap").style.display = "block";
   document.getElementById("otpForm").style.display    = "none";
-  token = null;
+  const lw = document.getElementById("landingWrap");
+  lw.style.display = "block";
+  // Плавный скролл обратно на Hero
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 // ═══════════════════════════════════════════
 //  BILLING
@@ -2090,6 +2108,7 @@ async function loadAll() {
 }
 
 async function showApp() {
+  isLoggedIn = true;
   document.getElementById("landingWrap").style.display = "none";
   document.getElementById("loginWrap").style.display   = "none";
   document.getElementById("appWrap").style.display     = "block";
@@ -2565,12 +2584,26 @@ async function loadReportsPage() {
 }
 
 // ═══════════════════════════════════════════
+//  APP STATE
+// ═══════════════════════════════════════════
+let isLoggedIn = false;
+
+// ═══════════════════════════════════════════
 //  AUTH MODAL HELPERS
 // ═══════════════════════════════════════════
-function openAuthModal(mode) {
+function openAuthModal(mode, planName) {
   document.getElementById("loginWrap").style.display = "flex";
   if (mode === "register") {
     showRegister();
+    // Smart redirect: показываем выбранный тариф в форме
+    const banner = document.getElementById("selectedPlanBanner");
+    const txt    = document.getElementById("selectedPlanText");
+    if (planName) {
+      txt.textContent      = planName;
+      banner.style.display = "flex";
+    } else {
+      banner.style.display = "none";
+    }
   } else {
     showLogin();
   }
