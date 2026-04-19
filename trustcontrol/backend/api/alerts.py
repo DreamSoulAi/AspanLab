@@ -23,7 +23,7 @@ router = APIRouter()
 
 
 class ResolveRequest(BaseModel):
-    notes: Optional[str] = None
+    pass
 
 
 async def _get_user_location_ids(user_id: int, db: AsyncSession) -> list[int]:
@@ -93,7 +93,6 @@ async def list_alerts(
             "trigger_phrase": a.trigger_phrase,
             "is_resolved":    a.is_resolved,
             "resolved_at":    a.resolved_at.isoformat() if a.resolved_at else None,
-            "manager_notes":  a.manager_notes,
         }
         for a in alerts
     ]
@@ -116,9 +115,7 @@ async def resolve_alert(
     if alert.location_id not in user_location_ids:
         raise HTTPException(status_code=403, detail="Нет доступа к этой тревоге")
 
-    alert.is_resolved   = True
-    alert.resolved_at   = datetime.utcnow()
-    alert.resolved_by   = user.name
-    alert.manager_notes = (data.notes or "")[:500]  # ограничиваем длину заметки
-
+    alert.is_resolved = True
+    alert.resolved_at = datetime.utcnow()
+    await db.commit()
     return {"message": "Тревога отмечена как решённая"}

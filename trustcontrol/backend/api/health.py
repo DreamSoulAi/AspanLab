@@ -17,6 +17,7 @@ from backend.database import get_db
 from backend.models.location import Location
 from backend.models.user import User
 from backend.api.auth import get_current_user
+from backend.api.deps import get_location_by_api_key
 
 log = logging.getLogger("health")
 router = APIRouter()
@@ -41,12 +42,7 @@ async def worker_ping(
     if not key:
         raise HTTPException(status_code=401, detail="Нужен X-API-Key")
 
-    result = await db.execute(
-        select(Location).where(Location.api_key == key, Location.is_active == True)
-    )
-    loc = result.scalar()
-    if not loc:
-        raise HTTPException(status_code=401, detail="Неверный API ключ")
+    loc = await get_location_by_api_key(key, db)
 
     now = datetime.utcnow()
     loc.last_ping_at = now
