@@ -80,6 +80,9 @@ def _generate_otp() -> str:
 
 async def _create_and_send_otp(phone: str, name: str, db: AsyncSession) -> None:
     """Invalidate old codes, generate a new one. SMS delivery bypassed via OTP_BYPASS."""
+    import logging
+    _log = logging.getLogger("auth")
+
     await db.execute(
         sa_update(OtpCode)
         .where(OtpCode.phone == phone, OtpCode.used == False)  # noqa: E712
@@ -93,9 +96,8 @@ async def _create_and_send_otp(phone: str, name: str, db: AsyncSession) -> None:
     ))
     await db.flush()
 
-    if settings.OTP_BYPASS:
-        import logging
-        logging.getLogger("auth").info(f"OTP BYPASS: phone={phone} code={code}")
+    # Always log the code so admin can find it in Render logs (until SMS gateway is set up)
+    _log.info(f"OTP generated: phone={phone} code={code} bypass={settings.OTP_BYPASS}")
     # Future: await send_sms(phone, code, name)
 
 
