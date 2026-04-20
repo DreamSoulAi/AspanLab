@@ -78,8 +78,8 @@ def _generate_otp() -> str:
     return "".join(random.choices(string.digits, k=6))
 
 
-async def _create_and_send_otp(phone: str, name: str, db: AsyncSession) -> None:
-    """Invalidate old codes, generate a new one. SMS delivery bypassed via OTP_BYPASS."""
+async def _create_and_send_otp(phone: str, name: str, db: AsyncSession) -> str:
+    """Invalidate old codes, generate a new one. Returns the code (shown on UI until SMS is live)."""
     import logging
     _log = logging.getLogger("auth")
 
@@ -96,9 +96,9 @@ async def _create_and_send_otp(phone: str, name: str, db: AsyncSession) -> None:
     ))
     await db.flush()
 
-    # Always log the code so admin can find it in Render logs (until SMS gateway is set up)
     _log.info(f"OTP generated: phone={phone} code={code} bypass={settings.OTP_BYPASS}")
     # Future: await send_sms(phone, code, name)
+    return code
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -205,13 +205,12 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     if existing_user:
         if existing_user.is_verified:
             raise HTTPException(status_code=400, detail="Номер уже зарегистрирован")
-        # Незаверифицированный — обновляем данные и переотправляем OTP
         existing_user.name            = data.name
         existing_user.email           = data.email or None
         existing_user.hashed_password = hash_password(data.password)
-        await _create_and_send_otp(data.phone, data.name, db)
+        code = await _create_and_send_otp(data.phone, data.name, db)
         await db.commit()
-        return {"status": "otp_sent", "phone": data.phone, "bypass": settings.OTP_BYPASS}
+        return {"status": "otp_sent", "phone": data.phone, "bypass": settings.OTP_BYPASS, "otp_code": code}
 
     user = User(
         name=data.name,
@@ -225,10 +224,10 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.flush()
 
-    await _create_and_send_otp(data.phone, data.name, db)
+    code = await _create_and_send_otp(data.phone, data.name, db)
     await db.commit()
 
-    return {"status": "otp_sent", "phone": data.phone, "bypass": settings.OTP_BYPASS}
+    return {"status": "otp_sent", "phone": data.phone, "bypass": settings.OTP_BYPASS, "otp_code": code}
 
 
 @router.post("/send-otp")
@@ -239,9 +238,9 @@ async def send_otp(data: OtpSendRequest, db: AsyncSession = Depends(get_db)):
     if not user:
         return {"status": "sent"}
 
-    await _create_and_send_otp(phone, user.name, db)
+    code = await _create_and_send_otp(phone, user.name, db)
     await db.commit()
-    return {"status": "sent", "bypass": settings.OTP_BYPASS}
+    return {"status": "sent", "bypass": settings.OTP_BYPASS, "otp_code": code}
 
 
 @router.post("/verify-otp", response_model=TokenResponse)
@@ -301,9 +300,9 @@ async def login(
         raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
 
     if not user.is_verified:
-        await _create_and_send_otp(user.phone, user.name, db)
+        code = await _create_and_send_otp(user.phone, user.name, db)
         await db.commit()
-        raise HTTPException(status_code=403, detail="PHONE_NOT_VERIFIED")
+        raise HTTPException(status_code=403, detail=f"PHONE_NOT_VERIFIED:{code}")
 
     user.last_login = datetime.utcnow()
     _login_attempts[client_ip] = []
