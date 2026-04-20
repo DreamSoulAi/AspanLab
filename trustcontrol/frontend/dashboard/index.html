@@ -1736,9 +1736,10 @@ async function doLogin() {
         err.style.display = "block";
       }
     } else {
-      let msg = "Неверный номер или пароль";
-      try { const e = await r.json(); msg = e.detail || msg; } catch(_) {}
-      err.textContent = msg; err.style.display = "block";
+      let json = null;
+      try { json = await r.json(); } catch(_) {}
+      err.textContent = _parseApiError(json, "Неверный номер или пароль");
+      err.style.display = "block";
     }
   } catch(e) {
     err.textContent = "Нет связи с сервером. Попробуйте позже.";
@@ -1748,35 +1749,65 @@ async function doLogin() {
   }
 }
 
+function _parseApiError(json, fallback) {
+  if (!json) return fallback;
+  if (typeof json.detail === "string") return json.detail;
+  if (Array.isArray(json.detail)) {
+    return json.detail.map(d => d.msg || d.message || JSON.stringify(d)).join("; ")
+      .replace(/^Value error, /i, "");
+  }
+  return json.message || json.error || fallback;
+}
+
 async function doRegister() {
   const err = document.getElementById("regError");
   const btn = document.querySelector("#registerForm .form-btn");
   err.style.display = "none";
-  const body = {
-    name:     document.getElementById("regName").value.trim(),
-    phone:    document.getElementById("regPhone").value.trim(),
-    password: document.getElementById("regPass").value,
-  };
-  if (!body.name || !body.phone || !body.password) {
-    err.textContent = "Заполните все поля"; err.style.display = "block"; return;
+
+  const name     = document.getElementById("regName").value.trim();
+  const phoneRaw = document.getElementById("regPhone").value.trim();
+  const password = document.getElementById("regPass").value;
+
+  // ── Клиентская валидация ──────────────────────────────────
+  if (!name) {
+    err.textContent = "Введите ваше имя"; err.style.display = "block"; return;
   }
+  if (name.length < 2) {
+    err.textContent = "Имя слишком короткое (мин. 2 символа)"; err.style.display = "block"; return;
+  }
+  if (!phoneRaw) {
+    err.textContent = "Введите номер телефона"; err.style.display = "block"; return;
+  }
+  const digits = phoneRaw.replace(/\D/g, "");
+  if (!(digits.length === 11 && (digits[0] === "7" || digits[0] === "8")) &&
+      !(digits.length === 10 && digits[0] === "7")) {
+    err.textContent = "Неверный формат телефона. Пример: +7 707 000 00 00"; err.style.display = "block"; return;
+  }
+  if (!password) {
+    err.textContent = "Введите пароль"; err.style.display = "block"; return;
+  }
+  if (password.length < 8) {
+    err.textContent = "Пароль должен быть минимум 8 символов"; err.style.display = "block"; return;
+  }
+
   btn.disabled = true; btn.textContent = "Регистрируемся...";
   try {
     const r = await fetch(`${API}/api/auth/register`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(body),
+      body: JSON.stringify({name, phone: phoneRaw, password}),
     });
     if (r.ok) {
       const d = await r.json();
-      _showOtpForm(d.phone || body.phone, d.bypass === true);
+      _showOtpForm(d.phone || phoneRaw, d.bypass === true);
     } else {
-      let msg = "Ошибка регистрации";
-      try { const e = await r.json(); msg = e.detail || msg; } catch(_) {}
+      let json = null;
+      try { json = await r.json(); } catch(_) {}
+      const msg = _parseApiError(json, `Ошибка сервера (${r.status})`);
       err.textContent = msg; err.style.display = "block";
     }
   } catch(e) {
-    err.textContent = "Нет связи с сервером."; err.style.display = "block";
+    err.textContent = "Нет связи с сервером. Проверьте интернет."; err.style.display = "block";
   } finally {
     btn.disabled = false; btn.textContent = "Зарегистрироваться — 14 дней бесплатно";
   }
