@@ -235,8 +235,8 @@ async def _daily_report_worker():
 async def _run_alembic():
     """
     Run Alembic migrations at startup.
-    If DB already has tables but no alembic_version (pre-Alembic deploy),
-    stamp as head instead of running migrations — avoids "table already exists" crash.
+    All migrations use IF NOT EXISTS / _col_exists guards so they are safe
+    to run against any DB state (fresh, partially migrated, or pre-Alembic).
     """
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
@@ -245,32 +245,11 @@ async def _run_alembic():
         from alembic.config import Config
         from alembic import command
         from pathlib import Path
-        import sqlalchemy as sa
 
         cfg = Config(str(Path(__file__).parent / "alembic.ini"))
         cfg.set_main_option("script_location", str(Path(__file__).parent / "alembic"))
-
-        # Build a sync DSN for the check query
-        dsn = settings.DATABASE_URL \
-            .replace("postgresql+asyncpg://", "postgresql://") \
-            .replace("sqlite+aiosqlite://", "sqlite://")
-
-        engine = sa.create_engine(dsn)
-        try:
-            with engine.connect() as conn:
-                has_alembic = sa.inspect(engine).has_table("alembic_version")
-                has_users   = sa.inspect(engine).has_table("users")
-        finally:
-            engine.dispose()
-
-        if has_users and not has_alembic:
-            # Pre-Alembic database: mark all migrations as already applied
-            command.stamp(cfg, "head")
-            print("✅ Alembic: stamped existing DB as head (no migrations run)")
-        else:
-            # Fresh DB or already Alembic-managed: run normally
-            command.upgrade(cfg, "head")
-            print("✅ Alembic migrations applied")
+        command.upgrade(cfg, "head")
+        print("✅ Alembic migrations applied")
 
     loop = asyncio.get_running_loop()
     with ThreadPoolExecutor(max_workers=1) as pool:
