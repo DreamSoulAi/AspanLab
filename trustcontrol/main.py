@@ -256,9 +256,61 @@ async def _run_alembic():
         await loop.run_in_executor(pool, _upgrade)
 
 
+async def _fix_schema():
+    """
+    Direct SQL safety net — runs EVERY startup after Alembic.
+    Adds any critical missing columns that may have been skipped by
+    a previous stamp-head or failed migration. Fully idempotent.
+    """
+    import sqlalchemy as sa
+    from backend.database import AsyncSessionLocal
+
+    is_pg = "postgresql" in settings.DATABASE_URL
+
+    async with AsyncSessionLocal() as db:
+        try:
+            # ── otp_codes.phone (critical: registration crashes without it) ──
+            r = await db.execute(sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name='otp_codes' AND column_name='phone'"
+            ))
+            if not r.fetchone():
+                await db.execute(sa.text(
+                    "ALTER TABLE otp_codes ADD COLUMN phone VARCHAR(30)"
+                ))
+                await db.execute(sa.text(
+                    "UPDATE otp_codes SET phone = COALESCE(email, 'unknown') "
+                    "WHERE phone IS NULL"
+                ))
+                if is_pg:
+                    await db.execute(sa.text(
+                        "ALTER TABLE otp_codes ALTER COLUMN phone SET NOT NULL"
+                    ))
+                await db.commit()
+                log.info("✅ schema fix: otp_codes.phone added")
+
+            # ── otp_codes.email → nullable ──────────────────────────────────
+            if is_pg:
+                r2 = await db.execute(sa.text(
+                    "SELECT is_nullable FROM information_schema.columns "
+                    "WHERE table_name='otp_codes' AND column_name='email'"
+                ))
+                row = r2.fetchone()
+                if row and row[0] == "NO":
+                    await db.execute(sa.text(
+                        "ALTER TABLE otp_codes ALTER COLUMN email DROP NOT NULL"
+                    ))
+                    await db.commit()
+                    log.info("✅ schema fix: otp_codes.email made nullable")
+
+        except Exception as e:
+            log.warning(f"_fix_schema warning (non-fatal): {e}")
+
+
 @app.on_event("startup")
 async def startup():
     await _run_alembic()
+    await _fix_schema()
 
     # Запускаем фоновые задачи
     asyncio.create_task(_retry_worker())
