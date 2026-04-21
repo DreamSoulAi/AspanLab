@@ -269,6 +269,42 @@ async def _fix_schema():
 
     async with AsyncSessionLocal() as db:
         try:
+            # ── users.email → nullable ──────────────────────────────────────
+            # Old DBs created before phone-auth have email NOT NULL.
+            # Registration without email now fails with 500 — fix it.
+            if is_pg:
+                r0 = await db.execute(sa.text(
+                    "SELECT is_nullable FROM information_schema.columns "
+                    "WHERE table_name='users' AND column_name='email'"
+                ))
+                row0 = r0.fetchone()
+                if row0 and row0[0] == "NO":
+                    await db.execute(sa.text(
+                        "ALTER TABLE users ALTER COLUMN email DROP NOT NULL"
+                    ))
+                    await db.commit()
+                    log.info("✅ schema fix: users.email made nullable")
+
+            # ── users.phone → unique index ──────────────────────────────────
+            if is_pg:
+                r_idx = await db.execute(sa.text(
+                    "SELECT 1 FROM pg_indexes WHERE indexname='ix_users_phone'"
+                ))
+                if not r_idx.fetchone():
+                    # Fill NULL phones first so UNIQUE works
+                    await db.execute(sa.text(
+                        "UPDATE users SET phone = '+700000' || LPAD(id::text, 7, '0') "
+                        "WHERE phone IS NULL OR phone = ''"
+                    ))
+                    await db.execute(sa.text(
+                        "ALTER TABLE users ALTER COLUMN phone SET NOT NULL"
+                    ))
+                    await db.execute(sa.text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_phone ON users(phone)"
+                    ))
+                    await db.commit()
+                    log.info("✅ schema fix: users.phone unique index added")
+
             # ── otp_codes.phone (critical: registration crashes without it) ──
             r = await db.execute(sa.text(
                 "SELECT 1 FROM information_schema.columns "
