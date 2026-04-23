@@ -1048,7 +1048,7 @@ html, body {
       <div class="form-group">
         <label class="form-label">Обязательные фразы допродажи</label>
         <textarea class="form-input" id="editLocUpsells" rows="3" placeholder="Хотите добавить десерт?&#10;Попробуйте нашу новинку?" style="resize:vertical;font-size:13px;line-height:1.6"></textarea>
-        <div style="font-size:11px;color:var(--gray);margin-top:4px">По одной фразе в строке — если не сказана, инцидент UPSELL_GAP</div>
+        <div style="font-size:11px;color:var(--gray);margin-top:4px">По одной фразе в строке — если кассир не произнёс, придёт уведомление</div>
       </div>
       <div class="form-group" style="display:flex;align-items:center;gap:10px;margin-bottom:0">
         <input type="checkbox" id="editLocIgnoreProf" style="width:16px;height:16px;cursor:pointer;flex-shrink:0">
@@ -1166,9 +1166,9 @@ html, body {
       <!-- COUNT CARDS -->
       <div class="cards" id="statsCards">
         <div class="card"><div class="card-label">Разговоров сегодня</div><div class="card-value" id="statTotal">—</div></div>
-        <div class="card red"><div class="card-label">Нарушения</div><div class="card-value" id="statBad">—</div></div>
-        <div class="card red"><div class="card-label">🚨 Фрод</div><div class="card-value" id="statFraud">—</div></div>
-        <div class="card"><div class="card-label">Инциденты открыты</div><div class="card-value" id="statIncidents">—</div></div>
+        <div class="card red"><div class="card-label">Грубость / мат</div><div class="card-value" id="statBad">—</div></div>
+        <div class="card red"><div class="card-label">⚠️ Подозр. оплаты</div><div class="card-value" id="statFraud">—</div></div>
+        <div class="card"><div class="card-label">Нарушения (открыто)</div><div class="card-value" id="statIncidents">—</div></div>
       </div>
 
       <!-- KPI PROGRESS RINGS -->
@@ -1210,7 +1210,7 @@ html, body {
               <div class="kpi-label-inner">/ 5</div>
             </div>
           </div>
-          <div class="kpi-label-outer">Удовлетворённость</div>
+          <div class="kpi-label-outer">Оценка клиентов</div>
         </div>
         <div class="kpi-ring-wrap">
           <div class="kpi-svg-outer">
@@ -1223,13 +1223,13 @@ html, body {
               <div class="kpi-label-inner">/ 100</div>
             </div>
           </div>
-          <div class="kpi-label-outer">AI оценка</div>
+          <div class="kpi-label-outer">Оценка ИИ</div>
         </div>
         <div class="upsell-hero">
           <div class="upsell-hero-ico">💰</div>
-          <div class="upsell-hero-label">Упущено</div>
+          <div class="upsell-hero-label">Не предложено</div>
           <div class="upsell-hero-val" id="kpiMissedRev">—</div>
-          <div class="upsell-hero-sub">тенге · UPSELL GAP</div>
+          <div class="upsell-hero-sub">тенге · упущ. допродажи</div>
         </div>
       </div>
 
@@ -1285,7 +1285,7 @@ html, body {
 
       <!-- INCIDENT FEED -->
       <div class="panel incident-feed" id="incidentFeedPanel" style="margin-bottom:20px">
-        <h3>🚨 Последние инциденты</h3>
+        <h3>⚠️ Последние нарушения</h3>
         <div id="incidentFeed"><p style="color:var(--gray);font-size:13px">Загрузка...</p></div>
       </div>
 
@@ -1297,9 +1297,9 @@ html, body {
             <thead>
               <tr>
                 <th>Время</th>
-                <th>Транскрипция</th>
+                <th>Фрагмент разговора</th>
                 <th>Тон</th>
-                <th>AI оценка</th>
+                <th>Оценка ИИ</th>
                 <th>Статус</th>
               </tr>
             </thead>
@@ -1353,9 +1353,9 @@ html, body {
             <thead>
               <tr>
                 <th>Время</th>
-                <th>Транскрипция</th>
+                <th>Фрагмент разговора</th>
                 <th>Тон</th>
-                <th>AI оценка</th>
+                <th>Оценка ИИ</th>
                 <th>Статус</th>
               </tr>
             </thead>
@@ -1375,10 +1375,10 @@ html, body {
       <!-- HERO -->
       <div class="billing-hero">
         <h1>Узнай что происходит у кассы,<br>пока тебя нет рядом</h1>
-        <p>ИИ слушает каждый разговор, ловит мошенников, считает оценки и присылает всё в Telegram — без камер, без скандалов, без лишних вопросов</p>
+        <p>ИИ слушает каждый разговор, оценивает сервис сотрудников и помогает зарабатывать больше — без камер, без скандалов, без лишних вопросов</p>
         <div class="pain-row">
-          <div class="pain-item">😤 <div>Кассир грубит —<br><b>ты узнаёшь первым</b></div></div>
-          <div class="pain-item">💸 <div>Оплата мимо кассы —<br><b>мгновенная тревога</b></div></div>
+          <div class="pain-item">🏆 <div>Сервис под контролем —<br><b>видишь всё объективно</b></div></div>
+          <div class="pain-item">📈 <div>Допродажи растут —<br><b>кассир работает по скрипту</b></div></div>
           <div class="pain-item">📉 <div>Выручка упала —<br><b>видишь точную причину</b></div></div>
         </div>
       </div>
@@ -1397,9 +1397,9 @@ html, body {
             <li><span class="fi">✓</span> 1 касса / точка</li>
             <li><span class="fi">✓</span> ИИ-анализ всех разговоров</li>
             <li><span class="fi">✓</span> Telegram-уведомления</li>
-            <li><span class="fi">✓</span> Детектор грубости и мата</li>
+            <li><span class="fi">✓</span> Контроль тона и грубости</li>
             <li><span class="fi">✓</span> Бесплатная установка</li>
-            <li><span class="fno">—</span> <span style="color:var(--gray)">Детектор мошенничества</span></li>
+            <li><span class="fno">—</span> <span style="color:var(--gray)">Контроль допродаж</span></li>
             <li><span class="fno">—</span> <span style="color:var(--gray)">Аналитика по сменам</span></li>
           </ul>
           <button class="plan-cta outline" onclick="showPage('locations',null)">Уже активен → Мои точки</button>
@@ -1416,9 +1416,9 @@ html, body {
             <li><span class="fi">✓</span> 1 касса / точка</li>
             <li><span class="fi">✓</span> ИИ-анализ 24/7</li>
             <li><span class="fi">✓</span> Telegram-уведомления</li>
-            <li><span class="fi">✓</span> <b>Детектор мошенничества</b></li>
+            <li><span class="fi">✓</span> <b>Контроль допродаж по скриптам</b></li>
             <li><span class="fi">✓</span> Оценка каждого разговора</li>
-            <li><span class="fi">✓</span> Аналитика по сменам</li>
+            <li><span class="fi">✓</span> Аналитика по сменам и сотрудникам</li>
             <li><span class="fi">✓</span> Бесплатная установка</li>
           </ul>
           <button class="plan-cta outline" onclick="openKaspiModal('Старт',17000)">Оплатить через Kaspi</button>
@@ -1437,7 +1437,7 @@ html, body {
             <li><span class="fi">✓</span> <b>Сравнение точек между собой</b></li>
             <li><span class="fi">✓</span> Рейтинг смен и кассиров</li>
             <li><span class="fi">✓</span> Еженедельный сводный отчёт</li>
-            <li><span class="fi">✓</span> Антифрод: белый список номеров</li>
+            <li><span class="fi">✓</span> Свои Kaspi-номера (без ложных тревог)</li>
             <li><span class="fi">✓</span> Приоритетная поддержка</li>
           </ul>
           <button class="plan-cta gold" onclick="openKaspiModal('Бизнес',27000)">Оплатить через Kaspi</button>
@@ -1454,7 +1454,7 @@ html, body {
             <li><span class="fi">✓</span> Неограниченное кол-во касс</li>
             <li><span class="fi">✓</span> Всё из тарифа Бизнес</li>
             <li><span class="fi">✓</span> Выделенный менеджер</li>
-            <li><span class="fi">✓</span> Интеграция с вашей POS-системой</li>
+            <li><span class="fi">✓</span> Подключение к вашей кассовой программе</li>
             <li><span class="fi">✓</span> Кастомные фразы и стандарты</li>
             <li><span class="fi">✓</span> SLA и отчётность</li>
             <li><span class="fi">✓</span> Обучение персонала</li>
