@@ -327,11 +327,23 @@ async def _process_submission(
                 "sha256":        audio_sha256,
             })
         elif telegram_chat and (found or has_fraud or has_bad):
+            # Нарушение — подробный отчёт
             await notifier.send_report(
                 chat_id=telegram_chat, location_name=location_name,
                 transcript=transcript, found=found,
                 tone=effective_tone, score=score,
                 audio_url=s3_url,
+            )
+        elif telegram_chat and not suppress_alert:
+            # Обычный разговор — краткая сводка
+            await notifier.send_ok_report(
+                chat_id=telegram_chat,
+                location_name=location_name,
+                transcript=transcript,
+                tone=effective_tone,
+                score=score,
+                upsell=upsell_attempt,
+                greeting=has_greeting,
             )
 
         _mark_job_done(failed_job_id)

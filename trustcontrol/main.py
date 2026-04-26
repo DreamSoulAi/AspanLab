@@ -183,15 +183,18 @@ async def _daily_report_worker():
         try:
             today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
             async with AsyncSessionLocal() as db:
+                # Берём всех активных пользователей (не только с telegram_chat)
                 users = await db.execute(
-                    select(User).where(User.telegram_chat != None, User.is_active == True)
+                    select(User).where(User.is_active == True)
                 )
                 for user in users.scalars().all():
                     locs = await db.execute(
                         select(Location).where(Location.owner_id == user.id, Location.is_active == True)
                     )
                     for loc in locs.scalars().all():
-                        if not user.telegram_chat:
+                        # Приоритет: telegram_chat точки, затем telegram_chat пользователя
+                        chat_id = loc.telegram_chat or user.telegram_chat
+                        if not chat_id:
                             continue
                         # Считаем статистику за день
                         reps = await db.execute(
@@ -214,7 +217,7 @@ async def _daily_report_worker():
                         avg_sat        = (sum(sat_scores) / len(sat_scores)) if sat_scores else 0.0
 
                         await notifier.send_daily_summary(
-                            chat_id=user.telegram_chat,
+                            chat_id=chat_id,
                             location_name=loc.name,
                             stats={
                                 "total":         total,
