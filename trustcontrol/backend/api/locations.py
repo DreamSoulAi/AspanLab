@@ -167,6 +167,35 @@ async def update_antifraud(
     }
 
 
+@router.post("/{location_id}/test-telegram")
+async def test_telegram(
+    location_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Отправляет тестовое сообщение в Telegram группу точки."""
+    loc = await db.get(Location, location_id)
+    if not loc or loc.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Точка не найдена")
+
+    chat_id = loc.telegram_chat
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="Telegram Chat ID не задан в настройках точки")
+
+    from backend.services import notifier
+    from datetime import datetime
+    try:
+        await notifier._send(
+            chat_id,
+            f"✅ *TrustControl подключён!*\n\n"
+            f"🏪 Точка: *{loc.name}*\n"
+            f"🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"Уведомления о нарушениях и итоги смен будут приходить сюда.",
+        )
+        return {"status": "ok", "message": "Тестовое сообщение отправлено"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
+
 @router.delete("/{location_id}")
 async def delete_location(
     location_id: int,

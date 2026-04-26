@@ -1057,6 +1057,10 @@ html, body {
     </div>
     <div class="error-msg" id="editLocError"></div>
     <button class="form-btn" onclick="saveLocation()">Сохранить</button>
+    <button id="testTgBtn" class="btn btn-outline" style="width:100%;margin-top:10px;font-size:13px" onclick="testTelegram()">
+      📨 Проверить Telegram (отправить тест)
+    </button>
+    <div id="testTgResult" style="display:none;margin-top:8px;font-size:13px;text-align:center;padding:8px;border-radius:8px"></div>
   </div>
 </div>
 
@@ -2517,6 +2521,35 @@ function openEditLocation(loc) {
 
 function closeEditLocation() {
   document.getElementById("editLocationModal").classList.remove("open");
+}
+
+async function testTelegram() {
+  const id  = document.getElementById("editLocId").value;
+  const btn = document.getElementById("testTgBtn");
+  const res = document.getElementById("testTgResult");
+  if (!id) return;
+  btn.disabled = true; btn.textContent = "Отправляем...";
+  res.style.display = "none";
+  try {
+    const r = await apiFetch(`/api/locations/${id}/test-telegram`, { method: "POST" });
+    if (r && r.status === "ok") {
+      res.style.display = "block";
+      res.style.background = "rgba(0,230,118,.1)";
+      res.style.color = "var(--green)";
+      res.style.border = "1px solid rgba(0,230,118,.3)";
+      res.textContent = "✅ Сообщение отправлено — проверь группу в Telegram";
+    } else {
+      throw new Error(r?.detail || "Ошибка");
+    }
+  } catch(e) {
+    res.style.display = "block";
+    res.style.background = "rgba(224,85,85,.1)";
+    res.style.color = "var(--red)";
+    res.style.border = "1px solid rgba(224,85,85,.3)";
+    res.textContent = "❌ Не удалось отправить. Убедись что бот добавлен в группу как администратор и Chat ID правильный.";
+  } finally {
+    btn.disabled = false; btn.textContent = "📨 Проверить Telegram (отправить тест)";
+  }
 }
 
 async function saveLocation() {
