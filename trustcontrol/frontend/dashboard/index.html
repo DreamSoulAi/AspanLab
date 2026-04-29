@@ -227,8 +227,13 @@ html, body {
   border-radius: 24px;
   box-shadow: 0 32px 80px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.08);
 }
-.login-logo { font-size:22px; font-weight:900; letter-spacing:3px; color:var(--gold); text-align:center; margin-bottom:32px; text-transform:uppercase; }
+.login-logo { font-size:22px; font-weight:900; letter-spacing:3px; color:var(--gold); text-align:center; margin-bottom:16px; text-transform:uppercase; }
 .login-logo span { color:var(--txt); }
+.login-tagline {
+  text-align:center; font-size:12px; color:var(--gray); line-height:1.65;
+  margin-bottom:28px; font-style:italic; letter-spacing:.2px;
+  padding:0 4px;
+}
 .form-group { margin-bottom:20px; }
 .form-label { font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--gray); margin-bottom:8px; display:block; }
 .form-input { width:100%; background:#0e0e0e; border:1px solid var(--bdr); color:var(--txt); padding:12px 14px; font-size:14px; }
@@ -521,6 +526,10 @@ html, body {
 <div id="loginWrap" class="login-wrap">
   <div class="login-box">
     <div class="login-logo">Trust<span>Control</span></div>
+    <div class="login-tagline">
+      Не борьба с персоналом — а способ вернуть<br>
+      любовь и доверие Клиентов в момент роста.
+    </div>
     <div id="loginForm">
       <div class="form-group">
         <label class="form-label">Номер телефона</label>
@@ -973,6 +982,23 @@ html, body {
             <span id="sPlanExpiry" style="font-size:12px;color:var(--gray)"></span>
           </div>
           <div id="sPlanDesc" style="font-size:13px;color:var(--gray);line-height:1.6"></div>
+        </div>
+      </div>
+
+      <!-- Философия -->
+      <div class="panel" style="margin-bottom:16px;border:1px solid rgba(201,168,76,.18);background:rgba(201,168,76,.04)">
+        <h3 style="color:var(--gold)">О системе</h3>
+        <div style="margin-top:16px;font-size:14px;color:var(--txt);line-height:1.8;border-left:2px solid var(--gold);padding-left:16px">
+          TrustControl — это не инструмент слежки и не способ усложнить жизнь сотрудникам.
+        </div>
+        <div style="margin-top:12px;font-size:13px;color:var(--gray);line-height:1.75">
+          Когда бизнес растёт, владелец физически не может присутствовать везде. В этот момент
+          качество обслуживания начинает проседать — и клиенты уходят молча, не объясняя почему.<br><br>
+          Система помогает <span style="color:var(--txt);font-weight:600">вернуть доверие и лояльность клиентов</span> —
+          замечая то, что раньше было невидимым: холодный тон, пропущенное приветствие,
+          упущенная возможность предложить что-то ещё.<br><br>
+          Хорошие сотрудники получают признание. Проблемные ситуации решаются
+          до того, как клиент ушёл навсегда.
         </div>
       </div>
 
