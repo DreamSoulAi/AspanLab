@@ -116,10 +116,105 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer}
 .lp-plan-btn.outline{background:transparent;border:1px solid var(--bdr2);color:var(--dim)}
 .lp-plan-btn.outline:hover{border-color:var(--accent);color:var(--accent2)}
 
+/* EYEBROW */
+.lp-eyebrow{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent2);margin-bottom:14px;text-align:center}
+
+/* PRICING ANCHOR */
+.lp-anchor{display:inline-flex;align-items:center;gap:10px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.25);border-radius:12px;padding:12px 20px;margin:0 auto 32px;font-size:15px;font-weight:600;color:var(--txt)}
+.lp-anchor-dot{width:8px;height:8px;border-radius:50%;background:var(--accent2);animation:pulse-kf 1.8s infinite;flex-shrink:0}
+.lp-anchor-hero{display:flex;justify-content:center}
+
+/* NAV LINKS */
+.lp-nav-links{display:flex;align-items:center;gap:4px}
+.lp-nav-link{background:transparent;border:none;color:var(--muted);padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;border-radius:6px;transition:color .2s;font-family:'DM Sans',sans-serif}
+.lp-nav-link:hover{color:var(--txt)}
+@media(max-width:640px){.lp-nav-links{display:none}}
+
+/* PROOF SECTION */
+.lp-proof{padding:80px 24px;background:var(--bg)}
+.proof-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:840px;margin:0 auto 32px}
+@media(max-width:640px){.proof-grid{grid-template-columns:1fr}}
+.proof-col{border-radius:20px;padding:28px}
+.proof-col.before{background:var(--surface);border:1px solid var(--bdr)}
+.proof-col.after{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.25)}
+.proof-col-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:20px;padding:5px 12px;border-radius:6px;display:inline-block}
+.proof-col.before .proof-col-label{background:rgba(255,255,255,.05);color:var(--muted)}
+.proof-col.after .proof-col-label{background:rgba(59,130,246,.15);color:var(--accent2)}
+.proof-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.proof-row:last-child{border-bottom:none}
+.proof-metric{font-size:13px;color:var(--muted)}
+.proof-val{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px}
+.proof-col.before .proof-val{color:var(--dim)}
+.proof-col.after .proof-val{color:var(--accent2)}
+.proof-roi{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:16px;padding:28px 32px;max-width:840px;margin:0 auto;text-align:center}
+.proof-roi-big{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(22px,3vw,32px);color:var(--txt);margin-bottom:8px}
+.proof-roi-big span{color:var(--accent2)}
+.proof-roi-sub{font-size:15px;color:var(--muted)}
+.proof-roi-sub b{color:var(--txt)}
+
+/* EXPANDED PRICING */
+.lp-pricing{padding:80px 24px;background:var(--surface);border-top:1px solid var(--bdr);border-bottom:1px solid var(--bdr)}
+.lp-plans{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;max-width:1120px;margin:0 auto}
+@media(max-width:960px){.lp-plans{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.lp-plans{grid-template-columns:1fr}}
+.lp-plan{background:var(--bg);border:1px solid var(--bdr);border-radius:20px;padding:28px 22px;position:relative;transition:border-color .2s,transform .2s;display:flex;flex-direction:column}
+.lp-plan:hover{border-color:var(--bdr2);transform:translateY(-3px)}
+.lp-plan.hot{border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.04);box-shadow:0 0 40px rgba(59,130,246,.08)}
+.lp-plan.hot:hover{box-shadow:0 0 60px rgba(59,130,246,.15)}
+@media(max-width:560px){.lp-plan.hot{order:-1}}
+.lp-plan-tag{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:11px;font-weight:700;padding:4px 14px;border-radius:20px;white-space:nowrap}
+.lp-plan-badge{position:absolute;top:16px;right:16px;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;letter-spacing:.04em}
+.lp-plan-badge.grey{background:rgba(255,255,255,.07);color:var(--muted)}
+.lp-plan-badge.blue{background:rgba(59,130,246,.15);color:var(--accent2)}
+.lp-plan-badge.green{background:rgba(16,185,129,.12);color:var(--green)}
+.lp-plan-badge.orange{background:rgba(245,158,11,.1);color:var(--orange)}
+.lp-plan-name{font-family:'Syne',sans-serif;font-weight:700;font-size:17px;margin-bottom:10px;padding-right:50px}
+.lp-plan-price{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:30px;color:var(--txt);line-height:1}
+.lp-plan-price sup{font-size:15px;vertical-align:top;margin-top:5px;color:var(--muted)}
+.lp-plan-period{font-size:12px;color:var(--muted);margin-bottom:14px;margin-top:4px}
+.lp-plan-hw{font-size:12px;font-weight:600;padding:6px 10px;border-radius:8px;margin-bottom:16px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.15);color:var(--green)}
+.lp-plan-hw.none{background:rgba(255,255,255,.04);border-color:var(--bdr);color:var(--muted)}
+.lp-plan ul{list-style:none;margin-bottom:24px;flex:1}
+.lp-plan li{font-size:13px;color:var(--dim);padding:5px 0;display:flex;align-items:flex-start;gap:8px;line-height:1.4}
+.lp-plan li::before{content:'✓';color:var(--green);font-weight:700;flex-shrink:0;margin-top:1px}
+.lp-plan-btn{width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:600;border:none;transition:all .2s;margin-top:auto}
+.lp-plan-btn.solid{background:var(--accent);color:#fff}
+.lp-plan-btn.solid:hover{background:#2563EB;box-shadow:0 4px 20px rgba(59,130,246,.4)}
+.lp-plan-btn.outline{background:transparent;border:1px solid var(--bdr2);color:var(--dim)}
+.lp-plan-btn.outline:hover{border-color:var(--accent);color:var(--accent2)}
+.lp-pricing-note{max-width:1120px;margin:20px auto 0;text-align:center;font-size:13px;color:var(--muted);background:rgba(255,255,255,.03);border:1px solid var(--bdr);border-radius:10px;padding:12px 20px}
+.lp-pricing-note b{color:var(--txt)}
+
+/* HARDWARE SECTION */
+.lp-hw{padding:80px 24px;background:var(--bg)}
+.hw-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:960px;margin:0 auto 40px}
+@media(max-width:640px){.hw-grid{grid-template-columns:1fr}}
+.hw-card{background:var(--surface);border:1px solid var(--bdr);border-radius:20px;padding:28px;transition:border-color .2s,transform .2s;position:relative}
+.hw-card:hover{border-color:var(--bdr2);transform:translateY(-3px)}
+.hw-new{position:absolute;top:16px;right:16px;background:rgba(59,130,246,.15);color:var(--accent2);font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;letter-spacing:.04em}
+.hw-ico{font-size:40px;margin-bottom:16px}
+.hw-type{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.hw-card h3{font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin-bottom:10px}
+.hw-when{font-size:13px;color:var(--dim);margin-bottom:16px}
+.hw-props{list-style:none;margin-bottom:20px}
+.hw-props li{font-size:13px;color:var(--muted);padding:4px 0;display:flex;align-items:center;gap:8px}
+.hw-props li::before{content:'—';color:var(--bdr2)}
+.hw-plans{font-size:12px;color:var(--muted)}
+.hw-plans b{color:var(--accent2)}
+.hw-guarantees{display:flex;justify-content:center;gap:32px;flex-wrap:wrap;max-width:700px;margin:0 auto}
+.hw-guarantee{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--dim)}
+.hw-guarantee span{color:var(--green);font-size:16px;flex-shrink:0}
+
 /* CTA SECTION */
 .lp-cta-sec{padding:80px 24px;text-align:center}
-.lp-cta-sec h2{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(28px,3vw,42px);letter-spacing:-1px;margin-bottom:16px}
+.lp-cta-sec h2{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(28px,3vw,48px);letter-spacing:-1.5px;margin-bottom:16px}
 .lp-cta-sec p{color:var(--muted);font-size:16px;margin-bottom:36px}
+.lp-cta-btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:16px}
+.lp-cta-micro{font-size:12px;color:var(--muted)}
+
+/* REVEAL ANIMATION */
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
+.reveal.visible{opacity:1;transform:translateY(0)}
 
 /* FOOTER */
 .lp-footer{border-top:1px solid var(--bdr);padding:32px 24px}
@@ -409,30 +504,211 @@ textarea.f-input{resize:vertical;line-height:1.6}
   <nav class="lp-nav">
     <div class="lp-nav-inner">
       <div class="lp-logo">Trust<span>Control</span></div>
+      <div class="lp-nav-links">
+        <button class="lp-nav-link" onclick="document.getElementById('howItWorks').scrollIntoView({behavior:'smooth'})">Как работает</button>
+        <button class="lp-nav-link" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Тарифы</button>
+        <button class="lp-nav-link" onclick="document.getElementById('hardware').scrollIntoView({behavior:'smooth'})">Оборудование</button>
+      </div>
       <div class="lp-nav-r">
         <button class="lp-ghost" onclick="goToAuth(false)">Войти</button>
-        <button class="lp-primary" onclick="goToAuth(true)">Попробовать бесплатно</button>
+        <button class="lp-primary" onclick="goToAuth(true)">Подключить →</button>
       </div>
     </div>
   </nav>
 
   <!-- HERO -->
-  <section class="lp-hero">
+  <section class="lp-hero reveal">
     <h1>ИИ следит за сервисом,<br>пока вы занимаетесь <em>бизнесом</em></h1>
     <p class="lp-hero-sub">Каждый разговор на кассе — анализ через 15 секунд.<br>Грубость, мошенничество, упущенные продажи — всё в Telegram.</p>
+    <div class="lp-anchor-hero">
+      <div class="lp-anchor">
+        <div class="lp-anchor-dot"></div>
+        <span><b>От 25 000 ₸ в месяц.</b> Оборудование, AI и Telegram-отчёты включены. Без вложений.</span>
+      </div>
+    </div>
     <div class="lp-hero-btns">
-      <button class="lp-btn-hero" onclick="goToAuth(true)">Начать бесплатно — 14 дней →</button>
-      <button class="lp-btn-outline" onclick="document.getElementById('howItWorks').scrollIntoView({behavior:'smooth'})">Как это работает ↓</button>
+      <button class="lp-btn-hero" onclick="goToAuth(true)">Подключить за 25 000 ₸ →</button>
+      <button class="lp-btn-outline" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Посмотреть тарифы</button>
     </div>
     <div class="lp-hero-stats">
       <div class="lp-stat"><span>98%</span><p>точность обнаружения</p></div>
       <div class="lp-stat" style="border-left:1px solid var(--bdr)"><span>15 сек</span><p>отчёт после разговора</p></div>
-      <div class="lp-stat" style="border-left:1px solid var(--bdr)"><span>0 ₸</span><p>первые 14 дней</p></div>
+      <div class="lp-stat" style="border-left:1px solid var(--bdr)"><span>×12</span><p>средний ROI в первый месяц</p></div>
+    </div>
+  </section>
+
+  <!-- SOCIAL PROOF -->
+  <section class="lp-proof reveal">
+    <div class="lp-section">
+      <div class="lp-eyebrow">Реальные цифры</div>
+      <h2 class="lp-h2">Возврат инвестиций — за 30 дней.</h2>
+      <p class="lp-h2-sub">Сравнение «до» и «через месяц после подключения» по пилотным точкам в Алматы.</p>
+      <div class="proof-grid">
+        <div class="proof-col before">
+          <div class="proof-col-label">До TrustControl</div>
+          <div class="proof-row"><span class="proof-metric">Средний чек</span><span class="proof-val">2 100 ₸</span></div>
+          <div class="proof-row"><span class="proof-metric">Конверсия в допродажу</span><span class="proof-val">12%</span></div>
+          <div class="proof-row"><span class="proof-metric">Жалобы клиентов / мес.</span><span class="proof-val">14</span></div>
+          <div class="proof-row"><span class="proof-metric">Слитая выручка / мес.</span><span class="proof-val">280 000 ₸</span></div>
+        </div>
+        <div class="proof-col after">
+          <div class="proof-col-label">Через 30 дней</div>
+          <div class="proof-row"><span class="proof-metric">Средний чек</span><span class="proof-val">2 680 ₸ <small style="font-size:11px;color:var(--green)">+28%</small></span></div>
+          <div class="proof-row"><span class="proof-metric">Конверсия в допродажу</span><span class="proof-val">38% <small style="font-size:11px;color:var(--green)">+217%</small></span></div>
+          <div class="proof-row"><span class="proof-metric">Жалобы клиентов / мес.</span><span class="proof-val">3 <small style="font-size:11px;color:var(--green)">–79%</small></span></div>
+          <div class="proof-row"><span class="proof-metric">Дополнительная выручка</span><span class="proof-val">+<span class="count-up" data-target="312000">0</span> ₸</span></div>
+        </div>
+      </div>
+      <div class="proof-roi">
+        <div class="proof-roi-big">Средний клиент возвращает <span><span class="count-up" data-target="312000">0</span> ₸ / мес.</span></div>
+        <div class="proof-roi-sub">При подписке 25 000 ₸ это <b>ROI ×12 в первый же месяц</b></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section class="lp-pricing reveal" id="pricing">
+    <div class="lp-section">
+      <div class="lp-eyebrow">Тарифы</div>
+      <h2 class="lp-h2">Один платёж. Всё включено.</h2>
+      <p class="lp-h2-sub">Оборудование, AI-анализ, отчёты в Telegram, поддержка. Без скрытых платежей.</p>
+      <div class="lp-plans">
+
+        <!-- СТАРТ -->
+        <div class="lp-plan">
+          <div class="lp-plan-badge grey">Для теста</div>
+          <div class="lp-plan-name">Старт</div>
+          <div class="lp-plan-price">15 000 <sup>₸</sup></div>
+          <div class="lp-plan-period">в месяц · помесячно</div>
+          <div class="lp-plan-hw none">🎙 Оборудование: ваше</div>
+          <ul>
+            <li>1 касса</li>
+            <li>50 часов AI-анализа в месяц</li>
+            <li>Telegram-отчёт ежедневно</li>
+            <li>Базовые скрипты бизнеса</li>
+            <li>FAQ-поддержка</li>
+          </ul>
+          <button class="lp-plan-btn outline" onclick="goToAuth(true)">Начать тест</button>
+        </div>
+
+        <!-- БАЗОВЫЙ -->
+        <div class="lp-plan hot">
+          <div class="lp-plan-tag">POPULAR</div>
+          <div class="lp-plan-badge blue">Оборудование в подарок</div>
+          <div class="lp-plan-name">Базовый</div>
+          <div class="lp-plan-price">25 000 <sup>₸</sup></div>
+          <div class="lp-plan-period">в месяц · контракт 12 мес.</div>
+          <div class="lp-plan-hw">🎙 USB-микрофон в подарок</div>
+          <ul>
+            <li>1–2 точки малого бизнеса</li>
+            <li>120 часов AI-анализа в месяц</li>
+            <li>Ежедневный + еженедельный отчёт</li>
+            <li>Скрипты под ваш бизнес</li>
+            <li>Антифрод-маркеры</li>
+            <li>Email-поддержка 24ч</li>
+          </ul>
+          <button class="lp-plan-btn solid" onclick="goToAuth(true)">Подключить</button>
+        </div>
+
+        <!-- PRO -->
+        <div class="lp-plan">
+          <div class="lp-plan-badge green">Для сетей</div>
+          <div class="lp-plan-name">Pro</div>
+          <div class="lp-plan-price">50 000 <sup>₸</sup></div>
+          <div class="lp-plan-period">в месяц · контракт 12 мес.</div>
+          <div class="lp-plan-hw">📎 AI-Pin или петличка ×2 в подарок</div>
+          <ul>
+            <li>Сети 3–10 точек</li>
+            <li>240 часов AI-анализа в месяц</li>
+            <li>Telegram + Slack-интеграция</li>
+            <li>Кастомные скрипты под стандарты</li>
+            <li>Антифрод: Kaspi мимо кассы</li>
+            <li>Рейтинг сотрудников по точкам</li>
+            <li>WhatsApp-поддержка</li>
+          </ul>
+          <button class="lp-plan-btn outline" onclick="goToAuth(true)">Подключить сеть</button>
+        </div>
+
+        <!-- ENTERPRISE -->
+        <div class="lp-plan">
+          <div class="lp-plan-badge orange">Индивидуально</div>
+          <div class="lp-plan-name">Enterprise</div>
+          <div class="lp-plan-price" style="font-size:22px">от 120 000 <sup>₸</sup></div>
+          <div class="lp-plan-period">в месяц · контракт 24 мес.</div>
+          <div class="lp-plan-hw">📦 5+ устройств под задачи</div>
+          <ul>
+            <li>Корпоративные сети 10+ точек</li>
+            <li>600+ часов AI-анализа</li>
+            <li>Custom API + интеграция CRM/POS</li>
+            <li>Персональный менеджер</li>
+            <li>SLA 99.9%</li>
+            <li>On-premise (данные в РК)</li>
+          </ul>
+          <button class="lp-plan-btn outline" onclick="window.open('https://t.me/aspanlab','_blank')">Запросить расчёт</button>
+        </div>
+
+      </div>
+      <div class="lp-pricing-note">
+        💡 Все тарифы кроме «Старт» включают <b>полное оборудование в подарок</b>. Возврат железа при отказе — без вопросов.
+      </div>
+    </div>
+  </section>
+
+  <!-- HARDWARE -->
+  <section class="lp-hw reveal" id="hardware">
+    <div class="lp-section">
+      <div class="lp-eyebrow">Оборудование</div>
+      <h2 class="lp-h2">Микрофон, петличка или AI-Pin —<br>подбираем под ваш бизнес.</h2>
+      <p class="lp-h2-sub">Вы не покупаете железо. Мы выдаём, настраиваем и обслуживаем. Заберём бесплатно при отказе.</p>
+      <div class="hw-grid">
+        <div class="hw-card">
+          <div class="hw-ico">🎙️</div>
+          <div class="hw-type">Стационарный микрофон</div>
+          <h3>USB-микрофон</h3>
+          <p class="hw-when">Кассы, стойки, кофе-точки, АЗС</p>
+          <ul class="hw-props">
+            <li>Подключается за 5 минут</li>
+            <li>Работает 24/7 от USB</li>
+            <li>Запись прямо в облако</li>
+          </ul>
+          <div class="hw-plans">Входит в: <b>Базовый, Pro, Enterprise</b></div>
+        </div>
+        <div class="hw-card">
+          <div class="hw-ico">📎</div>
+          <div class="hw-type">Мобильный сотрудник</div>
+          <h3>Беспроводная петличка</h3>
+          <p class="hw-when">Официанты, барберы, мастера СТО</p>
+          <ul class="hw-props">
+            <li>10 часов работы</li>
+            <li>Активное шумоподавление</li>
+            <li>Зарядка через USB-C</li>
+          </ul>
+          <div class="hw-plans">Входит в: <b>Pro, Enterprise</b></div>
+        </div>
+        <div class="hw-card">
+          <div class="hw-new">NEW</div>
+          <div class="hw-ico">📍</div>
+          <div class="hw-type">Премиум-сервис</div>
+          <h3>AI-Pin</h3>
+          <p class="hw-when">Рестораны, ресепшен отелей, банкетные залы</p>
+          <ul class="hw-props">
+            <li>20 часов — не сядет за смену</li>
+            <li>Магнит / клип / шнурок на выбор</li>
+            <li>Размер с монету</li>
+          </ul>
+          <div class="hw-plans">Входит в: <b>Pro, Enterprise</b></div>
+        </div>
+      </div>
+      <div class="hw-guarantees">
+        <div class="hw-guarantee"><span>✓</span> <span><b style="color:var(--txt)">Гарантия 12 месяцев</b> на всё железо</span></div>
+        <div class="hw-guarantee"><span>✓</span> <span><b style="color:var(--txt)">Бесплатная замена</b> при поломке не по вашей вине</span></div>
+        <div class="hw-guarantee"><span>✓</span> <span><b style="color:var(--txt)">Без вложений</b> — оборудование наше</span></div>
+      </div>
     </div>
   </section>
 
   <!-- HOW IT WORKS -->
-  <section class="lp-how" id="howItWorks">
+  <section class="lp-how reveal" id="howItWorks">
     <div class="lp-section">
       <h2 class="lp-h2">Как это работает</h2>
       <p class="lp-h2-sub">Три шага — и вы видите всё что происходит на кассе</p>
@@ -462,7 +738,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
   </section>
 
   <!-- FEATURES -->
-  <section class="lp-feat">
+  <section class="lp-feat reveal">
     <div class="lp-section">
       <h2 class="lp-h2">Что контролирует система</h2>
       <p class="lp-h2-sub">Не слежка — помощь вернуть доверие клиентов</p>
@@ -501,71 +777,17 @@ textarea.f-input{resize:vertical;line-height:1.6}
     </div>
   </section>
 
-  <!-- PRICING -->
-  <section class="lp-pricing">
-    <div class="lp-section">
-      <h2 class="lp-h2">Тарифы</h2>
-      <p class="lp-h2-sub">Начните бесплатно. Платите только когда убедитесь в результате.</p>
-      <div class="lp-plans">
-        <div class="lp-plan">
-          <div class="lp-plan-name">Пробный</div>
-          <div class="lp-plan-price">Бесплатно</div>
-          <div class="lp-plan-period">14 дней</div>
-          <ul>
-            <li>1 торговая точка</li>
-            <li>Все функции без ограничений</li>
-            <li>Telegram-отчёты</li>
-            <li>Без карты</li>
-          </ul>
-          <button class="lp-plan-btn outline" onclick="goToAuth(true)">Начать</button>
-        </div>
-        <div class="lp-plan hot">
-          <div class="lp-plan-tag">Популярный</div>
-          <div class="lp-plan-name">Старт</div>
-          <div class="lp-plan-price">2 990 <sup>₸</sup></div>
-          <div class="lp-plan-period">в месяц</div>
-          <ul>
-            <li>1 торговая точка</li>
-            <li>Все функции</li>
-            <li>История 90 дней</li>
-            <li>Приоритетная поддержка</li>
-          </ul>
-          <button class="lp-plan-btn solid" onclick="goToAuth(true)">Выбрать</button>
-        </div>
-        <div class="lp-plan">
-          <div class="lp-plan-name">Бизнес</div>
-          <div class="lp-plan-price">7 990 <sup>₸</sup></div>
-          <div class="lp-plan-period">в месяц</div>
-          <ul>
-            <li>До 5 торговых точек</li>
-            <li>Все функции</li>
-            <li>Сравнение точек</li>
-            <li>Экспорт в Excel</li>
-          </ul>
-          <button class="lp-plan-btn outline" onclick="goToAuth(true)">Выбрать</button>
-        </div>
-        <div class="lp-plan">
-          <div class="lp-plan-name">Сеть</div>
-          <div class="lp-plan-price" style="font-size:22px">Индивид.</div>
-          <div class="lp-plan-period">от 6 точек</div>
-          <ul>
-            <li>Без ограничений</li>
-            <li>API-интеграция</li>
-            <li>SLA-гарантии</li>
-            <li>Dedicated-поддержка</li>
-          </ul>
-          <button class="lp-plan-btn outline" onclick="window.open('https://t.me/aspanlab','_blank')">Написать</button>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <!-- FINAL CTA -->
-  <section class="lp-cta-sec">
+  <section class="lp-cta-sec reveal">
     <div class="lp-section">
-      <h2>Готовы начать?</h2>
-      <p>Подключите первую точку за 5 минут. Без договоров, без карты.</p>
-      <button class="lp-btn-hero" onclick="goToAuth(true)">Попробовать бесплатно →</button>
+      <div class="lp-eyebrow">Начать</div>
+      <h2>25 000 ₸ в месяц.<br>Окупается за неделю.</h2>
+      <p>Подключение за 1 день. Оборудование привезём сами. Первый отчёт — через 24 часа.</p>
+      <div class="lp-cta-btns">
+        <button class="lp-btn-hero" onclick="goToAuth(true)">Подключить за 25 000 ₸ →</button>
+        <button class="lp-btn-outline" onclick="goToAuth(true)">Сначала тест за 15 000 ₸</button>
+      </div>
+      <div class="lp-cta-micro">Без предоплаты за год. Без скрытых платежей. Без обязательной интеграции с 1С.</div>
     </div>
   </section>
 
@@ -573,6 +795,8 @@ textarea.f-input{resize:vertical;line-height:1.6}
     <div class="lp-footer-inner">
       <div class="lp-logo">Trust<span>Control</span></div>
       <div class="lp-footer-links">
+        <a onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Тарифы</a>
+        <a onclick="document.getElementById('hardware').scrollIntoView({behavior:'smooth'})">Оборудование</a>
         <a onclick="goToAuth(false)">Войти</a>
         <a onclick="goToAuth(true)">Регистрация</a>
       </div>
@@ -1096,6 +1320,39 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
 <script>
 'use strict';
+
+/* ── REVEAL ON SCROLL ── */
+(function(){
+  const io=new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        e.target.classList.add('visible');
+        // count-up numbers inside this element
+        e.target.querySelectorAll('.count-up').forEach(el=>{
+          if(el.dataset.done)return;
+          el.dataset.done='1';
+          const target=parseInt(el.dataset.target,10);
+          const dur=1600,fps=60,step=target/(dur/1000*fps);
+          let cur=0;
+          const t=setInterval(()=>{
+            cur=Math.min(cur+step,target);
+            el.textContent=Math.round(cur).toLocaleString('ru-RU');
+            if(cur>=target)clearInterval(t);
+          },1000/fps);
+        });
+        io.unobserve(e.target);
+      }
+    });
+  },{threshold:0.15});
+  document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+  // hero is already visible on load
+  setTimeout(()=>{
+    document.querySelectorAll('.lp-hero.reveal').forEach(el=>{
+      el.classList.add('visible');
+    });
+  },100);
+})();
+
 const API='/api';
 let _token=localStorage.getItem('tc_token')||'';
 let _pollTimer=null,_currentPage='overview',_chartWeek=null,_silentPoll=false;
