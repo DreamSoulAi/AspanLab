@@ -36,6 +36,7 @@ class LocationUpdate(BaseModel):
     language:                  Optional[str]  = None
     vad_level:                 Optional[int]  = None
     ignore_internal_profanity: Optional[bool] = None
+    notify_ok_conversations:   Optional[bool] = None
 
 
 class AntifraudSettings(BaseModel):
@@ -67,6 +68,7 @@ async def list_locations(
             "allowed_phones":            loc.allowed_phones or [],
             "required_upsells":          loc.required_upsells or [],
             "ignore_internal_profanity": bool(loc.ignore_internal_profanity),
+            "notify_ok_conversations":   bool(getattr(loc, "notify_ok_conversations", False)),
         }
         for loc in locations
     ]
@@ -134,7 +136,9 @@ async def update_location(
     if data.language                  is not None: loc.language                  = data.language
     if data.vad_level                 is not None: loc.vad_level                 = data.vad_level
     if data.ignore_internal_profanity is not None: loc.ignore_internal_profanity = data.ignore_internal_profanity
+    if data.notify_ok_conversations   is not None: loc.notify_ok_conversations   = data.notify_ok_conversations
 
+    await db.commit()
     return {"message": "Точка обновлена", "id": loc.id}
 
 
@@ -166,6 +170,35 @@ async def update_antifraud(
         "required_upsells": loc.required_upsells,
     }
 
+
+@router.post("/{location_id}/test-telegram")
+async def test_telegram(
+    location_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Отправляет тестовое сообщение в Telegram группу точки."""
+    loc = await db.get(Location, location_id)
+    if not loc or loc.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Точка не найдена")
+
+    chat_id = loc.telegram_chat
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="Telegram Chat ID не задан в настройках точки")
+
+    from backend.services import notifier
+    from datetime import datetime
+    try:
+        await notifier._send(
+            chat_id,
+            f"✅ *TrustControl подключён!*\n\n"
+            f"🏪 Точка: *{loc.name}*\n"
+            f"🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"Уведомления о нарушениях и итоги смен будут приходить сюда.",
+        )
+        return {"status": "ok", "message": "Тестовое сообщение отправлено"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
 
 @router.delete("/{location_id}")
 async def delete_location(

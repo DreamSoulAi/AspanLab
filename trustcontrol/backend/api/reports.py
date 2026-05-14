@@ -63,6 +63,7 @@ async def _process_submission(
     allowed_phones: Optional[list] = None,
     required_upsells: Optional[list] = None,
     ignore_internal_profanity: bool = False,
+    notify_ok_conversations: bool = False,
 ) -> None:
     """
     Полный цикл обработки одного аудио-сегмента.
@@ -334,8 +335,8 @@ async def _process_submission(
                 tone=effective_tone, score=score,
                 audio_url=s3_url,
             )
-        elif telegram_chat and not suppress_alert:
-            # Обычный разговор — краткая сводка
+        elif telegram_chat and not suppress_alert and notify_ok_conversations:
+            # Обычный разговор — краткая сводка (только если владелец включил эту опцию)
             await notifier.send_ok_report(
                 chat_id=telegram_chat,
                 location_name=location_name,
@@ -358,6 +359,17 @@ async def _process_submission(
                 telegram_chat=telegram_chat, location_name=location_name,
                 error="Необработанное исключение",
             )
+        # Уведомляем владельца об ошибке обработки чтобы он знал
+        if telegram_chat:
+            try:
+                from backend.services.notifier import _send
+                await _send(
+                    telegram_chat,
+                    f"⚠️ *{location_name}* — ошибка обработки разговора\\.\n"
+                    f"Запись сохранена в очередь повторов\\.",
+                )
+            except Exception:
+                pass
 
 
 async def _enqueue_retry(
@@ -478,6 +490,7 @@ async def submit_audio(
         allowed_phones=location.allowed_phones or [],
         required_upsells=location.required_upsells or [],
         ignore_internal_profanity=bool(location.ignore_internal_profanity),
+        notify_ok_conversations=bool(getattr(location, "notify_ok_conversations", False)),
     )
 
     return {"status": "queued", "message": "Принято в обработку"}

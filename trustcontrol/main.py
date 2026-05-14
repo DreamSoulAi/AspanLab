@@ -236,7 +236,11 @@ async def _daily_report_worker():
 # ── Lifecycle ─────────────────────────────────────────────────
 
 async def _run_alembic():
-    """Run Alembic migrations asynchronously at startup."""
+    """
+    Run Alembic migrations at startup.
+    Non-fatal — any Alembic error is logged and skipped;
+    _fix_schema() handles critical column fixes as a safety net.
+    """
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
 
@@ -244,19 +248,111 @@ async def _run_alembic():
         from alembic.config import Config
         from alembic import command
         from pathlib import Path
+
         cfg = Config(str(Path(__file__).parent / "alembic.ini"))
         cfg.set_main_option("script_location", str(Path(__file__).parent / "alembic"))
         command.upgrade(cfg, "head")
+        print("✅ Alembic migrations applied")
 
-    loop = asyncio.get_running_loop()
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        await loop.run_in_executor(pool, _upgrade)
-    print("✅ Alembic migrations applied")
+    try:
+        loop = asyncio.get_running_loop()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            await loop.run_in_executor(pool, _upgrade)
+    except Exception as e:
+        log.error(f"⚠️ Alembic ошибка (не критично, продолжаем): {e}")
+
+
+async def _fix_schema():
+    """
+    Direct SQL safety net — runs EVERY startup after Alembic.
+    Adds any critical missing columns that may have been skipped by
+    a previous stamp-head or failed migration. Fully idempotent.
+    """
+    import sqlalchemy as sa
+    from backend.database import AsyncSessionLocal
+
+    is_pg = "postgresql" in settings.DATABASE_URL
+
+    async with AsyncSessionLocal() as db:
+        try:
+            # ── users.email → nullable ──────────────────────────────────────
+            # Old DBs created before phone-auth have email NOT NULL.
+            # Registration without email now fails with 500 — fix it.
+            if is_pg:
+                r0 = await db.execute(sa.text(
+                    "SELECT is_nullable FROM information_schema.columns "
+                    "WHERE table_name='users' AND column_name='email'"
+                ))
+                row0 = r0.fetchone()
+                if row0 and row0[0] == "NO":
+                    await db.execute(sa.text(
+                        "ALTER TABLE users ALTER COLUMN email DROP NOT NULL"
+                    ))
+                    await db.commit()
+                    log.info("✅ schema fix: users.email made nullable")
+
+            # ── users.phone → unique index ──────────────────────────────────
+            if is_pg:
+                r_idx = await db.execute(sa.text(
+                    "SELECT 1 FROM pg_indexes WHERE indexname='ix_users_phone'"
+                ))
+                if not r_idx.fetchone():
+                    # Fill NULL phones first so UNIQUE works
+                    await db.execute(sa.text(
+                        "UPDATE users SET phone = '+700000' || LPAD(id::text, 7, '0') "
+                        "WHERE phone IS NULL OR phone = ''"
+                    ))
+                    await db.execute(sa.text(
+                        "ALTER TABLE users ALTER COLUMN phone SET NOT NULL"
+                    ))
+                    await db.execute(sa.text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_phone ON users(phone)"
+                    ))
+                    await db.commit()
+                    log.info("✅ schema fix: users.phone unique index added")
+
+            # ── otp_codes.phone (critical: registration crashes without it) ──
+            r = await db.execute(sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name='otp_codes' AND column_name='phone'"
+            ))
+            if not r.fetchone():
+                await db.execute(sa.text(
+                    "ALTER TABLE otp_codes ADD COLUMN phone VARCHAR(30)"
+                ))
+                await db.execute(sa.text(
+                    "UPDATE otp_codes SET phone = COALESCE(email, 'unknown') "
+                    "WHERE phone IS NULL"
+                ))
+                if is_pg:
+                    await db.execute(sa.text(
+                        "ALTER TABLE otp_codes ALTER COLUMN phone SET NOT NULL"
+                    ))
+                await db.commit()
+                log.info("✅ schema fix: otp_codes.phone added")
+
+            # ── otp_codes.email → nullable ──────────────────────────────────
+            if is_pg:
+                r2 = await db.execute(sa.text(
+                    "SELECT is_nullable FROM information_schema.columns "
+                    "WHERE table_name='otp_codes' AND column_name='email'"
+                ))
+                row = r2.fetchone()
+                if row and row[0] == "NO":
+                    await db.execute(sa.text(
+                        "ALTER TABLE otp_codes ALTER COLUMN email DROP NOT NULL"
+                    ))
+                    await db.commit()
+                    log.info("✅ schema fix: otp_codes.email made nullable")
+
+        except Exception as e:
+            log.warning(f"_fix_schema warning (non-fatal): {e}")
 
 
 @app.on_event("startup")
 async def startup():
     await _run_alembic()
+    await _fix_schema()
 
     # Запускаем фоновые задачи
     asyncio.create_task(_retry_worker())

@@ -964,6 +964,14 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <div id="testTgResult"></div>
     </div>
     <hr class="modal-divider">
+    <div class="modal-sec-title">Уведомления</div>
+    <div class="f-group" style="display:flex;align-items:center;gap:10px">
+      <input type="checkbox" id="editLocNotifyOk" style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0">
+      <label for="editLocNotifyOk" style="font-size:13px;color:var(--dim);line-height:1.4;cursor:pointer">
+        Получать уведомление на <b style="color:var(--txt)">каждый</b> разговор (не только нарушения)
+      </label>
+    </div>
+    <hr class="modal-divider">
     <div class="modal-sec-title">Антифрод</div>
     <div class="f-group">
       <label class="f-label">Белый список Kaspi-телефонов</label>
@@ -1797,6 +1805,7 @@ async function openEditLoc(id){
   const et=document.getElementById('editLocType');if(et)et.value=d.business_type||'shop';
   setVal('editLocTg',d.telegram_chat);
   setVal('editLocPhones',(d.allowed_phones||[]).join('\n'));
+  const cbOk=document.getElementById('editLocNotifyOk');if(cbOk)cbOk.checked=!!d.notify_ok_conversations;
   const tr=document.getElementById('testTgResult');if(tr){tr.textContent='';tr.style.color='';}
   document.getElementById('editLocationModal').style.display='flex';
 }
@@ -1806,15 +1815,17 @@ async function saveLocation(){
   const id=val('editLocId');if(!id)return;
   const phonesRaw=val('editLocPhones');
   const phones=phonesRaw.split(/[\n,]/).map(p=>p.trim()).filter(Boolean);
+  const cbOk=document.getElementById('editLocNotifyOk');
   const payload={
     name:val('editLocName'),address:val('editLocAddress'),
     business_type:document.getElementById('editLocType')?.value,
     telegram_chat:val('editLocTg'),
     allowed_phones:phones,
+    notify_ok_conversations: cbOk?cbOk.checked:false,
   };
   const btn=document.getElementById('saveLocBtn');
   if(btn){btn.disabled=true;btn.textContent='Сохранение...';}
-  const d=await apiFetch('/locations/'+id,{method:'PUT',body:JSON.stringify(payload)});
+  const d=await apiFetch('/locations/'+id,{method:'PATCH',body:JSON.stringify(payload)});
   if(btn){btn.disabled=false;btn.textContent='Сохранить';}
   if(d){closeEditLocation();loadLocations();}
 }
