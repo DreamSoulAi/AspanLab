@@ -28,21 +28,14 @@ class Settings:
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     TELEGRAM_BOT_TOKEN:str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
-    # ── SECURITY: SECRET_KEY — строгая проверка ──────────────
+    # ── SECURITY: SECRET_KEY ─────────────────────────────────
     _secret = os.getenv("SECRET_KEY", "")
     if not _secret or len(_secret) < 32:
-        if os.getenv("DEBUG", "false").lower() == "true":
-            # В dev-режиме генерируем временный ключ с предупреждением
-            _secret = secrets.token_hex(32)
-            print("⚠️  WARNING: SECRET_KEY не задан! Используется временный ключ.")
-            print("⚠️  Все JWT токены будут сброшены при перезапуске!")
-            print("⚠️  Установите SECRET_KEY в .env для продакшна!")
-        else:
-            raise ValueError(
-                "КРИТИЧЕСКАЯ ОШИБКА: SECRET_KEY не задан или слишком короткий!\n"
-                "Добавьте в .env файл:\n"
-                f"SECRET_KEY={secrets.token_hex(32)}"
-            )
+        # Generate a temporary key — app starts, but tokens reset on each restart.
+        # Operators MUST set SECRET_KEY in Render env vars for persistence.
+        _secret = secrets.token_hex(32)
+        print("⚠️  WARNING: SECRET_KEY не задан — используется временный ключ.")
+        print("⚠️  Установите SECRET_KEY в переменных окружения Render!")
     SECRET_KEY: str = _secret
 
     TOKEN_EXPIRE_HOURS: int = int(os.getenv("TOKEN_EXPIRE_HOURS", 24))
@@ -92,17 +85,11 @@ class Settings:
     TELEGRAM_BOT_USERNAME: str = os.getenv("TELEGRAM_BOT_USERNAME", "")
 
     def validate(self):
-        """Проверяем что все обязательные переменные заданы."""
-        errors = []
+        """Log warnings for missing optional env vars — never crash on startup."""
         if not self.OPENAI_API_KEY:
-            errors.append("OPENAI_API_KEY не задан")
+            print("⚠️  WARNING: OPENAI_API_KEY не задан — транскрипция не будет работать")
         if not self.TELEGRAM_BOT_TOKEN:
-            errors.append("TELEGRAM_BOT_TOKEN не задан")
-        if errors and not self.DEBUG:
-            raise ValueError("Ошибки конфигурации:\n" + "\n".join(f"  - {e}" for e in errors))
-        elif errors:
-            for e in errors:
-                print(f"⚠️  WARNING: {e}")
+            print("⚠️  WARNING: TELEGRAM_BOT_TOKEN не задан — уведомления не будут работать")
 
 
 settings = Settings()
