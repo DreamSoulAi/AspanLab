@@ -512,7 +512,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
   </nav>
 
   <!-- HERO -->
-  <section class="lp-hero reveal">
+  <section class="lp-hero">
     <h1>ИИ следит за сервисом,<br>пока вы занимаетесь <em>бизнесом</em></h1>
     <p class="lp-hero-sub">Каждый разговор на кассе — анализ через 15 секунд.<br>Грубость, мошенничество, упущенные продажи — всё в Telegram.</p>
     <div class="lp-anchor-hero">
@@ -844,6 +844,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
                  onkeydown="if(event.key==='Enter')doLogin()">
         </div>
         <button class="f-btn" id="loginBtn" onclick="doLogin()">Войти →</button>
+        <div id="loginError" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:13px;color:#FCA5A5;text-align:center"></div>
         <div class="f-switch">Нет аккаунта? <a onclick="showRegister()">Зарегистрироваться</a></div>
         <div class="auth-back-link" onclick="goBackToLanding()">← На главную</div>
       </div>
@@ -1348,12 +1349,6 @@ textarea.f-input{resize:vertical;line-height:1.6}
     });
   },{threshold:0.15});
   document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
-  // hero is already visible on load
-  setTimeout(()=>{
-    document.querySelectorAll('.lp-hero.reveal').forEach(el=>{
-      el.classList.add('visible');
-    });
-  },100);
 })();
 
 const API='/api';
@@ -1404,6 +1399,7 @@ function showLogin(){
   document.getElementById('loginForm').style.display='';
   document.getElementById('registerForm').style.display='none';
   document.getElementById('otpForm').style.display='none';
+  _hideLoginErr();
 }
 function showRegister(){
   document.getElementById('loginForm').style.display='none';
@@ -1416,15 +1412,32 @@ function showOtp(){
   document.getElementById('otpForm').style.display='';
 }
 
+function _showLoginErr(msg){
+  const el=document.getElementById('loginError');
+  if(el){el.textContent=msg;el.style.display='block';}
+  showErr(msg);
+}
+function _hideLoginErr(){
+  const el=document.getElementById('loginError');
+  if(el)el.style.display='none';
+}
+
 async function doLogin(){
   const phone=document.getElementById('loginPhone').value.trim();
   const password=document.getElementById('loginPassword').value;
-  if(!phone||!password)return showErr('Введите телефон и пароль');
+  if(!phone||!password)return _showLoginErr('Введите номер телефона и пароль');
+  _hideLoginErr();
   const btn=document.getElementById('loginBtn');
   btn.disabled=true;btn.textContent='Вход...';
   const d=await apiFetch('/auth/login',{method:'POST',body:JSON.stringify({phone,password})});
   btn.disabled=false;btn.textContent='Войти →';
-  if(!d)return;
+  if(!d){
+    // apiFetch already called showErr; also show inline so mobile users see it
+    const errEl=document.getElementById('apiError');
+    const msg=errEl?errEl.textContent:'Ошибка входа — попробуйте ещё раз';
+    _showLoginErr(msg||'Ошибка входа — попробуйте ещё раз');
+    return;
+  }
   if(d.require_otp){
     localStorage.setItem('tc_otp_phone',phone);
     localStorage.setItem('tc_otp_pass',password);
@@ -1836,20 +1849,23 @@ function toneName(t){return({positive:'😊 Позитив',neutral:'😐 Ней
 
 /* ── INIT ── */
 (async function init(){
-  // hide all sections
-  document.getElementById('authSection').style.display='none';
-  document.getElementById('appWrap').style.display='none';
+  try{
+    document.getElementById('authSection').style.display='none';
+    document.getElementById('appWrap').style.display='none';
+    document.getElementById('landingPage').style.display='';  // always show landing first
 
-  if(!_token){document.getElementById('landingPage').style.display='';return;}
+    if(!_token){return;}
 
-  const me=await apiFetch('/auth/me',{},true);
-  if(!me){
-    _token='';localStorage.removeItem('tc_token');
+    const me=await apiFetch('/auth/me',{},true);
+    if(!me){
+      _token='';localStorage.removeItem('tc_token');
+      return;
+    }
+    startDashboard();
+  }catch(e){
+    // JS crash → stay on landing so user always sees something
     document.getElementById('landingPage').style.display='';
-    return;
   }
-  document.getElementById('landingPage').style.display='none';
-  startDashboard();
 })();
 </script>
 </body>
