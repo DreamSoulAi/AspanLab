@@ -238,8 +238,8 @@ async def _daily_report_worker():
 async def _run_alembic():
     """
     Run Alembic migrations at startup.
-    All migrations use IF NOT EXISTS / _col_exists guards so they are safe
-    to run against any DB state (fresh, partially migrated, or pre-Alembic).
+    Non-fatal — any Alembic error is logged and skipped;
+    _fix_schema() handles critical column fixes as a safety net.
     """
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
@@ -254,9 +254,12 @@ async def _run_alembic():
         command.upgrade(cfg, "head")
         print("✅ Alembic migrations applied")
 
-    loop = asyncio.get_running_loop()
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        await loop.run_in_executor(pool, _upgrade)
+    try:
+        loop = asyncio.get_running_loop()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            await loop.run_in_executor(pool, _upgrade)
+    except Exception as e:
+        log.error(f"⚠️ Alembic ошибка (не критично, продолжаем): {e}")
 
 
 async def _fix_schema():

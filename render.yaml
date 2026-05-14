@@ -1,14 +1,13 @@
 services:
   - type: web
     name: trustcontrol
-    runtime: docker
-    dockerfilePath: ./trustcontrol/Dockerfile
-    dockerContext: ./trustcontrol
+    runtime: python
+    rootDir: trustcontrol
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     plan: free
     healthCheckPath: /health
     envVars:
-      - key: PORT
-        value: 8000
       - key: DEBUG
         value: false
       - key: SECRET_KEY
