@@ -122,10 +122,6 @@ async def _handle_false_positive(incident_id: int) -> str:
                         f"добавлен в allowed_phones через Telegram"
                     )
 
-        elif incident.incident_type == "UPSELL_GAP" and incident.upsell_phrase:
-            # TODO: можно добавить фразу в exclusion list
-            pass
-
         await db.commit()
 
     return f"❌ Помечено как ошибка системы.{whitelisted}"

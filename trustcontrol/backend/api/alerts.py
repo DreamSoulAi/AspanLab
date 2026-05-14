@@ -23,7 +23,7 @@ router = APIRouter()
 
 
 class ResolveRequest(BaseModel):
-    pass
+    note: Optional[str] = None  # необязательный комментарий менеджера (не сохраняется)
 
 
 async def _get_user_location_ids(user_id: int, db: AsyncSession) -> list[int]:
