@@ -3,8 +3,9 @@ services:
     name: trustcontrol
     runtime: python
     rootDir: trustcontrol
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    pythonVersion: "3.11.9"
     plan: free
     healthCheckPath: /health
     envVars:

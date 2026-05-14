@@ -354,17 +354,33 @@ async def _fix_schema():
 
 @app.on_event("startup")
 async def startup():
-    await _run_alembic()
-    await init_db()      # safety net: create any tables Alembic didn't create (idempotent)
-    await _fix_schema()
+    try:
+        await _run_alembic()
+    except Exception as e:
+        log.error(f"Alembic startup error (non-fatal): {e}")
 
-    # Запускаем фоновые задачи
-    asyncio.create_task(_retry_worker())
-    asyncio.create_task(_retention_worker())
-    asyncio.create_task(_daily_report_worker())
+    try:
+        await init_db()
+    except Exception as e:
+        log.error(f"init_db error (non-fatal): {e}")
 
-    from backend.services.health_monitor import run_health_monitor
-    asyncio.create_task(run_health_monitor())
+    try:
+        await _fix_schema()
+    except Exception as e:
+        log.error(f"_fix_schema error (non-fatal): {e}")
+
+    # Фоновые задачи — каждая независима
+    for task_fn in (_retry_worker, _retention_worker, _daily_report_worker):
+        try:
+            asyncio.create_task(task_fn())
+        except Exception as e:
+            log.error(f"Task {task_fn.__name__} error: {e}")
+
+    try:
+        from backend.services.health_monitor import run_health_monitor
+        asyncio.create_task(run_health_monitor())
+    except Exception as e:
+        log.error(f"health_monitor error (non-fatal): {e}")
 
     print("✅ TrustControl API v3.0 запущен!")
     print(f"📡 http://localhost:{settings.PORT}")
