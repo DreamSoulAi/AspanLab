@@ -18,10 +18,17 @@ class Settings:
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
 
     # ── База данных ──────────────────────────────────────────
-    DATABASE_URL: str = os.getenv(
+    # Normalize DATABASE_URL: Render/Railway provide postgres:// or postgresql://
+    # SQLAlchemy async requires postgresql+asyncpg://
+    _db_url: str = os.getenv(
         "DATABASE_URL",
         f"sqlite+aiosqlite:///{BASE_DIR}/trustcontrol.db"
     )
+    if _db_url.startswith("postgres://"):
+        _db_url = "postgresql+asyncpg://" + _db_url[len("postgres://"):]
+    elif _db_url.startswith("postgresql://") and "+asyncpg" not in _db_url:
+        _db_url = "postgresql+asyncpg://" + _db_url[len("postgresql://"):]
+    DATABASE_URL: str = _db_url
 
     # ── API ключи — ОБЯЗАТЕЛЬНЫ в .env ──────────────────────
     OPENAI_API_KEY:    str = os.getenv("OPENAI_API_KEY", "")
