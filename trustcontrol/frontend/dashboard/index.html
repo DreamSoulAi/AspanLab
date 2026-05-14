@@ -507,7 +507,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
       </div>
       <div class="lp-nav-r">
         <button class="lp-ghost" onclick="goToAuth(false)">Войти</button>
-        <button class="lp-primary" onclick="goToAuth(true)">Подключить →</button>
+        <button class="lp-primary" onclick="goToAuth(true)">Попробовать бесплатно →</button>
       </div>
     </div>
   </nav>
@@ -516,15 +516,15 @@ textarea.f-input{resize:vertical;line-height:1.6}
   <section class="lp-hero">
     <h1>ИИ следит за сервисом,<br>пока вы занимаетесь <em>бизнесом</em></h1>
     <p class="lp-hero-sub">Каждый разговор на кассе — анализ через 15 секунд.<br>Грубость, мошенничество, упущенные продажи — всё в Telegram.</p>
+    <div class="lp-hero-btns">
+      <button class="lp-btn-hero" onclick="goToAuth(true)">Попробовать бесплатно — 14 дней →</button>
+      <button class="lp-btn-outline" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Посмотреть тарифы</button>
+    </div>
     <div class="lp-anchor-hero">
       <div class="lp-anchor">
         <div class="lp-anchor-dot"></div>
-        <span><b>От 25 000 ₸ в месяц.</b> Оборудование, AI и Telegram-отчёты включены. Без вложений.</span>
+        <span>Без карты · Без контракта · Отменить в любой момент · Настройка за 5 минут</span>
       </div>
-    </div>
-    <div class="lp-hero-btns">
-      <button class="lp-btn-hero" onclick="goToAuth(true)">Подключить за 25 000 ₸ →</button>
-      <button class="lp-btn-outline" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Посмотреть тарифы</button>
     </div>
     <div class="lp-hero-stats">
       <div class="lp-stat"><span>98%</span><p>точность обнаружения</p></div>
@@ -566,8 +566,8 @@ textarea.f-input{resize:vertical;line-height:1.6}
   <section class="lp-pricing reveal" id="pricing">
     <div class="lp-section">
       <div class="lp-eyebrow">Тарифы</div>
-      <h2 class="lp-h2">Один платёж. Всё включено.</h2>
-      <p class="lp-h2-sub">Оборудование, AI-анализ, отчёты в Telegram, поддержка. Без скрытых платежей.</p>
+      <h2 class="lp-h2">14 дней бесплатно.<br>Потом — от 15 000 ₸.</h2>
+      <p class="lp-h2-sub">Оборудование, AI-анализ и Telegram-отчёты включены. Без скрытых платежей. Без карты при регистрации.</p>
       <div class="lp-plans">
 
         <!-- СТАРТ -->
@@ -584,7 +584,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <li>Базовые скрипты бизнеса</li>
             <li>FAQ-поддержка</li>
           </ul>
-          <button class="lp-plan-btn outline" onclick="goToAuth(true)">Начать тест</button>
+          <button class="lp-plan-btn outline" onclick="goToAuth(true)">Начать бесплатно</button>
         </div>
 
         <!-- БАЗОВЫЙ -->
@@ -603,7 +603,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <li>Антифрод-маркеры</li>
             <li>Email-поддержка 24ч</li>
           </ul>
-          <button class="lp-plan-btn solid" onclick="goToAuth(true)">Подключить</button>
+          <button class="lp-plan-btn solid" onclick="goToAuth(true)">Попробовать бесплатно</button>
         </div>
 
         <!-- PRO -->
@@ -622,7 +622,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <li>Рейтинг сотрудников по точкам</li>
             <li>WhatsApp-поддержка</li>
           </ul>
-          <button class="lp-plan-btn outline" onclick="goToAuth(true)">Подключить сеть</button>
+          <button class="lp-plan-btn outline" onclick="goToAuth(true)">Попробовать бесплатно</button>
         </div>
 
         <!-- ENTERPRISE -->
@@ -645,7 +645,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
       </div>
       <div class="lp-pricing-note">
-        💡 Все тарифы кроме «Старт» включают <b>полное оборудование в подарок</b>. Возврат железа при отказе — без вопросов.
+        🎁 <b>Первые 14 дней бесплатно</b> на любом тарифе. Карта не нужна. Оборудование в подарок для Базового, Pro и Enterprise.
       </div>
     </div>
   </section>
@@ -776,14 +776,14 @@ textarea.f-input{resize:vertical;line-height:1.6}
   <!-- FINAL CTA -->
   <section class="lp-cta-sec reveal">
     <div class="lp-section">
-      <div class="lp-eyebrow">Начать</div>
-      <h2>25 000 ₸ в месяц.<br>Окупается за неделю.</h2>
-      <p>Подключение за 1 день. Оборудование привезём сами. Первый отчёт — через 24 часа.</p>
+      <div class="lp-eyebrow">Попробуйте бесплатно</div>
+      <h2>14 дней бесплатно.<br>Первый отчёт — через 15 секунд.</h2>
+      <p>Регистрация за 2 минуты. Первый анализ разговора придёт прямо в Telegram.</p>
       <div class="lp-cta-btns">
-        <button class="lp-btn-hero" onclick="goToAuth(true)">Подключить за 25 000 ₸ →</button>
-        <button class="lp-btn-outline" onclick="goToAuth(true)">Сначала тест за 15 000 ₸</button>
+        <button class="lp-btn-hero" onclick="goToAuth(true)">Начать бесплатно →</button>
+        <button class="lp-btn-outline" onclick="window.open('https://t.me/aspanlab','_blank')">Написать нам в Telegram</button>
       </div>
-      <div class="lp-cta-micro">Без предоплаты за год. Без скрытых платежей. Без обязательной интеграции с 1С.</div>
+      <div class="lp-cta-micro">Без карты · Без контракта · Оборудование привезём сами · Отменить в 1 клик</div>
     </div>
   </section>
 
