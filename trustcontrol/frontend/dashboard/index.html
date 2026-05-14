@@ -1357,7 +1357,13 @@ async function apiFetch(path,opts={},silent=false){
     const res=await fetch(API+path,{...opts,headers:h,signal:ctrl.signal});
     clearTimeout(tid);
     if(res.status===401){doLogout();return null;}
-    if(!res.ok){const b=await res.json().catch(()=>({}));throw new Error(b.detail||'HTTP '+res.status);}
+    if(!res.ok){
+      const b=await res.json().catch(()=>({}));
+      let det=b.detail;
+      if(Array.isArray(det))det=det.map(e=>e.msg||String(e)).join(', ');
+      else if(det&&typeof det!=='string')det=null;
+      throw new Error(det||'HTTP '+res.status);
+    }
     return res.status===204?null:await res.json();
   }catch(e){
     clearTimeout(tid);
@@ -1424,10 +1430,7 @@ async function doLogin(){
   const d=await apiFetch('/auth/login',{method:'POST',body:JSON.stringify({phone,password})});
   btn.disabled=false;btn.textContent='Войти →';
   if(!d){
-    // apiFetch already called showErr; also show inline so mobile users see it
-    const errEl=document.getElementById('apiError');
-    const msg=errEl?errEl.textContent:'Ошибка входа — попробуйте ещё раз';
-    _showLoginErr(msg||'Ошибка входа — попробуйте ещё раз');
+    _showLoginErr('Неверный номер или пароль — попробуйте ещё раз');
     return;
   }
   if(d.require_otp){
