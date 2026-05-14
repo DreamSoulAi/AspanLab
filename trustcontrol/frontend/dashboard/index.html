@@ -338,6 +338,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
 .page{display:none}
 .page.active{display:block;animation:fadeUp .22s ease both}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* STAT CARDS */
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px}
@@ -1029,6 +1030,11 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
       <!-- ── OVERVIEW ── -->
       <div class="page active" id="page-overview">
+        <div id="dashLoading" style="display:none;text-align:center;padding:80px 24px;color:var(--muted);font-size:15px">
+          <div style="width:32px;height:32px;border:3px solid var(--bdr2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px"></div>
+          Загружаем данные...
+        </div>
+        <div id="dashContent">
         <div class="topbar">
           <div class="page-title">Обзор <span class="pulse"></span></div>
           <div class="topbar-r">
@@ -1173,6 +1179,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             </table>
           </div>
         </div>
+        </div><!-- /dashContent -->
       </div>
 
       <!-- ── ALERTS ── -->
@@ -1364,7 +1371,7 @@ async function apiFetch(path,opts={},silent=false){
     if(_token)h['Authorization']='Bearer '+_token;
     const res=await fetch(API+path,{...opts,headers:h,signal:ctrl.signal});
     clearTimeout(tid);
-    if(res.status===401){doLogout();return null;}
+    if(res.status===401){if(_token)doLogout();return null;}
     if(!res.ok){
       const b=await res.json().catch(()=>({}));
       let det=b.detail;
@@ -1504,6 +1511,9 @@ function startDashboard(){
   document.getElementById('landingPage').style.display='none';
   document.getElementById('authSection').style.display='none';
   document.getElementById('appWrap').style.display='';
+  // hide dashboard content until first data load so spinner shows instead of empty cards
+  const dc=document.getElementById('dashContent');
+  if(dc)dc.style.display='none';
   loadUserInfo();
   showPage('overview');
   clearInterval(_pollTimer);
@@ -1558,7 +1568,13 @@ async function saveSettings(){
 
 /* ── OVERVIEW ── */
 async function loadDashboard(){
-  const d=await apiFetch('/stats/dashboard');if(!d)return;
+  const loading=document.getElementById('dashLoading');
+  const content=document.getElementById('dashContent');
+  const firstLoad=content&&content.style.display==='none';
+  if(firstLoad){if(loading)loading.style.display='';if(content)content.style.display='none';}
+  const d=await apiFetch('/stats/dashboard');
+  if(firstLoad){if(loading)loading.style.display='none';if(content)content.style.display='';}
+  if(!d)return;
   const t=d.today||{};
   set('statTotal',t.total??0);
   set('statGreetPct',(t.greetings_pct??0)+'%');
