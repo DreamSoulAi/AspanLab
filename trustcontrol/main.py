@@ -70,7 +70,10 @@ if DASHBOARD_DIR.exists():
 
     @app.get("/")
     async def root():
-        return FileResponse(str(DASHBOARD_DIR / "index.html"))
+        resp = FileResponse(str(DASHBOARD_DIR / "index.html"))
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        return resp
 
 
 # ── Фоновые задачи ───────────────────────────────────────────
@@ -84,7 +87,7 @@ async def _retry_worker():
     from backend.database import AsyncSessionLocal
     from backend.models.failed_job import FailedJob
     from backend.api.reports import _process_submission
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     MAX_RETRIES = 3
     while True:
@@ -352,6 +355,7 @@ async def _fix_schema():
 @app.on_event("startup")
 async def startup():
     await _run_alembic()
+    await init_db()      # safety net: create any tables Alembic didn't create (idempotent)
     await _fix_schema()
 
     # Запускаем фоновые задачи
