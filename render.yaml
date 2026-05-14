@@ -8,8 +8,6 @@ services:
     plan: free
     healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.9"
       - key: DEBUG
         value: false
       - key: SECRET_KEY
