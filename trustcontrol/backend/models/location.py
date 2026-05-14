@@ -34,7 +34,9 @@ class Location(Base):
 
     # Анти-спам: Contextual Severity
     ignore_internal_profanity = Column(Boolean, default=False)
-    # True → мат/конфликт вне обслуживания клиента = тихо в лог (нет Telegram-алерта)
+    notify_ok_conversations   = Column(Boolean, default=False)
+    # notify_ok_conversations=False → Telegram только при нарушениях (рекомендуется)
+    # notify_ok_conversations=True  → краткое сообщение на каждый разговор
 
     # Статус
     is_active       = Column(Boolean, default=True)
