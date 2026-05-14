@@ -36,6 +36,7 @@ class LocationUpdate(BaseModel):
     language:                  Optional[str]  = None
     vad_level:                 Optional[int]  = None
     ignore_internal_profanity: Optional[bool] = None
+    notify_ok_conversations:   Optional[bool] = None
 
 
 class AntifraudSettings(BaseModel):
@@ -67,6 +68,7 @@ async def list_locations(
             "allowed_phones":            loc.allowed_phones or [],
             "required_upsells":          loc.required_upsells or [],
             "ignore_internal_profanity": bool(loc.ignore_internal_profanity),
+            "notify_ok_conversations":   bool(getattr(loc, "notify_ok_conversations", False)),
         }
         for loc in locations
     ]
@@ -134,7 +136,9 @@ async def update_location(
     if data.language                  is not None: loc.language                  = data.language
     if data.vad_level                 is not None: loc.vad_level                 = data.vad_level
     if data.ignore_internal_profanity is not None: loc.ignore_internal_profanity = data.ignore_internal_profanity
+    if data.notify_ok_conversations   is not None: loc.notify_ok_conversations   = data.notify_ok_conversations
 
+    await db.commit()
     return {"message": "Точка обновлена", "id": loc.id}
 
 
