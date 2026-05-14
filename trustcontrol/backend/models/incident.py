@@ -40,7 +40,7 @@ class Incident(Base):
 
     # Жизненный цикл
     status         = Column(String(20), default="open", index=True)
-    # open | resolved | false_positive
+    # open | confirmed | resolved | false_positive
     resolved_at    = Column(DateTime, nullable=True)
 
     created_at     = Column(DateTime, default=datetime.utcnow, index=True)

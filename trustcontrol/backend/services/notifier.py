@@ -242,6 +242,28 @@ async def send_daily_summary(chat_id: str, location_name: str, stats: dict):
     await _send(chat_id, text)
 
 
+async def send_ok_report(
+    chat_id: str,
+    location_name: str,
+    transcript: str,
+    tone: str,
+    score: float,
+    upsell: bool,
+    greeting: bool,
+):
+    """Краткое сообщение для обычного разговора без нарушений."""
+    tone_map = {"positive": "😊 Доброжелательный", "neutral": "😐 Нейтральный", "negative": "😤 Раздражённый"}
+    upsell_str = "✅ допродажа предложена" if upsell else "—"
+    greet_str  = "✅" if greeting else "❌"
+    text = (
+        f"✅ *{location_name}* — разговор в норме\n\n"
+        f"{tone_map.get(tone, '😐 Нейтральный')} · Оценка: *{score:.0f}/100*\n"
+        f"👋 Приветствие: {greet_str}  |  🎯 {upsell_str}\n\n"
+        f"_{transcript[:200]}_"
+    )
+    await _send(chat_id, text)
+
+
 async def send_shift_summary(chat_id: str, location_name: str, shift_data: dict):
     """Итог смены."""
     s     = shift_data
