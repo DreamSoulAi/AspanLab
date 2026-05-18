@@ -2,8 +2,8 @@
 chcp 65001 >nul
 title TrustControl — Мониторинг касса
 
-:: ── Читаем config.ini ──────────────────────────────────────
-for /f "usebackq tokens=1,* delims==" %%A in (`findstr /v "^;" config.ini`) do (
+:: ── Читаем config.ini (пропускаем секции [..] и комментарии ;) ─
+for /f "usebackq tokens=1,* delims==" %%A in (`findstr /v /r "^;" "config.ini" ^| findstr /v /r "^\["`) do (
     set "%%A=%%B"
 )
 
@@ -17,24 +17,53 @@ set VAD_LEVEL=%VAD_LEVEL: =%
 :: ── Проверяем что API_KEY заполнен ────────────────────────
 if "%API_KEY%"=="ВСТАВЬ_СЮДА_API_КЛЮЧ" (
     echo.
-    echo  [!] API_KEY не настроен!
-    echo  Открой config.ini и вставь ключ из личного кабинета.
+    echo  ╔══════════════════════════════════════╗
+    echo  ║   API-ключ не настроен!              ║
+    echo  ║                                      ║
+    echo  ║   1. Войди в личный кабинет          ║
+    echo  ║   2. Открой раздел "Точки"           ║
+    echo  ║   3. Нажми кнопку скопировать ключ  ║
+    echo  ║   4. Запусти 2_CONFIG.bat            ║
+    echo  ║   5. Вставь ключ: правая кнопка →   ║
+    echo  ║      Вставить, затем Сохранить       ║
+    echo  ╚══════════════════════════════════════╝
+    echo.
     pause
     exit /b 1
 )
 
 if "%API_KEY%"=="" (
-    echo  [!] API_KEY пустой! Открой 2_CONFIG.bat и заполни ключ.
+    echo  [!] API_KEY пустой! Запусти 2_CONFIG.bat и заполни ключ.
     pause
     exit /b 1
 )
 
-:: ── Определяем команду python ──────────────────────────────
-set PY=python
-python --version >nul 2>&1
-if %errorlevel% neq 0 set PY=py -3
+:: ── Находим Python ──────────────────────────────────────────
+set PY=
+for %%P in (
+    "%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
+    "%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+    "%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
+    "%ProgramFiles%\Python313\python.exe"
+    "%ProgramFiles%\Python312\python.exe"
+    "%ProgramFiles%\Python311\python.exe"
+) do (
+    if not defined PY (
+        if exist %%P set PY=%%P
+    )
+)
+if not defined PY (
+    python --version >nul 2>&1
+    if not errorlevel 1 set PY=python
+)
+if not defined PY (
+    echo  [!] Python не найден. Запусти 1_SETUP.bat сначала.
+    pause
+    exit /b 1
+)
 
-:: ── Запускаем монитор ──────────────────────────────────────
+:: ── Цикл с автоперезапуском ────────────────────────────────
+:loop
 echo.
 echo  ╔══════════════════════════════════════╗
 echo  ║   TrustControl активен               ║
@@ -55,6 +84,7 @@ echo.
     --vad-level %VAD_LEVEL%
 
 echo.
-echo  [!] Монитор остановлен. Нажми любую клавишу для перезапуска...
-pause >nul
-call 3_RUN.bat
+echo  [!] Монитор остановлен. Автоперезапуск через 10 секунд...
+echo      Закрой это окно если хочешь остановить.
+timeout /t 10 /nobreak >nul
+goto :loop
