@@ -1569,7 +1569,8 @@ function showPage(page){
 async function loadUserInfo(){
   const d=await apiFetch('/auth/me');if(!d)return;
   set('mobileUserInfo',d.name||d.phone||'');
-  set('userInfo',`<b>${esc(d.name||d.phone||'')}</b><br>${d.plan||'trial'}`);
+  const ui=document.getElementById('userInfo');
+  if(ui)ui.innerHTML=`<b>${esc(d.name||d.phone||'')}</b><br>${esc(d.plan||'trial')}`;
   setVal('settingsName',d.name);
   setVal('settingsPhone',d.phone);
   setVal('settingsCompany',d.company_name);
