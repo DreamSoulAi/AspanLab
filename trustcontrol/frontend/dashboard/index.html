@@ -1443,21 +1443,31 @@ async function doLogin(){
   _hideLoginErr();
   const btn=document.getElementById('loginBtn');
   btn.disabled=true;btn.textContent='Вход...';
-  const d=await apiFetch('/auth/login',{method:'POST',body:JSON.stringify({phone,password})});
+  try{
+    // /auth/login uses OAuth2PasswordRequestForm — must be form-encoded with field "username"
+    const res=await fetch(API+'/auth/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({username:phone,password})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(res.status===403&&String(data.detail||'').startsWith('PHONE_NOT_VERIFIED')){
+      localStorage.setItem('tc_otp_phone',phone);
+      localStorage.setItem('tc_otp_pass',password);
+      const lbl=document.getElementById('otpPhoneLabel');
+      if(lbl)lbl.textContent=phone;
+      showOtp();
+    }else if(!res.ok){
+      let err=data.detail||'Неверный номер или пароль';
+      if(Array.isArray(err))err=err.map(e=>e.msg||String(e)).join(', ');
+      _showLoginErr(typeof err==='string'?err:'Неверный номер или пароль');
+    }else if(data.access_token){
+      _token=data.access_token;localStorage.setItem('tc_token',_token);startDashboard();
+    }
+  }catch(e){
+    _showLoginErr('Сервер не отвечает — попробуйте ещё раз');
+  }
   btn.disabled=false;btn.textContent='Войти →';
-  if(!d){
-    _showLoginErr('Неверный номер или пароль — попробуйте ещё раз');
-    return;
-  }
-  if(d.require_otp){
-    localStorage.setItem('tc_otp_phone',phone);
-    localStorage.setItem('tc_otp_pass',password);
-    const lbl=document.getElementById('otpPhoneLabel');
-    if(lbl)lbl.textContent=phone;
-    showOtp();
-  }else if(d.access_token){
-    _token=d.access_token;localStorage.setItem('tc_token',_token);startDashboard();
-  }
 }
 
 async function doRegister(){
@@ -1472,7 +1482,13 @@ async function doRegister(){
   btn.disabled=false;btn.textContent='Зарегистрироваться — 14 дней бесплатно';
   if(!d)return;
   if(d.access_token){_token=d.access_token;localStorage.setItem('tc_token',_token);startDashboard();}
-  else{showErr('Аккаунт создан — войдите');showLogin();}
+  else{
+    localStorage.setItem('tc_otp_phone',phone);
+    localStorage.setItem('tc_otp_pass',password);
+    const lbl=document.getElementById('otpPhoneLabel');
+    if(lbl)lbl.textContent=phone;
+    showOtp();
+  }
 }
 
 async function doVerifyOtp(){
@@ -1496,7 +1512,13 @@ async function doResendOtp(){
   const phone=localStorage.getItem('tc_otp_phone')||'';
   const password=localStorage.getItem('tc_otp_pass')||'';
   if(!phone)return showErr('Сначала войдите');
-  await apiFetch('/auth/login',{method:'POST',body:JSON.stringify({phone,password})});
+  try{
+    await fetch(API+'/auth/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({username:phone,password})
+    });
+  }catch(e){}
   showErr('Код отправлен повторно');
 }
 
