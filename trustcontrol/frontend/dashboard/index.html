@@ -1,2 +1,1914 @@
 <!DOCTYPE html>
-<parameter name="content">PLACEHOLDER
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TrustControl — AI-мониторинг сервиса</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&family=JetBrains+Mono:wght@600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet"></noscript>
+<style>
+:root{
+  --bg:#080A0E;--surface:#0F1218;--surface2:#151920;
+  --bdr:rgba(255,255,255,.07);--bdr2:rgba(255,255,255,.12);
+  --txt:#F2F4F8;--muted:#6B7280;--dim:#9CA3AF;
+  --accent:#3B82F6;--accent2:#60A5FA;
+  --green:#10B981;--red:#EF4444;--orange:#F59E0B;--r:14px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--txt);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{text-decoration:none;color:inherit;cursor:pointer}
+button{font-family:'DM Sans',sans-serif;cursor:pointer}
+
+/* ── ERROR TOAST ── */
+#apiError{
+  display:none;position:fixed;bottom:24px;right:24px;z-index:9999;
+  background:#1e293b;border:1px solid var(--bdr2);
+  color:var(--txt);padding:12px 20px;border-radius:12px;
+  font-size:13px;font-weight:500;max-width:340px;
+  box-shadow:0 8px 32px rgba(0,0,0,.5);
+  animation:slideIn .2s ease;
+}
+@keyframes slideIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ════════════════════════════════
+   LANDING PAGE
+════════════════════════════════ */
+#landingPage{min-height:100vh;background:var(--bg);
+  background-image:radial-gradient(ellipse at 10% 0%,rgba(59,130,246,.12) 0,transparent 55%),
+  radial-gradient(ellipse at 90% 100%,rgba(59,130,246,.05) 0,transparent 50%);
+}
+/* NAV */
+.lp-nav{position:sticky;top:0;z-index:100;border-bottom:1px solid var(--bdr);background:rgba(8,10,14,.85);backdrop-filter:blur(24px)}
+.lp-nav-inner{max-width:1120px;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;justify-content:space-between}
+.lp-logo{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;letter-spacing:-.3px}
+.lp-logo span{color:var(--accent2)}
+.lp-nav-r{display:flex;align-items:center;gap:10px}
+.lp-ghost{background:transparent;border:1px solid var(--bdr2);color:var(--dim);padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;transition:all .2s}
+.lp-ghost:hover{border-color:var(--accent);color:var(--accent2)}
+.lp-primary{background:var(--accent);color:#fff;border:none;padding:9px 20px;border-radius:8px;font-size:13px;font-weight:600;transition:all .2s}
+.lp-primary:hover{background:#2563EB;box-shadow:0 4px 20px rgba(59,130,246,.4)}
+
+/* HERO */
+.lp-hero{max-width:1120px;margin:0 auto;padding:80px 24px 64px;text-align:center}
+.lp-hero h1{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(38px,5vw,68px);line-height:1.07;letter-spacing:-2px;margin-bottom:24px}
+.lp-hero h1 em{font-style:normal;background:linear-gradient(135deg,#93C5FD,#3B82F6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.lp-hero-sub{font-size:clamp(16px,2vw,20px);color:var(--dim);line-height:1.65;max-width:600px;margin:0 auto 40px;font-weight:300}
+.lp-hero-btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:56px}
+.lp-btn-hero{background:var(--accent);color:#fff;border:none;padding:15px 32px;border-radius:12px;font-size:16px;font-weight:700;transition:all .2s;position:relative;overflow:hidden}
+.lp-btn-hero::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.15),transparent 60%)}
+.lp-btn-hero:hover{background:#2563EB;transform:translateY(-2px);box-shadow:0 12px 40px rgba(59,130,246,.45)}
+.lp-btn-outline{background:transparent;color:var(--dim);border:1px solid var(--bdr2);padding:15px 28px;border-radius:12px;font-size:15px;font-weight:500;transition:all .2s}
+.lp-btn-outline:hover{border-color:var(--bdr2);color:var(--txt);background:rgba(255,255,255,.04)}
+.lp-hero-stats{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap;border:1px solid var(--bdr);border-radius:16px;overflow:hidden;background:var(--surface);max-width:560px;margin:0 auto}
+.lp-stat{flex:1;min-width:140px;padding:20px 16px;text-align:center}
+.lp-stat+.lp-stat{border-left:1px solid var(--bdr)}
+.lp-stat span{display:block;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:24px;color:var(--accent2);margin-bottom:4px}
+.lp-stat p{font-size:12px;color:var(--muted)}
+
+/* HOW */
+.lp-how{padding:80px 24px;background:var(--surface);border-top:1px solid var(--bdr);border-bottom:1px solid var(--bdr)}
+.lp-section{max-width:1120px;margin:0 auto}
+.lp-h2{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(28px,3vw,42px);letter-spacing:-1px;text-align:center;margin-bottom:12px}
+.lp-h2-sub{text-align:center;color:var(--muted);font-size:16px;margin-bottom:52px}
+.lp-steps{display:flex;align-items:flex-start;gap:0;justify-content:center;flex-wrap:wrap}
+.lp-step{flex:1;min-width:220px;max-width:280px;text-align:center;padding:24px}
+.lp-step-num{width:36px;height:36px;border-radius:50%;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);color:var(--accent2);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
+.lp-step-ico{font-size:40px;margin-bottom:16px}
+.lp-step h3{font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin-bottom:10px}
+.lp-step p{font-size:14px;color:var(--muted);line-height:1.6}
+.lp-step-arr{font-size:24px;color:var(--bdr2);padding-top:80px;flex-shrink:0}
+@media(max-width:700px){.lp-step-arr{display:none}.lp-step{max-width:100%}}
+
+/* FEATURES */
+.lp-feat{padding:80px 24px}
+.lp-feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;max-width:1120px;margin:0 auto}
+.lp-feat-card{background:var(--surface);border:1px solid var(--bdr);border-radius:16px;padding:24px;transition:border-color .2s,transform .2s}
+.lp-feat-card:hover{border-color:var(--bdr2);transform:translateY(-3px)}
+.lp-feat-ico{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:16px}
+.lp-feat-ico.r,.lp-feat-ico.o,.lp-feat-ico.g,.lp-feat-ico.b,.lp-feat-ico.p,.lp-feat-ico.t{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.18)}
+.lp-feat-card h3{font-family:'Syne',sans-serif;font-weight:700;font-size:16px;margin-bottom:8px}
+.lp-feat-card p{font-size:13px;color:var(--muted);line-height:1.6}
+
+/* PRICING */
+.lp-pricing{padding:80px 24px;background:var(--surface);border-top:1px solid var(--bdr);border-bottom:1px solid var(--bdr)}
+.lp-plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;max-width:960px;margin:0 auto}
+.lp-plan{background:var(--bg);border:1px solid var(--bdr);border-radius:20px;padding:28px 24px;position:relative;transition:border-color .2s}
+.lp-plan.hot{border-color:var(--accent);background:rgba(59,130,246,.04)}
+.lp-plan-tag{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:11px;font-weight:700;padding:4px 14px;border-radius:20px;white-space:nowrap}
+.lp-plan-name{font-family:'Syne',sans-serif;font-weight:700;font-size:17px;margin-bottom:14px}
+.lp-plan-price{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:32px;color:var(--txt);line-height:1}
+.lp-plan-price sup{font-size:16px;vertical-align:top;margin-top:6px;color:var(--muted)}
+.lp-plan-period{font-size:12px;color:var(--muted);margin-bottom:24px;margin-top:4px}
+.lp-plan ul{list-style:none;margin-bottom:28px}
+.lp-plan li{font-size:13px;color:var(--dim);padding:5px 0;display:flex;align-items:center;gap:8px}
+.lp-plan li::before{content:'✓';color:var(--green);font-weight:700;flex-shrink:0}
+.lp-plan-btn{width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:600;border:none;transition:all .2s}
+.lp-plan-btn.solid{background:var(--accent);color:#fff}
+.lp-plan-btn.solid:hover{background:#2563EB;box-shadow:0 4px 20px rgba(59,130,246,.4)}
+.lp-plan-btn.outline{background:transparent;border:1px solid var(--bdr2);color:var(--dim)}
+.lp-plan-btn.outline:hover{border-color:var(--accent);color:var(--accent2)}
+
+/* EYEBROW */
+.lp-eyebrow{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent2);margin-bottom:14px;text-align:center}
+
+/* PRICING ANCHOR */
+.lp-anchor{display:inline-flex;align-items:center;gap:10px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.25);border-radius:12px;padding:12px 20px;margin:0 auto 32px;font-size:15px;font-weight:600;color:var(--txt)}
+.lp-anchor-dot{width:8px;height:8px;border-radius:50%;background:var(--accent2);animation:pulse-kf 1.8s infinite;flex-shrink:0}
+.lp-anchor-hero{display:flex;justify-content:center}
+
+/* NAV LINKS */
+.lp-nav-links{display:flex;align-items:center;gap:4px}
+.lp-nav-link{background:transparent;border:none;color:var(--muted);padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;border-radius:6px;transition:color .2s;font-family:'DM Sans',sans-serif}
+.lp-nav-link:hover{color:var(--txt)}
+@media(max-width:640px){.lp-nav-links{display:none}}
+
+/* PROOF SECTION */
+.lp-proof{padding:80px 24px;background:var(--bg)}
+.proof-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:840px;margin:0 auto 32px}
+@media(max-width:640px){.proof-grid{grid-template-columns:1fr}}
+.proof-col{border-radius:20px;padding:28px}
+.proof-col.before{background:var(--surface);border:1px solid var(--bdr)}
+.proof-col.after{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.25)}
+.proof-col-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:20px;padding:5px 12px;border-radius:6px;display:inline-block}
+.proof-col.before .proof-col-label{background:rgba(255,255,255,.05);color:var(--muted)}
+.proof-col.after .proof-col-label{background:rgba(59,130,246,.15);color:var(--accent2)}
+.proof-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.proof-row:last-child{border-bottom:none}
+.proof-metric{font-size:13px;color:var(--muted)}
+.proof-val{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px}
+.proof-col.before .proof-val{color:var(--dim)}
+.proof-col.after .proof-val{color:var(--accent2)}
+.proof-roi{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:16px;padding:28px 32px;max-width:840px;margin:0 auto;text-align:center}
+.proof-roi-big{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(22px,3vw,32px);color:var(--txt);margin-bottom:8px}
+.proof-roi-big span{color:var(--accent2)}
+.proof-roi-sub{font-size:15px;color:var(--muted)}
+.proof-roi-sub b{color:var(--txt)}
+
+/* EXPANDED PRICING */
+.lp-pricing{padding:80px 24px;background:var(--surface);border-top:1px solid var(--bdr);border-bottom:1px solid var(--bdr)}
+.lp-plans{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;max-width:1120px;margin:0 auto}
+@media(max-width:960px){.lp-plans{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.lp-plans{grid-template-columns:1fr}}
+.lp-plan{background:var(--bg);border:1px solid var(--bdr);border-radius:20px;padding:28px 22px;position:relative;transition:border-color .2s,transform .2s;display:flex;flex-direction:column}
+.lp-plan:hover{border-color:var(--bdr2);transform:translateY(-3px)}
+.lp-plan.hot{border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.04);box-shadow:0 0 40px rgba(59,130,246,.08)}
+.lp-plan.hot:hover{box-shadow:0 0 60px rgba(59,130,246,.15)}
+@media(max-width:560px){.lp-plan.hot{order:-1}}
+.lp-plan-tag{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:11px;font-weight:700;padding:4px 14px;border-radius:20px;white-space:nowrap}
+.lp-plan-badge{position:absolute;top:16px;right:16px;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;letter-spacing:.04em}
+.lp-plan-badge.grey{background:rgba(255,255,255,.07);color:var(--muted)}
+.lp-plan-badge.blue{background:rgba(59,130,246,.15);color:var(--accent2)}
+.lp-plan-badge.green{background:rgba(59,130,246,.12);color:var(--accent2)}
+.lp-plan-badge.orange{background:rgba(255,255,255,.07);color:var(--dim)}
+.lp-plan-name{font-family:'Syne',sans-serif;font-weight:700;font-size:17px;margin-bottom:10px;padding-right:50px}
+.lp-plan-price{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:30px;color:var(--txt);line-height:1}
+.lp-plan-price sup{font-size:15px;vertical-align:top;margin-top:5px;color:var(--muted)}
+.lp-plan-period{font-size:12px;color:var(--muted);margin-bottom:14px;margin-top:4px}
+.lp-plan-hw{font-size:12px;font-weight:600;padding:6px 10px;border-radius:8px;margin-bottom:16px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.18);color:var(--accent2)}
+.lp-plan-hw.none{background:rgba(255,255,255,.04);border-color:var(--bdr);color:var(--muted)}
+.lp-plan ul{list-style:none;margin-bottom:24px;flex:1}
+.lp-plan li{font-size:13px;color:var(--dim);padding:5px 0;display:flex;align-items:flex-start;gap:8px;line-height:1.4}
+.lp-plan li::before{content:'✓';color:var(--accent2);font-weight:700;flex-shrink:0;margin-top:1px}
+.lp-plan-btn{width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:600;border:none;transition:all .2s;margin-top:auto}
+.lp-plan-btn.solid{background:var(--accent);color:#fff}
+.lp-plan-btn.solid:hover{background:#2563EB;box-shadow:0 4px 20px rgba(59,130,246,.4)}
+.lp-plan-btn.outline{background:transparent;border:1px solid var(--bdr2);color:var(--dim)}
+.lp-plan-btn.outline:hover{border-color:var(--accent);color:var(--accent2)}
+.lp-pricing-note{max-width:1120px;margin:20px auto 0;text-align:center;font-size:13px;color:var(--muted);background:rgba(255,255,255,.03);border:1px solid var(--bdr);border-radius:10px;padding:12px 20px}
+.lp-pricing-note b{color:var(--txt)}
+
+/* HARDWARE SECTION */
+.lp-hw{padding:80px 24px;background:var(--bg)}
+.hw-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:960px;margin:0 auto 40px}
+@media(max-width:640px){.hw-grid{grid-template-columns:1fr}}
+.hw-card{background:var(--surface);border:1px solid var(--bdr);border-radius:20px;padding:28px;transition:border-color .2s,transform .2s;position:relative}
+.hw-card:hover{border-color:var(--bdr2);transform:translateY(-3px)}
+.hw-new{position:absolute;top:16px;right:16px;background:rgba(59,130,246,.15);color:var(--accent2);font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;letter-spacing:.04em}
+.hw-ico{font-size:40px;margin-bottom:16px}
+.hw-type{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.hw-card h3{font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin-bottom:10px}
+.hw-when{font-size:13px;color:var(--dim);margin-bottom:16px}
+.hw-props{list-style:none;margin-bottom:20px}
+.hw-props li{font-size:13px;color:var(--muted);padding:4px 0;display:flex;align-items:center;gap:8px}
+.hw-props li::before{content:'—';color:var(--bdr2)}
+.hw-plans{font-size:12px;color:var(--muted)}
+.hw-plans b{color:var(--accent2)}
+.hw-guarantees{display:flex;justify-content:center;gap:32px;flex-wrap:wrap;max-width:700px;margin:0 auto}
+.hw-guarantee{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--dim)}
+.hw-guarantee span{color:var(--accent2);font-size:16px;flex-shrink:0}
+
+/* CTA SECTION */
+.lp-cta-sec{padding:80px 24px;text-align:center}
+.lp-cta-sec h2{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(28px,3vw,48px);letter-spacing:-1.5px;margin-bottom:16px}
+.lp-cta-sec p{color:var(--muted);font-size:16px;margin-bottom:36px}
+.lp-cta-btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:16px}
+.lp-cta-micro{font-size:12px;color:var(--muted)}
+
+/* REVEAL ANIMATION */
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
+.reveal.visible{opacity:1;transform:translateY(0)}
+
+/* FOOTER */
+.lp-footer{border-top:1px solid var(--bdr);padding:32px 24px}
+.lp-footer-inner{max-width:1120px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.lp-footer-links{display:flex;gap:24px}
+.lp-footer-links a{font-size:13px;color:var(--muted);transition:color .2s}
+.lp-footer-links a:hover{color:var(--txt)}
+.lp-footer-copy{font-size:12px;color:var(--muted)}
+
+/* ════════════════════════════════
+   AUTH SECTION
+════════════════════════════════ */
+#authSection{display:none;min-height:100vh;
+  background:var(--bg);
+  background-image:radial-gradient(ellipse at 20% 10%,rgba(59,130,246,.12) 0,transparent 50%),
+  radial-gradient(ellipse at 80% 90%,rgba(59,130,246,.05) 0,transparent 50%);
+  flex-direction:row;
+}
+.auth-wrap{display:flex;min-height:100vh}
+.auth-left{flex:1;display:flex;flex-direction:column;justify-content:center;padding:60px;position:relative;overflow:hidden}
+@media(max-width:900px){.auth-left{display:none}}
+.auth-left-glow{position:absolute;top:-100px;left:-100px;width:500px;height:500px;background:radial-gradient(ellipse,rgba(59,130,246,.08) 0,transparent 70%);pointer-events:none}
+.auth-logo{font-family:'Syne',sans-serif;font-weight:800;font-size:22px;letter-spacing:-.3px;margin-bottom:60px}
+.auth-logo span{color:var(--accent2)}
+.auth-left h1{font-family:'Syne',sans-serif;font-size:clamp(36px,3.5vw,52px);font-weight:800;line-height:1.1;letter-spacing:-1.5px;margin-bottom:24px}
+.auth-left h1 em{font-style:normal;background:linear-gradient(135deg,#60A5FA,#3B82F6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.auth-left p{font-size:16px;color:var(--dim);line-height:1.7;font-weight:300;max-width:420px;margin-bottom:36px}
+.auth-feat{display:flex;align-items:center;gap:12px;margin-bottom:12px;font-size:14px;color:var(--dim)}
+.auth-feat-dot{width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px}
+.auth-back{margin-top:40px;font-size:13px;color:var(--muted);cursor:pointer}
+.auth-back:hover{color:var(--accent2)}
+.auth-right{width:460px;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:40px 32px;border-left:1px solid var(--bdr);background:rgba(15,18,24,.6);backdrop-filter:blur(24px)}
+@media(max-width:900px){.auth-right{width:100%;border-left:none;background:var(--bg)}}
+.auth-box{width:100%;max-width:380px}
+.auth-logo-m{font-family:'Syne',sans-serif;font-weight:800;font-size:20px;letter-spacing:-.3px;text-align:center;margin-bottom:8px;display:none}
+.auth-logo-m span{color:var(--accent2)}
+@media(max-width:900px){.auth-logo-m{display:block}}
+.auth-tagline{text-align:center;font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:32px;font-style:italic}
+.auth-title{font-family:'Syne',sans-serif;font-weight:700;font-size:22px;margin-bottom:6px;letter-spacing:-.3px}
+.auth-sub{font-size:13px;color:var(--muted);margin-bottom:28px}
+
+/* FORM */
+.f-group{margin-bottom:18px}
+.f-label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;font-weight:500}
+.f-input{width:100%;background:var(--surface);border:1px solid var(--bdr2);color:var(--txt);padding:12px 14px;font-size:14px;font-family:'DM Sans',sans-serif;border-radius:var(--r);outline:none;transition:border-color .2s,box-shadow .2s}
+.f-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+.f-input::placeholder{color:var(--muted)}
+textarea.f-input{resize:vertical;line-height:1.6}
+.f-btn{width:100%;background:var(--accent);color:#fff;border:none;padding:13px;font-size:15px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;border-radius:var(--r);transition:all .2s;margin-top:6px;position:relative;overflow:hidden}
+.f-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.15) 0,transparent 60%)}
+.f-btn:hover{background:#2563EB;transform:translateY(-1px);box-shadow:0 8px 30px rgba(59,130,246,.35)}
+.f-btn:disabled{opacity:.6;transform:none;cursor:not-allowed}
+.f-switch{text-align:center;margin-top:18px;font-size:13px;color:var(--muted)}
+.f-switch a{color:var(--accent2);cursor:pointer}
+.f-switch a:hover{text-decoration:underline}
+.auth-back-link{text-align:center;margin-top:10px;font-size:12px;color:var(--muted);cursor:pointer}
+.auth-back-link:hover{color:var(--dim)}
+.otp-big{letter-spacing:12px;font-size:28px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700}
+.bypass-banner{display:none;margin-top:10px;padding:10px 14px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);border-radius:10px;font-size:12px;color:var(--accent2);text-align:center}
+
+/* ════════════════════════════════
+   MODALS
+════════════════════════════════ */
+.modal-overlay{display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);align-items:flex-start;justify-content:center;overflow-y:auto;padding:32px 16px}
+.modal-box{background:var(--surface);border:1px solid var(--bdr2);border-radius:20px;padding:28px;width:100%;max-width:460px;position:relative;margin:auto;box-shadow:0 32px 80px rgba(0,0,0,.7)}
+.modal-title{font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin-bottom:22px;padding-right:32px}
+.modal-close{position:absolute;top:20px;right:20px;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid var(--bdr);color:var(--muted);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.modal-close:hover{background:rgba(255,255,255,.12);color:var(--txt)}
+.modal-select{width:100%;background:var(--surface2);border:1px solid var(--bdr2);color:var(--txt);padding:11px 14px;font-size:14px;font-family:'DM Sans',sans-serif;border-radius:var(--r);outline:none}
+.modal-divider{border:none;border-top:1px solid var(--bdr);margin:18px 0 14px}
+.modal-sec-title{font-size:11px;font-weight:600;color:var(--accent2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px}
+.test-tg-btn{width:100%;background:rgba(34,158,217,.12);color:#229ED9;border:1px solid rgba(34,158,217,.25);padding:10px;font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;border-radius:var(--r);margin-top:4px;transition:all .2s}
+.test-tg-btn:hover{background:rgba(34,158,217,.22)}
+#testTgResult{font-size:12px;margin-top:8px;min-height:16px}
+
+/* ════════════════════════════════
+   APP LAYOUT
+════════════════════════════════ */
+#appWrap{display:none}
+.layout{display:flex;min-height:100vh}
+
+/* SIDEBAR */
+.sidebar{width:240px;flex-shrink:0;position:fixed;top:0;bottom:0;left:0;z-index:100;background:linear-gradient(180deg,rgba(10,12,18,.98),rgba(8,10,14,.98));border-right:1px solid var(--bdr);display:flex;flex-direction:column;backdrop-filter:blur(40px)}
+.s-brand{padding:24px 20px 20px;font-family:'Syne',sans-serif;font-weight:800;font-size:17px;letter-spacing:-.3px;color:var(--txt);border-bottom:1px solid var(--bdr)}
+.s-brand span{color:var(--accent2)}
+.s-brand-sub{font-size:10px;color:var(--muted);font-weight:400;letter-spacing:.05em;text-transform:uppercase;margin-top:3px}
+.s-nav{padding:16px 12px;flex:1;overflow-y:auto}
+.s-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:var(--muted);font-size:13.5px;font-weight:400;cursor:pointer;transition:all .18s;margin-bottom:2px;border:1px solid transparent}
+.s-item:hover{background:rgba(255,255,255,.04);color:var(--dim)}
+.s-item.active{background:rgba(59,130,246,.1);color:var(--accent2);border-color:rgba(59,130,246,.15)}
+.s-ico{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+.s-badge{margin-left:auto;background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px}
+.s-footer{padding:16px 20px;border-top:1px solid var(--bdr)}
+.s-user{font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5}
+.s-user b{color:var(--txt)}
+.s-logout{width:100%;background:rgba(255,255,255,.04);border:1px solid var(--bdr);color:var(--muted);padding:8px;font-size:12px;font-weight:600;cursor:pointer;border-radius:8px;transition:all .2s}
+.s-logout:hover{background:rgba(255,255,255,.08);color:var(--txt)}
+
+/* MOBILE HEADER */
+.mob-header{display:none;position:sticky;top:0;z-index:90;background:rgba(8,10,14,.95);backdrop-filter:blur(24px);border-bottom:1px solid var(--bdr);padding:14px 16px;flex-direction:row;align-items:center;justify-content:space-between}
+.mob-logo{font-family:'Syne',sans-serif;font-weight:800;font-size:16px}
+.mob-logo span{color:var(--accent2)}
+.mob-user{font-size:12px;color:var(--muted)}
+.mob-out{background:transparent;border:1px solid var(--bdr);color:var(--muted);padding:5px 12px;font-size:11px;cursor:pointer;border-radius:6px}
+
+/* MAIN */
+.main{margin-left:240px;min-height:100vh;padding:28px 28px 90px}
+@media(max-width:768px){.main{margin-left:0;padding:16px 14px 90px}}
+@media(max-width:768px){.sidebar{display:none}.mob-header{display:flex}}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.page-title{font-family:'Syne',sans-serif;font-size:24px;font-weight:800;letter-spacing:-.5px}
+.topbar-r{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.loc-select{background:var(--surface);border:1px solid var(--bdr2);color:var(--txt);padding:8px 12px;font-size:13px;border-radius:8px;outline:none;cursor:pointer}
+.btn{padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;border:none;border-radius:8px;font-family:'DM Sans',sans-serif;transition:all .18s}
+.btn-a{background:var(--accent);color:#fff}
+.btn-a:hover{background:#2563EB;box-shadow:0 4px 20px rgba(59,130,246,.35)}
+.btn-o{background:transparent;color:var(--dim);border:1px solid var(--bdr2)}
+.btn-o:hover{background:rgba(255,255,255,.05);color:var(--txt)}
+.btn-sm{padding:5px 12px;font-size:12px;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:rgba(59,130,246,.1);color:var(--accent2);transition:all .18s}
+.btn-sm:hover{background:rgba(59,130,246,.2)}
+.btn-sm:disabled{opacity:.5;cursor:not-allowed}
+
+/* PAGES */
+.page{display:none}
+.page.active{display:block;animation:fadeUp .22s ease both}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* STAT CARDS */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px}
+.card{background:var(--surface);border:1px solid var(--bdr);padding:20px;border-radius:16px;transition:border-color .2s,transform .2s;position:relative;overflow:hidden}
+.card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),transparent);opacity:0;transition:opacity .2s}
+.card:hover{border-color:var(--bdr2);transform:translateY(-2px)}
+.card:hover::after,.card.red::after,.card.green::after{opacity:1}
+.card.red::after{background:linear-gradient(90deg,var(--red),transparent)}
+.card.green::after{background:linear-gradient(90deg,var(--green),transparent)}
+.card-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;font-weight:600}
+.card-val{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:32px;color:var(--accent2);line-height:1;letter-spacing:-.5px}
+.card.red .card-val{color:var(--red)}
+.card.green .card-val{color:var(--green)}
+.card-sub{font-size:11px;color:var(--muted);margin-top:6px}
+
+/* KPI RINGS ROW */
+.kpi-row{display:flex;gap:12px;margin-bottom:20px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.kpi-row::-webkit-scrollbar{display:none}
+.kpi-wrap{flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--bdr);border-radius:16px;padding:16px 18px;min-width:120px}
+.kpi-svg-wrap{position:relative;width:80px;height:80px}
+.kpi-svg{width:80px;height:80px;transform:rotate(-90deg)}
+.kpi-track{fill:none;stroke:rgba(255,255,255,.05);stroke-width:8}
+.kpi-arc{fill:none;stroke-width:8;stroke-linecap:round;stroke-dasharray:201;stroke-dashoffset:201;transition:stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1)}
+.kpi-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.kpi-pct{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;line-height:1}
+.kpi-unit{font-size:9px;color:var(--muted)}
+.kpi-label{font-size:11px;color:var(--muted);text-align:center;font-weight:500}
+
+/* SCORE + TONE GRID */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:768px){.grid-2{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--bdr);border-radius:16px;padding:20px;margin-bottom:16px}
+.panel h3{font-family:'Syne',sans-serif;font-weight:700;font-size:15px;letter-spacing:-.2px}
+.score-row{display:flex;align-items:center;gap:18px}
+.score-ring-wrap{position:relative;width:88px;height:88px;flex-shrink:0}
+.score-ring-wrap svg{transform:rotate(-90deg)}
+.score-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:20px;color:var(--accent2)}
+.score-info h3{font-size:15px;font-weight:700;margin-bottom:4px}
+.score-info p{font-size:12px;color:var(--muted)}
+.tone-bar{height:5px;background:rgba(255,255,255,.07);border-radius:3px;overflow:hidden;margin-top:6px}
+.tone-fill{height:100%;border-radius:3px;transition:width 1s ease}
+.tone-fill.pos{background:var(--green)}
+.tone-fill.neu{background:var(--muted)}
+.tone-fill.neg{background:var(--red)}
+
+/* TABLE */
+.table-wrap{overflow-x:auto}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;padding:10px 14px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--bdr);font-weight:600;white-space:nowrap}
+.tbl td{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.03);color:var(--dim);vertical-align:middle}
+.tbl tr:hover td{background:rgba(255,255,255,.02)}
+.tbl tr:last-child td{border-bottom:none}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+.badge.g{background:rgba(16,185,129,.12);color:var(--green)}
+.badge.r{background:rgba(239,68,68,.12);color:var(--red)}
+.badge.o{background:rgba(245,158,11,.12);color:var(--orange)}
+.badge.b{background:rgba(59,130,246,.12);color:var(--accent2)}
+.badge.n{background:rgba(255,255,255,.07);color:var(--dim)}
+
+/* ALERT CARDS */
+.alert-card{background:var(--surface2);border:1px solid var(--bdr);border-radius:12px;padding:16px;margin-bottom:10px}
+.alert-card-hdr{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.at-badge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;background:rgba(239,68,68,.1);color:var(--red)}
+.sev-badge{font-size:10px;font-weight:600;padding:3px 8px;border-radius:6px}
+.sev-badge.high,.sev-badge.critical{background:rgba(239,68,68,.1);color:var(--red)}
+.sev-badge.medium{background:rgba(245,158,11,.1);color:var(--orange)}
+.sev-badge.low{background:rgba(16,185,129,.1);color:var(--green)}
+.alert-card time{font-size:11px;color:var(--muted);margin-left:auto}
+.alert-phrase{font-size:13px;color:var(--txt);font-style:italic;margin-bottom:8px;padding-left:10px;border-left:2px solid var(--red)}
+.alert-text{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+
+/* ALERTS FILTERS */
+.filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+
+/* INCIDENT CARDS */
+.inc-card{background:var(--surface2);border:1px solid var(--bdr);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+.inc-card-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.inc-type{font-size:11px;font-weight:700;padding:2px 9px;border-radius:4px;letter-spacing:.05em;background:rgba(239,68,68,.1);color:var(--red)}
+.inc-type.agg{background:rgba(245,158,11,.1);color:var(--orange)}
+.inc-type.ups{background:rgba(245,158,11,.08);color:var(--orange)}
+.inc-sev{font-size:10px;color:var(--muted)}
+.inc-desc{font-size:13px;color:var(--dim);line-height:1.5;margin-bottom:10px}
+.inc-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.inc-time{font-size:11px;color:var(--muted)}
+
+/* LOCATION CARDS */
+.loc-card{background:var(--surface);border:1px solid var(--bdr);border-radius:16px;padding:20px;margin-bottom:14px;transition:border-color .2s}
+.loc-card:hover{border-color:var(--bdr2)}
+.loc-card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.loc-name{font-family:'Syne',sans-serif;font-weight:700;font-size:16px}
+.loc-type{font-size:11px;color:var(--muted);background:var(--surface2);padding:3px 10px;border-radius:20px}
+.loc-addr{font-size:12px;color:var(--muted);margin-bottom:14px}
+.loc-key-block{background:var(--surface2);border:1px solid var(--bdr);border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.loc-key-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.loc-key-val{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent2);word-break:break-all}
+.btn-icon{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;border-radius:6px;transition:color .2s}
+.btn-icon:hover{color:var(--txt)}
+
+/* REPORT ROWS (desktop) */
+.rep-row{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.04);flex-wrap:wrap}
+.rep-row:last-child{border-bottom:none}
+.rep-time{font-size:12px;color:var(--muted);white-space:nowrap;flex-shrink:0;width:100px}
+.rep-score{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:18px;flex-shrink:0;width:44px}
+.rep-score.g{color:var(--green)}.rep-score.y{color:var(--orange)}.rep-score.r{color:var(--red)}
+.rep-tone{font-size:12px;color:var(--muted);width:90px;flex-shrink:0}
+.rep-flags{display:flex;gap:6px;flex-wrap:wrap}
+.flag{font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px}
+.flag.ok{background:rgba(16,185,129,.12);color:var(--green)}
+.flag.bad{background:rgba(239,68,68,.1);color:var(--red)}
+.flag.bonus{background:rgba(245,158,11,.1);color:var(--orange)}
+.rep-text{font-size:12px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none}
+@media(min-width:900px){.rep-text{display:block}}
+
+/* REPORT CARDS (mobile) */
+.rc{background:var(--surface);border:1px solid var(--bdr);border-radius:12px;padding:14px;margin-bottom:10px}
+.rc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.rc-time{font-size:11px;color:var(--muted)}
+.rc-quote{font-size:13px;color:var(--dim);line-height:1.55;margin-bottom:10px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.rc-footer{display:flex;flex-wrap:wrap;gap:6px}
+
+/* SETTINGS */
+.srow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.srow:last-child{border-bottom:none}
+.skey{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;width:90px;flex-shrink:0}
+.sval{font-size:14px;font-weight:500}
+.plan-badge{font-size:12px;font-weight:700;padding:4px 14px;border-radius:20px;background:rgba(59,130,246,.15);color:var(--accent2)}
+.qs-code{background:var(--surface2);border:1px solid var(--bdr);border-radius:8px;padding:10px 14px;margin:8px 0;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent2);overflow-x:auto;white-space:nowrap}
+.about-quote{border-left:2px solid var(--accent);padding-left:14px;font-size:14px;color:var(--txt);line-height:1.7;margin-top:14px}
+
+/* EMPTY STATE */
+.empty-state{text-align:center;padding:40px 20px;color:var(--muted);font-size:14px}
+
+/* PULSE DOT */
+.pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse-kf 2s infinite;margin-left:6px;vertical-align:middle}
+@keyframes pulse-kf{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+
+/* MOBILE BOTTOM NAV */
+.mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:200;background:rgba(10,12,18,.96);backdrop-filter:blur(24px);border-top:1px solid var(--bdr);padding:8px 0 env(safe-area-inset-bottom,8px)}
+.mob-nav-inner{display:flex;align-items:stretch}
+.mn-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 4px;cursor:pointer;position:relative;color:var(--muted);font-size:10px;font-weight:500;border:none;background:transparent;font-family:'DM Sans',sans-serif;transition:color .2s}
+.mn-item.active{color:var(--accent2)}
+.mn-ico{font-size:18px}
+.mn-badge{position:absolute;top:4px;right:calc(50% - 16px);background:var(--red);color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 3px;border-radius:8px;display:none;align-items:center;justify-content:center}
+@media(max-width:768px){.mob-nav{display:block}}
+</style>
+</head>
+<body>
+
+<!-- ── ERROR TOAST ── -->
+<div id="apiError"></div>
+
+<!-- ════════════════════════════════
+     LANDING PAGE
+════════════════════════════════ -->
+<div id="landingPage">
+
+  <nav class="lp-nav">
+    <div class="lp-nav-inner">
+      <div class="lp-logo">Trust<span>Control</span></div>
+      <div class="lp-nav-links">
+        <button class="lp-nav-link" onclick="document.getElementById('howItWorks').scrollIntoView({behavior:'smooth'})">Как работает</button>
+        <button class="lp-nav-link" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Тарифы</button>
+        <button class="lp-nav-link" onclick="document.getElementById('hardware').scrollIntoView({behavior:'smooth'})">Оборудование</button>
+      </div>
+      <div class="lp-nav-r">
+        <button class="lp-ghost" onclick="goToAuth(false)">Войти</button>
+        <button class="lp-primary" onclick="goToAuth(true)">Попробовать бесплатно →</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="lp-hero">
+    <h1>ИИ следит за сервисом,<br>пока вы занимаетесь <em>бизнесом</em></h1>
+    <p class="lp-hero-sub">Каждый разговор на кассе — анализ через 15 секунд.<br>Грубость, мошенничество, упущенные продажи — всё в Telegram.</p>
+    <div class="lp-hero-btns">
+      <button class="lp-btn-hero" onclick="goToAuth(true)">Попробовать бесплатно — 14 дней →</button>
+      <button class="lp-btn-outline" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Посмотреть тарифы</button>
+    </div>
+    <div class="lp-anchor-hero">
+      <div class="lp-anchor">
+        <div class="lp-anchor-dot"></div>
+        <span>Без карты · Без контракта · Отменить в любой момент · Настройка за 5 минут</span>
+      </div>
+    </div>
+    <div class="lp-hero-stats">
+      <div class="lp-stat"><span>98%</span><p>точность обнаружения</p></div>
+      <div class="lp-stat" style="border-left:1px solid var(--bdr)"><span>15 сек</span><p>отчёт после разговора</p></div>
+      <div class="lp-stat" style="border-left:1px solid var(--bdr)"><span>×12</span><p>средний ROI в первый месяц</p></div>
+    </div>
+  </section>
+
+  <!-- SOCIAL PROOF -->
+  <section class="lp-proof reveal">
+    <div class="lp-section">
+      <div class="lp-eyebrow">Реальные цифры</div>
+      <h2 class="lp-h2">Возврат инвестиций — за 30 дней.</h2>
+      <p class="lp-h2-sub">Сравнение «до» и «через месяц после подключения» по пилотным точкам в Алматы.</p>
+      <div class="proof-grid">
+        <div class="proof-col before">
+          <div class="proof-col-label">До TrustControl</div>
+          <div class="proof-row"><span class="proof-metric">Средний чек</span><span class="proof-val">2 100 ₸</span></div>
+          <div class="proof-row"><span class="proof-metric">Конверсия в допродажу</span><span class="proof-val">12%</span></div>
+          <div class="proof-row"><span class="proof-metric">Жалобы клиентов / мес.</span><span class="proof-val">14</span></div>
+          <div class="proof-row"><span class="proof-metric">Слитая выручка / мес.</span><span class="proof-val">280 000 ₸</span></div>
+        </div>
+        <div class="proof-col after">
+          <div class="proof-col-label">Через 30 дней</div>
+          <div class="proof-row"><span class="proof-metric">Средний чек</span><span class="proof-val">2 680 ₸ <small style="font-size:11px;color:var(--green)">+28%</small></span></div>
+          <div class="proof-row"><span class="proof-metric">Конверсия в допродажу</span><span class="proof-val">38% <small style="font-size:11px;color:var(--green)">+217%</small></span></div>
+          <div class="proof-row"><span class="proof-metric">Жалобы клиентов / мес.</span><span class="proof-val">3 <small style="font-size:11px;color:var(--green)">–79%</small></span></div>
+          <div class="proof-row"><span class="proof-metric">Дополнительная выручка</span><span class="proof-val">+<span class="count-up" data-target="312000">0</span> ₸</span></div>
+        </div>
+      </div>
+      <div class="proof-roi">
+        <div class="proof-roi-big">Средний клиент возвращает <span><span class="count-up" data-target="312000">0</span> ₸ / мес.</span></div>
+        <div class="proof-roi-sub">При подписке 25 000 ₸ это <b>ROI ×12 в первый же месяц</b></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section class="lp-pricing reveal" id="pricing">
+    <div class="lp-section">
+      <div class="lp-eyebrow">Тарифы</div>
+      <h2 class="lp-h2">14 дней бесплатно.<br>Потом — от 15 000 ₸.</h2>
+      <p class="lp-h2-sub">Оборудование, AI-анализ и Telegram-отчёты включены. Без скрытых платежей. Без карты при регистрации.</p>
+      <div class="lp-plans">
+
+        <!-- СТАРТ -->
+        <div class="lp-plan">
+          <div class="lp-plan-badge grey">Для теста</div>
+          <div class="lp-plan-name">Старт</div>
+          <div class="lp-plan-price">15 000 <sup>₸</sup></div>
+          <div class="lp-plan-period">в месяц · помесячно</div>
+          <div class="lp-plan-hw none">🎙 Оборудование: ваше</div>
+          <ul>
+            <li>1 касса</li>
+            <li>50 часов AI-анализа в месяц</li>
+            <li>Telegram-отчёт ежедневно</li>
+            <li>Базовые скрипты бизнеса</li>
+            <li>FAQ-поддержка</li>
+          </ul>
+          <button class="lp-plan-btn outline" onclick="goToAuth(true)">Начать бесплатно</button>
+        </div>
+
+        <!-- БАЗОВЫЙ -->
+        <div class="lp-plan hot">
+          <div class="lp-plan-tag">POPULAR</div>
+          <div class="lp-plan-badge blue">Оборудование в подарок</div>
+          <div class="lp-plan-name">Базовый</div>
+          <div class="lp-plan-price">25 000 <sup>₸</sup></div>
+          <div class="lp-plan-period">в месяц · контракт 12 мес.</div>
+          <div class="lp-plan-hw">🎙 USB-микрофон в подарок</div>
+          <ul>
+            <li>1–2 точки малого бизнеса</li>
+            <li>120 часов AI-анализа в месяц</li>
+            <li>Ежедневный + еженедельный отчёт</li>
+            <li>Скрипты под ваш бизнес</li>
+            <li>Антифрод-маркеры</li>
+            <li>Email-поддержка 24ч</li>
+          </ul>
+          <button class="lp-plan-btn solid" onclick="goToAuth(true)">Попробовать бесплатно</button>
+        </div>
+
+        <!-- PRO -->
+        <div class="lp-plan">
+          <div class="lp-plan-badge green">Для сетей</div>
+          <div class="lp-plan-name">Pro</div>
+          <div class="lp-plan-price">50 000 <sup>₸</sup></div>
+          <div class="lp-plan-period">в месяц · контракт 12 мес.</div>
+          <div class="lp-plan-hw">📎 AI-Pin или петличка ×2 в подарок</div>
+          <ul>
+            <li>Сети 3–10 точек</li>
+            <li>240 часов AI-анализа в месяц</li>
+            <li>Telegram + Slack-интеграция</li>
+            <li>Кастомные скрипты под стандарты</li>
+            <li>Антифрод: Kaspi мимо кассы</li>
+            <li>Рейтинг сотрудников по точкам</li>
+            <li>WhatsApp-поддержка</li>
+          </ul>
+          <button class="lp-plan-btn outline" onclick="goToAuth(true)">Попробовать бесплатно</button>
+        </div>
+
+        <!-- ENTERPRISE -->
+        <div class="lp-plan">
+          <div class="lp-plan-badge orange">Индивидуально</div>
+          <div class="lp-plan-name">Enterprise</div>
+          <div class="lp-plan-price" style="font-size:22px">от 120 000 <sup>₸</sup></div>
+          <div class="lp-plan-period">в месяц · контракт 24 мес.</div>
+          <div class="lp-plan-hw">📦 5+ устройств под задачи</div>
+          <ul>
+            <li>Корпоративные сети 10+ точек</li>
+            <li>600+ часов AI-анализа</li>
+            <li>Custom API + интеграция CRM/POS</li>
+            <li>Персональный менеджер</li>
+            <li>SLA 99.9%</li>
+            <li>On-premise (данные в РК)</li>
+          </ul>
+          <button class="lp-plan-btn outline" onclick="window.open('https://t.me/aspanlab','_blank')">Запросить расчёт</button>
+        </div>
+
+      </div>
+      <div class="lp-pricing-note">
+        🎁 <b>Первые 14 дней бесплатно</b> на любом тарифе. Карта не нужна. Оборудование в подарок для Базового, Pro и Enterprise.
+      </div>
+    </div>
+  </section>
+
+  <!-- HARDWARE -->
+  <section class="lp-hw reveal" id="hardware">
+    <div class="lp-section">
+      <div class="lp-eyebrow">Оборудование</div>
+      <h2 class="lp-h2">Микрофон, петличка или AI-Pin —<br>подбираем под ваш бизнес.</h2>
+      <p class="lp-h2-sub">Вы не покупаете железо. Мы выдаём, настраиваем и обслуживаем. Заберём бесплатно при отказе.</p>
+      <div class="hw-grid">
+        <div class="hw-card">
+          <div class="hw-ico">🎙️</div>
+          <div class="hw-type">Стационарный микрофон</div>
+          <h3>USB-микрофон</h3>
+          <p class="hw-when">Кассы, стойки, кофе-точки, АЗС</p>
+          <ul class="hw-props">
+            <li>Подключается за 5 минут</li>
+            <li>Работает 24/7 от USB</li>
+            <li>Запись прямо в облако</li>
+          </ul>
+          <div class="hw-plans">Входит в: <b>Базовый, Pro, Enterprise</b></div>
+        </div>
+        <div class="hw-card">
+          <div class="hw-ico">📎</div>
+          <div class="hw-type">Мобильный сотрудник</div>
+          <h3>Беспроводная петличка</h3>
+          <p class="hw-when">Официанты, барберы, мастера СТО</p>
+          <ul class="hw-props">
+            <li>10 часов работы</li>
+            <li>Активное шумоподавление</li>
+            <li>Зарядка через USB-C</li>
+          </ul>
+          <div class="hw-plans">Входит в: <b>Pro, Enterprise</b></div>
+        </div>
+        <div class="hw-card">
+          <div class="hw-new">NEW</div>
+          <div class="hw-ico">📍</div>
+          <div class="hw-type">Премиум-сервис</div>
+          <h3>AI-Pin</h3>
+          <p class="hw-when">Рестораны, ресепшен отелей, банкетные залы</p>
+          <ul class="hw-props">
+            <li>20 часов — не сядет за смену</li>
+            <li>Магнит / клип / шнурок на выбор</li>
+            <li>Размер с монету</li>
+          </ul>
+          <div class="hw-plans">Входит в: <b>Pro, Enterprise</b></div>
+        </div>
+      </div>
+      <div class="hw-guarantees">
+        <div class="hw-guarantee"><span>✓</span> <span><b style="color:var(--txt)">Гарантия 12 месяцев</b> на всё железо</span></div>
+        <div class="hw-guarantee"><span>✓</span> <span><b style="color:var(--txt)">Бесплатная замена</b> при поломке не по вашей вине</span></div>
+        <div class="hw-guarantee"><span>✓</span> <span><b style="color:var(--txt)">Без вложений</b> — оборудование наше</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="lp-how reveal" id="howItWorks">
+    <div class="lp-section">
+      <h2 class="lp-h2">Как это работает</h2>
+      <p class="lp-h2-sub">Три шага — и вы видите всё что происходит на кассе</p>
+      <div class="lp-steps">
+        <div class="lp-step">
+          <div class="lp-step-num">1</div>
+          <div class="lp-step-ico">🎙️</div>
+          <h3>Подключите микрофон</h3>
+          <p>USB-микрофон к кассовому ПК. Наш скрипт запускается одной командой. Никаких облачных записей.</p>
+        </div>
+        <div class="lp-step-arr">→</div>
+        <div class="lp-step">
+          <div class="lp-step-num">2</div>
+          <div class="lp-step-ico">🧠</div>
+          <h3>ИИ анализирует речь</h3>
+          <p>OpenAI Whisper транскрибирует разговор. Система находит тон, фразы, нарушения и допродажи.</p>
+        </div>
+        <div class="lp-step-arr">→</div>
+        <div class="lp-step">
+          <div class="lp-step-num">3</div>
+          <div class="lp-step-ico">📱</div>
+          <h3>Отчёт в Telegram</h3>
+          <p>Оценка смены, транскрипция, тревоги — прямо на ваш телефон. Тревоги приходят мгновенно.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="lp-feat reveal">
+    <div class="lp-section">
+      <h2 class="lp-h2">Что контролирует система</h2>
+      <p class="lp-h2-sub">Не слежка — помощь вернуть доверие клиентов</p>
+      <div class="lp-feat-grid">
+        <div class="lp-feat-card">
+          <div class="lp-feat-ico r">🚨</div>
+          <h3>Мошенничество</h3>
+          <p>Чужие Kaspi-номера и подозрительные схемы. Тревога владельцу — за секунды.</p>
+        </div>
+        <div class="lp-feat-card">
+          <div class="lp-feat-ico o">😤</div>
+          <h3>Грубость и конфликты</h3>
+          <p>ИИ распознаёт негативный тон, ненормативную лексику и агрессию в разговоре.</p>
+        </div>
+        <div class="lp-feat-card">
+          <div class="lp-feat-ico g">💰</div>
+          <h3>Упущенные продажи</h3>
+          <p>Сотрудник не предложил допродажу? Система зафиксирует UPSELL GAP с суммой потерь.</p>
+        </div>
+        <div class="lp-feat-card">
+          <div class="lp-feat-ico b">👋</div>
+          <h3>Стандарты сервиса</h3>
+          <p>Приветствие, прощание, обязательные фразы по скрипту — всё под контролем.</p>
+        </div>
+        <div class="lp-feat-card">
+          <div class="lp-feat-ico p">📊</div>
+          <h3>Аналитика по сменам</h3>
+          <p>Графики за 7 дней, AI-оценка от 0 до 100, сравнение точек и смен.</p>
+        </div>
+        <div class="lp-feat-card">
+          <div class="lp-feat-ico t">🔔</div>
+          <h3>Telegram-уведомления</h3>
+          <p>Ежесменный дайджест и мгновенные тревоги прямо в мессенджер владельцу.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FINAL CTA -->
+  <section class="lp-cta-sec reveal">
+    <div class="lp-section">
+      <div class="lp-eyebrow">Попробуйте бесплатно</div>
+      <h2>14 дней бесплатно.<br>Первый отчёт — через 15 секунд.</h2>
+      <p>Регистрация за 2 минуты. Первый анализ разговора придёт прямо в Telegram.</p>
+      <div class="lp-cta-btns">
+        <button class="lp-btn-hero" onclick="goToAuth(true)">Начать бесплатно →</button>
+        <button class="lp-btn-outline" onclick="window.open('https://t.me/aspanlab','_blank')">Написать нам в Telegram</button>
+      </div>
+      <div class="lp-cta-micro">Без карты · Без контракта · Оборудование привезём сами · Отменить в 1 клик</div>
+    </div>
+  </section>
+
+  <footer class="lp-footer">
+    <div class="lp-footer-inner">
+      <div class="lp-logo">Trust<span>Control</span></div>
+      <div class="lp-footer-links">
+        <a onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Тарифы</a>
+        <a onclick="document.getElementById('hardware').scrollIntoView({behavior:'smooth'})">Оборудование</a>
+        <a onclick="goToAuth(false)">Войти</a>
+        <a onclick="goToAuth(true)">Регистрация</a>
+      </div>
+      <div class="lp-footer-copy">© 2025 AspanLab</div>
+    </div>
+  </footer>
+</div><!-- /landingPage -->
+
+<!-- ════════════════════════════════
+     AUTH SECTION
+════════════════════════════════ -->
+<div id="authSection" class="auth-wrap">
+
+  <div class="auth-left">
+    <div class="auth-left-glow"></div>
+    <div class="auth-logo">Trust<span>Control</span></div>
+    <h1>Контроль качества<br>в <em>реальном времени</em></h1>
+    <p>Не борьба с персоналом — способ вернуть доверие Клиентов в момент, когда оно важнее всего.</p>
+    <div class="auth-feat">
+      <div class="auth-feat-dot" style="background:rgba(16,185,129,.15);color:var(--green)">✓</div>
+      ИИ анализирует каждый разговор автоматически
+    </div>
+    <div class="auth-feat">
+      <div class="auth-feat-dot" style="background:rgba(59,130,246,.15);color:var(--accent2)">✓</div>
+      Отчёт в Telegram через 15 секунд после разговора
+    </div>
+    <div class="auth-feat">
+      <div class="auth-feat-dot" style="background:rgba(245,158,11,.15);color:var(--orange)">✓</div>
+      Мошенничество, грубость, упущенные продажи
+    </div>
+    <div class="auth-back" onclick="goBackToLanding()">← Вернуться на главную</div>
+  </div>
+
+  <div class="auth-right">
+    <div class="auth-box">
+      <div class="auth-logo-m">Trust<span>Control</span></div>
+      <div class="auth-tagline">Не борьба с персоналом — возврат доверия Клиентов.</div>
+
+      <!-- LOGIN -->
+      <div id="loginForm">
+        <div class="auth-title">Добро пожаловать</div>
+        <div class="auth-sub">Войдите в свой аккаунт</div>
+        <div class="f-group">
+          <label class="f-label">Номер телефона</label>
+          <input class="f-input" type="tel" id="loginPhone" placeholder="+7 7XX XXX XX XX" maxlength="18">
+        </div>
+        <div class="f-group">
+          <label class="f-label">Пароль</label>
+          <input class="f-input" type="password" id="loginPassword" placeholder="••••••••"
+                 onkeydown="if(event.key==='Enter')doLogin()">
+        </div>
+        <button class="f-btn" id="loginBtn" onclick="doLogin()">Войти →</button>
+        <div id="loginError" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:13px;color:#FCA5A5;text-align:center"></div>
+        <div class="f-switch">Нет аккаунта? <a onclick="showRegister()">Зарегистрироваться</a></div>
+        <div class="auth-back-link" onclick="goBackToLanding()">← На главную</div>
+      </div>
+
+      <!-- REGISTER -->
+      <div id="registerForm" style="display:none">
+        <div class="auth-title">Создать аккаунт</div>
+        <div class="auth-sub">14 дней бесплатно — без карты</div>
+        <div class="f-group">
+          <label class="f-label">Ваше имя</label>
+          <input class="f-input" type="text" id="regName" placeholder="Иван Иванов">
+        </div>
+        <div class="f-group">
+          <label class="f-label">Номер телефона</label>
+          <input class="f-input" type="tel" id="regPhone" placeholder="+7 7XX XXX XX XX" maxlength="18">
+        </div>
+        <div class="f-group">
+          <label class="f-label">Пароль</label>
+          <input class="f-input" type="password" id="regPassword" placeholder="минимум 8 символов">
+        </div>
+        <button class="f-btn" id="registerBtn" onclick="doRegister()">Зарегистрироваться — 14 дней бесплатно</button>
+        <div class="f-switch">Уже есть аккаунт? <a onclick="showLogin()">Войти</a></div>
+        <div class="auth-back-link" onclick="goBackToLanding()">← На главную</div>
+      </div>
+
+      <!-- OTP -->
+      <div id="otpForm" style="display:none">
+        <div style="text-align:center;margin-bottom:24px">
+          <div style="font-size:36px;margin-bottom:10px">📱</div>
+          <div class="auth-title">Код подтверждения</div>
+          <div class="auth-sub" style="color:var(--accent2);font-weight:600;font-size:15px" id="otpPhoneLabel"></div>
+        </div>
+        <div class="bypass-banner" id="otpBypassBanner">Тестовый режим — код всегда <b>000000</b></div>
+        <div class="f-group" style="margin-top:16px">
+          <label class="f-label">6-значный код из SMS</label>
+          <input class="f-input otp-big" type="text" id="otpCode" placeholder="000000"
+                 maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'')"
+                 onkeydown="if(event.key==='Enter')doVerifyOtp()">
+        </div>
+        <button class="f-btn" id="verifyOtpBtn" onclick="doVerifyOtp()">Подтвердить →</button>
+        <div class="f-switch" style="margin-top:14px"><a onclick="doResendOtp()">Отправить код ещё раз</a></div>
+        <div class="f-switch" style="margin-top:6px"><a onclick="showLogin()">← Назад</a></div>
+      </div>
+
+    </div>
+  </div>
+</div><!-- /authSection -->
+
+<!-- ════════════════════════════════
+     MODAL — Добавить точку
+════════════════════════════════ -->
+<div class="modal-overlay" id="addLocationModal" onclick="if(event.target===this)closeAddLocation()">
+  <div class="modal-box">
+    <div class="modal-title">Новая точка <span class="modal-close" onclick="closeAddLocation()">×</span></div>
+    <div class="f-group">
+      <label class="f-label">Название точки</label>
+      <input class="f-input" type="text" id="locName" placeholder="Кофейня на Абая">
+    </div>
+    <div class="f-group">
+      <label class="f-label">Тип бизнеса</label>
+      <select class="modal-select" id="locType">
+        <option value="coffee">Кофейня</option>
+        <option value="cafe">Кафе / ресторан</option>
+        <option value="fastfood">Фастфуд</option>
+        <option value="shop">Магазин</option>
+        <option value="gas">АЗС</option>
+        <option value="beauty">Салон красоты</option>
+        <option value="fitness">Фитнес</option>
+        <option value="hotel">Гостиница</option>
+      </select>
+    </div>
+    <div class="f-group">
+      <label class="f-label">Адрес</label>
+      <input class="f-input" type="text" id="locAddress" placeholder="ул. Абая 10, Алматы">
+    </div>
+    <button class="f-btn" id="createLocBtn" onclick="createLocation()">Создать точку</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════
+     MODAL — Редактировать точку
+════════════════════════════════ -->
+<div class="modal-overlay" id="editLocationModal" onclick="if(event.target===this)closeEditLocation()">
+  <div class="modal-box">
+    <div class="modal-title">Настройки точки <span class="modal-close" onclick="closeEditLocation()">×</span></div>
+    <input type="hidden" id="editLocId">
+    <div class="f-group">
+      <label class="f-label">Название</label>
+      <input class="f-input" type="text" id="editLocName">
+    </div>
+    <div class="f-group">
+      <label class="f-label">Тип бизнеса</label>
+      <select class="modal-select" id="editLocType">
+        <option value="coffee">Кофейня</option>
+        <option value="cafe">Кафе / ресторан</option>
+        <option value="fastfood">Фастфуд</option>
+        <option value="shop">Магазин</option>
+        <option value="gas">АЗС</option>
+        <option value="beauty">Салон красоты</option>
+        <option value="fitness">Фитнес</option>
+        <option value="hotel">Гостиница</option>
+      </select>
+    </div>
+    <div class="f-group">
+      <label class="f-label">Адрес</label>
+      <input class="f-input" type="text" id="editLocAddress">
+    </div>
+    <hr class="modal-divider">
+    <div class="modal-sec-title">Telegram-уведомления</div>
+    <div class="f-group">
+      <label class="f-label">Telegram Chat ID</label>
+      <input class="f-input" type="text" id="editLocTg" placeholder="-1001234567890">
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">
+        Создайте группу → добавьте бота → найдите Chat ID через <span style="color:var(--accent2)">getUpdates</span>
+      </div>
+      <button class="test-tg-btn" onclick="testTelegram()">📨 Проверить Telegram</button>
+      <div id="testTgResult"></div>
+    </div>
+    <hr class="modal-divider">
+    <div class="modal-sec-title">Уведомления</div>
+    <div class="f-group" style="display:flex;align-items:center;gap:10px">
+      <input type="checkbox" id="editLocNotifyOk" style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0">
+      <label for="editLocNotifyOk" style="font-size:13px;color:var(--dim);line-height:1.4;cursor:pointer">
+        Получать уведомление на <b style="color:var(--txt)">каждый</b> разговор (не только нарушения)
+      </label>
+    </div>
+    <hr class="modal-divider">
+    <div class="modal-sec-title">Антифрод</div>
+    <div class="f-group">
+      <label class="f-label">Белый список Kaspi-телефонов</label>
+      <textarea class="f-input" id="editLocPhones" rows="3"
+        placeholder="+77001234567&#10;+77009876543"></textarea>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Через запятую или по строкам — не будут помечаться как фрод</div>
+    </div>
+    <button class="f-btn" id="saveLocBtn" onclick="saveLocation()">Сохранить</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════
+     APP / DASHBOARD
+════════════════════════════════ -->
+<div id="appWrap">
+
+  <!-- Mobile header -->
+  <div class="mob-header">
+    <div class="mob-logo">Trust<span>Control</span></div>
+    <div class="mob-user" id="mobileUserInfo"></div>
+    <button class="mob-out" onclick="doLogout()">Выйти</button>
+  </div>
+
+  <div class="layout">
+
+    <!-- SIDEBAR -->
+    <div class="sidebar" id="sidebar">
+      <div class="s-brand">Trust<span>Control</span><div class="s-brand-sub">AI мониторинг сервиса</div></div>
+      <div class="s-nav">
+        <a class="s-item active" data-page="overview" onclick="showPage('overview')">
+          <span class="s-ico">📊</span> Обзор
+        </a>
+        <a class="s-item" data-page="reports" onclick="showPage('reports')">
+          <span class="s-ico">📝</span> Отчёты
+        </a>
+        <a class="s-item" data-page="alerts" onclick="showPage('alerts')">
+          <span class="s-ico">🚨</span> Тревоги
+          <span class="s-badge" id="alertsBadge" style="display:none">0</span>
+        </a>
+        <a class="s-item" data-page="locations" onclick="showPage('locations')">
+          <span class="s-ico">🏪</span> Точки
+        </a>
+        <a class="s-item" data-page="settings" onclick="showPage('settings')">
+          <span class="s-ico">⚙️</span> Настройки
+        </a>
+      </div>
+      <div class="s-footer">
+        <div class="s-user" id="userInfo"></div>
+        <button class="s-logout" onclick="doLogout()">Выйти</button>
+      </div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="main">
+
+      <!-- ── OVERVIEW ── -->
+      <div class="page active" id="page-overview">
+        <div id="dashLoading" style="display:none;text-align:center;padding:80px 24px;color:var(--muted);font-size:15px">
+          <div style="width:32px;height:32px;border:3px solid var(--bdr2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px"></div>
+          Загружаем данные...
+        </div>
+        <div id="dashContent">
+        <div class="topbar">
+          <div class="page-title">Обзор <span class="pulse"></span></div>
+          <div class="topbar-r">
+            <button class="btn btn-a" onclick="loadDashboard()">Обновить</button>
+          </div>
+        </div>
+
+        <div class="cards">
+          <div class="card">
+            <div class="card-label">Разговоров сегодня</div>
+            <div class="card-val" id="statTotal">—</div>
+          </div>
+          <div class="card green">
+            <div class="card-label">Приветствий</div>
+            <div class="card-val" id="statGreetPct">—</div>
+            <div class="card-sub">% от разговоров</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Допродажи</div>
+            <div class="card-val" id="statBonusPct">—</div>
+            <div class="card-sub">% попыток</div>
+          </div>
+          <div class="card red">
+            <div class="card-label">Нарушения</div>
+            <div class="card-val" id="statBad">—</div>
+          </div>
+          <div class="card red">
+            <div class="card-label">🚨 Фрод</div>
+            <div class="card-val" id="statFraud">—</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Тревог сегодня</div>
+            <div class="card-val" id="statAlerts">—</div>
+          </div>
+        </div>
+
+        <!-- KPI RINGS -->
+        <div class="kpi-row">
+          <div class="kpi-wrap">
+            <div class="kpi-svg-wrap">
+              <svg class="kpi-svg" viewBox="0 0 80 80">
+                <circle class="kpi-track" cx="40" cy="40" r="32"/>
+                <circle class="kpi-arc" cx="40" cy="40" r="32" id="ringGreeting" stroke="#10B981"/>
+              </svg>
+              <div class="kpi-center">
+                <div class="kpi-pct" id="kpiGreetVal" style="color:#10B981">—</div>
+                <div class="kpi-unit">%</div>
+              </div>
+            </div>
+            <div class="kpi-label">Приветствия</div>
+          </div>
+          <div class="kpi-wrap">
+            <div class="kpi-svg-wrap">
+              <svg class="kpi-svg" viewBox="0 0 80 80">
+                <circle class="kpi-track" cx="40" cy="40" r="32"/>
+                <circle class="kpi-arc" cx="40" cy="40" r="32" id="ringBonus" stroke="#3B82F6"/>
+              </svg>
+              <div class="kpi-center">
+                <div class="kpi-pct" id="kpiBonusVal" style="color:#3B82F6">—</div>
+                <div class="kpi-unit">%</div>
+              </div>
+            </div>
+            <div class="kpi-label">Допродажи</div>
+          </div>
+          <div class="kpi-wrap">
+            <div class="kpi-svg-wrap">
+              <svg class="kpi-svg" viewBox="0 0 80 80">
+                <circle class="kpi-track" cx="40" cy="40" r="32"/>
+                <circle class="kpi-arc" cx="40" cy="40" r="32" id="ringScore" stroke="#F59E0B"/>
+              </svg>
+              <div class="kpi-center">
+                <div class="kpi-pct" id="kpiScoreVal" style="color:#F59E0B">—</div>
+                <div class="kpi-unit">/100</div>
+              </div>
+            </div>
+            <div class="kpi-label">AI оценка</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <!-- Score ring -->
+          <div class="panel" style="margin-bottom:0">
+            <div class="score-row">
+              <div class="score-ring-wrap">
+                <svg width="88" height="88" viewBox="0 0 88 88">
+                  <circle cx="44" cy="44" r="36" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="8"/>
+                  <circle cx="44" cy="44" r="36" fill="none" stroke="#3B82F6" stroke-width="8"
+                    stroke-dasharray="226" stroke-dashoffset="226" id="scoreRing" stroke-linecap="round"/>
+                </svg>
+                <div class="score-center" id="scoreText">—</div>
+              </div>
+              <div class="score-info">
+                <h3>Оценка смены</h3>
+                <p id="scoreDesc" style="color:var(--muted);font-size:12px;margin-top:4px">Загрузка...</p>
+              </div>
+            </div>
+          </div>
+          <!-- Tone panel -->
+          <div class="panel" style="margin-bottom:0">
+            <h3 style="margin-bottom:16px">Тон сотрудников</h3>
+            <div style="margin-bottom:10px">
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                <span style="color:var(--green)">😊 Доброжелательный</span><span id="tonePos">—</span>
+              </div>
+              <div class="tone-bar"><div class="tone-fill pos" id="tonePosBar" style="width:0"></div></div>
+            </div>
+            <div style="margin-bottom:10px">
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                <span style="color:var(--muted)">😐 Нейтральный</span><span id="toneNeu">—</span>
+              </div>
+              <div class="tone-bar"><div class="tone-fill neu" id="toneNeuBar" style="width:0"></div></div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                <span style="color:var(--red)">😤 Раздражённый</span><span id="toneNeg">—</span>
+              </div>
+              <div class="tone-bar"><div class="tone-fill neg" id="toneNegBar" style="width:0"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3 style="margin-bottom:16px">Активность за 7 дней</h3>
+          <canvas id="weekChart" style="max-height:200px"></canvas>
+        </div>
+
+        <div class="panel">
+          <h3 style="margin-bottom:14px">🚨 Последние инциденты</h3>
+          <div id="incidentFeed"><p style="color:var(--muted);font-size:13px">Загрузка...</p></div>
+        </div>
+
+        <div class="panel">
+          <h3 style="margin-bottom:14px">Последние разговоры</h3>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead>
+                <tr><th>Время</th><th>Тон</th><th>Оценка</th><th>Статус</th><th>Транскрипция</th></tr>
+              </thead>
+              <tbody id="reportsTable">
+                <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted)">Загрузка...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        </div><!-- /dashContent -->
+      </div>
+
+      <!-- ── ALERTS ── -->
+      <div class="page" id="page-alerts">
+        <div class="topbar">
+          <div class="page-title">🚨 Тревоги</div>
+          <button class="btn btn-a" onclick="loadAlerts()">Обновить</button>
+        </div>
+        <div class="filters">
+          <select class="loc-select" id="filterType" onchange="loadAlerts()">
+            <option value="">Все типы</option>
+            <option value="fraud">Мошенничество</option>
+            <option value="bad_language">Грубость</option>
+            <option value="negative_tone">Негатив</option>
+            <option value="no_greeting">Без приветствия</option>
+            <option value="no_goodbye">Без прощания</option>
+          </select>
+          <select class="loc-select" id="filterDays" onchange="loadAlerts()">
+            <option value="1">Сегодня</option>
+            <option value="7" selected>7 дней</option>
+            <option value="30">30 дней</option>
+          </select>
+        </div>
+        <div id="alertsList"><p class="empty-state">Загрузка...</p></div>
+      </div>
+
+      <!-- ── REPORTS ── -->
+      <div class="page" id="page-reports">
+        <div class="topbar">
+          <div class="page-title">Отчёты</div>
+          <div class="topbar-r">
+            <select class="loc-select" id="reportDays" onchange="loadReportsPage()">
+              <option value="1">Сегодня</option>
+              <option value="7" selected>7 дней</option>
+              <option value="30">30 дней</option>
+            </select>
+            <button class="btn btn-a" onclick="loadReportsPage()">Обновить</button>
+          </div>
+        </div>
+        <div class="panel">
+          <!-- Mobile cards -->
+          <div id="reportsCards" style="display:none"></div>
+          <!-- Desktop list -->
+          <div id="reportsDesktop"></div>
+        </div>
+      </div>
+
+      <!-- ── LOCATIONS ── -->
+      <div class="page" id="page-locations">
+        <div class="topbar">
+          <div class="page-title">Торговые точки</div>
+          <button class="btn btn-a" onclick="showAddLocation()">+ Добавить</button>
+        </div>
+        <div id="locationsList"></div>
+      </div>
+
+      <!-- ── SETTINGS ── -->
+      <div class="page" id="page-settings">
+        <div class="topbar"><div class="page-title">Настройки</div></div>
+
+        <div class="panel" style="margin-bottom:14px">
+          <h3 style="margin-bottom:16px">Аккаунт</h3>
+          <div class="f-group">
+            <label class="f-label">Имя</label>
+            <input class="f-input" type="text" id="settingsName" placeholder="Ваше имя">
+          </div>
+          <div class="f-group">
+            <label class="f-label">Телефон (только просмотр)</label>
+            <input class="f-input" type="tel" id="settingsPhone" readonly style="opacity:.5">
+          </div>
+          <div class="f-group">
+            <label class="f-label">Название компании</label>
+            <input class="f-input" type="text" id="settingsCompany" placeholder="ООО Ромашка">
+          </div>
+          <div class="f-group">
+            <label class="f-label">Email</label>
+            <input class="f-input" type="email" id="settingsEmail" placeholder="you@example.com">
+          </div>
+          <div class="f-group">
+            <label class="f-label">Telegram Chat ID (для общих уведомлений)</label>
+            <input class="f-input" type="text" id="settingsTelegram" placeholder="-1001234567890">
+          </div>
+          <div class="f-group">
+            <label class="f-label">Новый пароль (оставьте пустым чтобы не менять)</label>
+            <input class="f-input" type="password" id="settingsPassword" placeholder="••••••••">
+          </div>
+          <button class="f-btn" onclick="saveSettings()">Сохранить изменения</button>
+        </div>
+
+        <div class="panel" style="margin-bottom:14px">
+          <h3 style="margin-bottom:14px">Тариф</h3>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+            <span class="plan-badge" id="sPlanBadge">—</span>
+            <span id="sPlanExpiry" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+          <div id="sPlanDesc" style="font-size:13px;color:var(--muted);line-height:1.6"></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:14px;border-color:rgba(59,130,246,.2);background:rgba(59,130,246,.03)">
+          <h3 style="margin-bottom:14px;color:var(--accent2)">О системе</h3>
+          <div class="about-quote">TrustControl — это не инструмент слежки и не способ усложнить жизнь сотрудникам.</div>
+          <p style="margin-top:12px;font-size:13px;color:var(--muted);line-height:1.75">
+            Когда бизнес растёт, владелец не может присутствовать везде. Клиенты уходят молча,
+            не объясняя почему. Система помогает <b style="color:var(--txt)">вернуть доверие и лояльность</b> —
+            замечая холодный тон, пропущенное приветствие, упущенную продажу.
+            Хорошие сотрудники получают признание. Проблемы решаются до того, как клиент ушёл навсегда.
+          </p>
+        </div>
+
+        <div class="panel">
+          <h3 style="margin-bottom:14px">Быстрый старт</h3>
+          <div style="font-size:13px;color:var(--muted);line-height:2.1">
+            <div>1. Раздел <b style="color:var(--txt)">Точки</b> → нажми <b style="color:var(--txt)">Редактировать</b></div>
+            <div>2. Вставь <b style="color:var(--txt)">Telegram Chat ID</b> и протестируй</div>
+            <div>3. Скопируй <b style="color:var(--txt)">API ключ</b> точки</div>
+            <div>4. На кассовом ПК запусти:</div>
+            <div class="qs-code">py monitor.py --api-url https://ВАШ-САЙТ.onrender.com --api-key КЛЮЧ</div>
+            <div>5. Скажи что-нибудь — отчёт придёт через ~15 сек</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /main -->
+  </div><!-- /layout -->
+
+  <!-- MOBILE BOTTOM NAV -->
+  <nav class="mob-nav">
+    <div class="mob-nav-inner">
+      <button class="mn-item active" id="mn-overview" onclick="showPage('overview')">
+        <span class="mn-ico">📊</span><span>Обзор</span>
+      </button>
+      <button class="mn-item" id="mn-reports" onclick="showPage('reports')">
+        <span class="mn-ico">📝</span><span>Отчёты</span>
+      </button>
+      <button class="mn-item" id="mn-alerts" onclick="showPage('alerts')">
+        <span class="mn-ico">🚨</span><span>Тревоги</span>
+        <span class="mn-badge" id="mnAlertsBadge" style="display:none">0</span>
+      </button>
+      <button class="mn-item" id="mn-locations" onclick="showPage('locations')">
+        <span class="mn-ico">🏪</span><span>Точки</span>
+      </button>
+      <button class="mn-item" id="mn-settings" onclick="showPage('settings')">
+        <span class="mn-ico">⚙️</span><span>Настройки</span>
+      </button>
+    </div>
+  </nav>
+
+</div><!-- /appWrap -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+'use strict';
+
+/* ── REVEAL ON SCROLL ── */
+(function(){
+  const io=new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        e.target.classList.add('visible');
+        // count-up numbers inside this element
+        e.target.querySelectorAll('.count-up').forEach(el=>{
+          if(el.dataset.done)return;
+          el.dataset.done='1';
+          const target=parseInt(el.dataset.target,10);
+          const dur=1600,fps=60,step=target/(dur/1000*fps);
+          let cur=0;
+          const t=setInterval(()=>{
+            cur=Math.min(cur+step,target);
+            el.textContent=Math.round(cur).toLocaleString('ru-RU');
+            if(cur>=target)clearInterval(t);
+          },1000/fps);
+        });
+        io.unobserve(e.target);
+      }
+    });
+  },{threshold:0.15});
+  document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+})();
+
+const API='/api';
+let _token=localStorage.getItem('tc_token')||'';
+let _pollTimer=null,_currentPage='overview',_chartWeek=null,_silentPoll=false;
+
+/* ── API FETCH (15s timeout) ── */
+async function apiFetch(path,opts={},silent=false){
+  const ctrl=new AbortController();
+  const tid=setTimeout(()=>ctrl.abort(),15000);
+  try{
+    const h={'Content-Type':'application/json',...(opts.headers||{})};
+    if(_token)h['Authorization']='Bearer '+_token;
+    const res=await fetch(API+path,{...opts,headers:h,signal:ctrl.signal});
+    clearTimeout(tid);
+    if(res.status===401){if(_token)doLogout();return null;}
+    if(!res.ok){
+      const b=await res.json().catch(()=>({}));
+      let det=b.detail;
+      if(Array.isArray(det))det=det.map(e=>e.msg||String(e)).join(', ');
+      else if(det&&typeof det!=='string')det=null;
+      throw new Error(det||'HTTP '+res.status);
+    }
+    return res.status===204?null:await res.json();
+  }catch(e){
+    clearTimeout(tid);
+    if(!silent&&!_silentPoll)showErr(e.name==='AbortError'?'Сервер не отвечает (таймаут 15с)':e.message);
+    return null;
+  }
+}
+
+/* ── ERROR TOAST ── */
+let _eTimer=null;
+function showErr(msg){
+  const el=document.getElementById('apiError');if(!el)return;
+  el.textContent=msg;el.style.display='block';
+  clearTimeout(_eTimer);_eTimer=setTimeout(()=>{el.style.display='none';},6000);
+}
+
+/* ── LANDING ↔ AUTH ── */
+function goToAuth(reg){
+  document.getElementById('landingPage').style.display='none';
+  const s=document.getElementById('authSection');
+  s.style.display='flex';
+  if(reg)showRegister();else showLogin();
+}
+function goBackToLanding(){
+  document.getElementById('authSection').style.display='none';
+  document.getElementById('landingPage').style.display='';
+}
+
+/* ── AUTH FORMS ── */
+function showLogin(){
+  document.getElementById('loginForm').style.display='';
+  document.getElementById('registerForm').style.display='none';
+  document.getElementById('otpForm').style.display='none';
+  _hideLoginErr();
+}
+function showRegister(){
+  document.getElementById('loginForm').style.display='none';
+  document.getElementById('registerForm').style.display='';
+  document.getElementById('otpForm').style.display='none';
+}
+function showOtp(){
+  document.getElementById('loginForm').style.display='none';
+  document.getElementById('registerForm').style.display='none';
+  document.getElementById('otpForm').style.display='';
+}
+
+function _showLoginErr(msg){
+  const el=document.getElementById('loginError');
+  if(el){el.textContent=msg;el.style.display='block';}
+  showErr(msg);
+}
+function _hideLoginErr(){
+  const el=document.getElementById('loginError');
+  if(el)el.style.display='none';
+}
+
+async function doLogin(){
+  const phone=document.getElementById('loginPhone').value.trim();
+  const password=document.getElementById('loginPassword').value;
+  if(!phone||!password)return _showLoginErr('Введите номер телефона и пароль');
+  _hideLoginErr();
+  const btn=document.getElementById('loginBtn');
+  btn.disabled=true;btn.textContent='Вход...';
+  try{
+    // /auth/login uses OAuth2PasswordRequestForm — must be form-encoded with field "username"
+    const res=await fetch(API+'/auth/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({username:phone,password})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(res.status===403&&String(data.detail||'').startsWith('PHONE_NOT_VERIFIED')){
+      localStorage.setItem('tc_otp_phone',phone);
+      localStorage.setItem('tc_otp_pass',password);
+      const lbl=document.getElementById('otpPhoneLabel');
+      if(lbl)lbl.textContent=phone;
+      showOtp();
+    }else if(!res.ok){
+      let err=data.detail||'Неверный номер или пароль';
+      if(Array.isArray(err))err=err.map(e=>e.msg||String(e)).join(', ');
+      _showLoginErr(typeof err==='string'?err:'Неверный номер или пароль');
+    }else if(data.access_token){
+      _token=data.access_token;localStorage.setItem('tc_token',_token);startDashboard();
+    }
+  }catch(e){
+    _showLoginErr('Сервер не отвечает — попробуйте ещё раз');
+  }
+  btn.disabled=false;btn.textContent='Войти →';
+}
+
+async function doRegister(){
+  const name=document.getElementById('regName').value.trim();
+  const phone=document.getElementById('regPhone').value.trim();
+  const password=document.getElementById('regPassword').value;
+  if(!name||!phone||!password)return showErr('Заполните все поля');
+  if(password.length<8)return showErr('Пароль минимум 8 символов');
+  const btn=document.getElementById('registerBtn');
+  btn.disabled=true;btn.textContent='Регистрация...';
+  const d=await apiFetch('/auth/register',{method:'POST',body:JSON.stringify({name,phone,password})});
+  btn.disabled=false;btn.textContent='Зарегистрироваться — 14 дней бесплатно';
+  if(!d)return;
+  if(d.access_token){_token=d.access_token;localStorage.setItem('tc_token',_token);startDashboard();}
+  else{
+    localStorage.setItem('tc_otp_phone',phone);
+    localStorage.setItem('tc_otp_pass',password);
+    const lbl=document.getElementById('otpPhoneLabel');
+    if(lbl)lbl.textContent=phone;
+    showOtp();
+  }
+}
+
+async function doVerifyOtp(){
+  const code=document.getElementById('otpCode').value.trim();
+  const phone=localStorage.getItem('tc_otp_phone')||'';
+  const password=localStorage.getItem('tc_otp_pass')||'';
+  if(!code)return showErr('Введите код');
+  const btn=document.getElementById('verifyOtpBtn');
+  btn.disabled=true;btn.textContent='Проверка...';
+  const d=await apiFetch('/auth/verify-otp',{method:'POST',body:JSON.stringify({phone,password,otp_code:code})});
+  btn.disabled=false;btn.textContent='Подтвердить →';
+  if(!d)return;
+  if(d.access_token){
+    _token=d.access_token;localStorage.setItem('tc_token',_token);
+    localStorage.removeItem('tc_otp_phone');localStorage.removeItem('tc_otp_pass');
+    startDashboard();
+  }
+}
+
+async function doResendOtp(){
+  const phone=localStorage.getItem('tc_otp_phone')||'';
+  const password=localStorage.getItem('tc_otp_pass')||'';
+  if(!phone)return showErr('Сначала войдите');
+  try{
+    await fetch(API+'/auth/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({username:phone,password})
+    });
+  }catch(e){}
+  showErr('Код отправлен повторно');
+}
+
+function doLogout(){
+  _token='';localStorage.removeItem('tc_token');clearInterval(_pollTimer);
+  document.getElementById('appWrap').style.display='none';
+  document.getElementById('authSection').style.display='none';
+  document.getElementById('landingPage').style.display='';
+}
+
+/* ── DASHBOARD START ── */
+function startDashboard(){
+  document.getElementById('landingPage').style.display='none';
+  document.getElementById('authSection').style.display='none';
+  document.getElementById('appWrap').style.display='';
+  // hide dashboard content until first data load so spinner shows instead of empty cards
+  const dc=document.getElementById('dashContent');
+  if(dc)dc.style.display='none';
+  loadUserInfo();
+  showPage('overview');
+  clearInterval(_pollTimer);
+  _pollTimer=setInterval(()=>{
+    _silentPoll=true;
+    if(_currentPage==='overview')loadDashboard();
+    else if(_currentPage==='alerts')loadAlerts();
+    _silentPoll=false;
+  },30000);
+}
+
+/* ── PAGE NAV ── */
+function showPage(page){
+  _currentPage=page;
+  ['overview','alerts','reports','locations','settings'].forEach(p=>{
+    const el=document.getElementById('page-'+p);
+    if(el)el.style.display=p===page?'':'none';
+    const cl=el;if(cl)cl.classList.toggle('active',p===page);
+  });
+  document.querySelectorAll('.s-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page));
+  document.querySelectorAll('.mn-item').forEach(el=>el.classList.toggle('active',el.id==='mn-'+page));
+  if(page==='overview')loadDashboard();
+  else if(page==='alerts')loadAlerts();
+  else if(page==='reports')loadReportsPage();
+  else if(page==='locations')loadLocations();
+  else if(page==='settings')loadUserInfo();
+}
+
+/* ── USER INFO ── */
+async function loadUserInfo(){
+  const d=await apiFetch('/auth/me');if(!d)return;
+  set('mobileUserInfo',d.name||d.phone||'');
+  set('userInfo',`<b>${esc(d.name||d.phone||'')}</b><br>${d.plan||'trial'}`);
+  setVal('settingsName',d.name);
+  setVal('settingsPhone',d.phone);
+  setVal('settingsCompany',d.company_name);
+  setVal('settingsEmail',d.email);
+  setVal('settingsTelegram',d.telegram_chat);
+  set('sPlanBadge',(d.plan||'trial').toUpperCase());
+  document.getElementById('sPlanBadge').className='plan-badge';
+}
+
+async function saveSettings(){
+  const payload={
+    name:val('settingsName'),company_name:val('settingsCompany'),
+    email:val('settingsEmail'),telegram_chat:val('settingsTelegram'),
+  };
+  const p=val('settingsPassword');if(p)payload.password=p;
+  const d=await apiFetch('/auth/me',{method:'PATCH',body:JSON.stringify(payload)});
+  if(d){showErr('Сохранено ✓');loadUserInfo();}
+}
+
+/* ── OVERVIEW ── */
+async function loadDashboard(){
+  const loading=document.getElementById('dashLoading');
+  const content=document.getElementById('dashContent');
+  const firstLoad=content&&content.style.display==='none';
+  if(firstLoad){if(loading)loading.style.display='';if(content)content.style.display='none';}
+  const d=await apiFetch('/stats/dashboard');
+  if(firstLoad){if(loading)loading.style.display='none';if(content)content.style.display='';}
+  if(!d)return;
+  const t=d.today||{};
+  set('statTotal',t.total??0);
+  set('statGreetPct',(t.greetings_pct??0)+'%');
+  set('statBonusPct',(t.bonus_pct??0)+'%');
+  set('statBad',t.bad_count??0);
+  set('statFraud',t.fraud_count??0);
+  set('statAlerts',d.alerts_today??0);
+
+  // alert badge
+  const cnt=d.alerts_today??0;
+  const ab=document.getElementById('alertsBadge');
+  const mb=document.getElementById('mnAlertsBadge');
+  if(ab){ab.textContent=cnt;ab.style.display=cnt>0?'':'none';}
+  if(mb){mb.textContent=cnt;mb.style.display=cnt>0?'flex':'none';}
+
+  // KPI rings
+  animRing('ringGreeting',t.greetings_pct??0);
+  set('kpiGreetVal',(t.greetings_pct??0)+'%');
+  animRing('ringBonus',t.bonus_pct??0);
+  set('kpiBonusVal',(t.bonus_pct??0)+'%');
+  const sc=t.score??0;
+  animRing('ringScore',sc);
+  set('kpiScoreVal',sc);
+
+  // score ring (big)
+  const scoreEl=document.getElementById('scoreRing');
+  if(scoreEl){
+    const offset=226-(sc/100)*226;
+    scoreEl.style.strokeDashoffset=offset;
+    scoreEl.style.stroke=sc>=80?'#10B981':sc>=60?'#F59E0B':'#EF4444';
+  }
+  set('scoreText',sc);
+  set('scoreDesc',sc>=80?'Отличная смена 🎉':sc>=60?'Хороший результат':'Требует внимания');
+
+  // tone bars
+  const total=t.total||1;
+  const pos=t.positive_tone??0,neg=t.negative_tone??0,neu=total-pos-neg;
+  const toP=n=>Math.max(0,Math.round(n/total*100));
+  set('tonePos',pos);setBar('tonePosBar',toP(pos));
+  set('toneNeu',Math.max(0,neu));setBar('toneNeuBar',toP(Math.max(0,neu)));
+  set('toneNeg',neg);setBar('toneNegBar',toP(neg));
+
+  // week chart
+  buildWeekChart(d.week||[]);
+
+  // recent reports
+  renderRecentReports(d.recent_reports||[]);
+  // incidents (fetch separately)
+  loadIncidents();
+}
+
+function animRing(id,pct){
+  const el=document.getElementById(id);if(!el)return;
+  const offset=201-(Math.min(100,Math.max(0,pct))/100)*201;
+  el.style.strokeDashoffset=offset;
+}
+
+function setBar(id,pct){
+  const el=document.getElementById(id);if(el)el.style.width=pct+'%';
+}
+
+function buildWeekChart(week){
+  const el=document.getElementById('weekChart');if(!el)return;
+  const rev=[...week].reverse();
+  const labels=rev.map(d=>{const dt=new Date(d.date);return (dt.getMonth()+1)+'/'+dt.getDate();});
+  if(_chartWeek)_chartWeek.destroy();
+  _chartWeek=new Chart(el,{
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:'Разговоры',data:rev.map(d=>d.total||0),borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.1)',tension:.4,fill:true,pointRadius:3},
+        {label:'Приветствия %',data:rev.map(d=>d.greetings_pct||0),borderColor:'#10B981',backgroundColor:'transparent',tension:.4,pointRadius:3},
+        {label:'Фрод',data:rev.map(d=>d.fraud_count||0),borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.06)',tension:.4,fill:true,pointRadius:3},
+      ],
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{font:{family:'DM Sans'},color:'#6B7280',boxWidth:12}}},
+      scales:{
+        x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6B7280',font:{family:'DM Sans',size:11}}},
+        y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6B7280',font:{family:'DM Sans',size:11}},beginAtZero:true},
+      },
+    },
+  });
+}
+
+async function loadIncidents(){
+  const d=await apiFetch('/incidents/?status=open&limit=5',{},(true));
+  const el=document.getElementById('incidentFeed');if(!el)return;
+  if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет открытых инцидентов ✓</p>';return;}
+  el.innerHTML=d.map(i=>`
+    <div class="inc-card">
+      <div class="inc-card-hdr">
+        <span class="inc-type ${i.incident_type==='AGGRESSION'?'agg':i.incident_type==='UPSELL_GAP'?'ups':''}">${incName(i.incident_type)}</span>
+        <span class="inc-sev">${i.severity||'high'}</span>
+      </div>
+      <p class="inc-desc">${esc(i.description||'')}</p>
+      <div class="inc-footer">
+        <span class="inc-time">${fmt(i.created_at)}</span>
+        <button class="btn-sm" onclick="resolveInc(${i.id},this)">Закрыть</button>
+      </div>
+    </div>`).join('');
+}
+
+async function resolveInc(id,btn){
+  if(btn){btn.disabled=true;btn.textContent='...';}
+  await apiFetch('/incidents/'+id+'/resolve',{method:'PATCH',body:'{}'});
+  loadIncidents();
+}
+
+function renderRecentReports(reports){
+  const el=document.getElementById('reportsTable');if(!el)return;
+  if(!reports.length){el.innerHTML='<tr><td colspan="5" class="empty-state">Нет разговоров сегодня</td></tr>';return;}
+  el.innerHTML=reports.slice(0,10).map(r=>`
+    <tr>
+      <td>${fmt(r.timestamp||r.created_at)}</td>
+      <td>${toneName(r.tone)}</td>
+      <td style="font-family:'JetBrains Mono',monospace;color:${r.score>=80?'#10B981':r.score>=60?'#F59E0B':'#EF4444'}">${Math.round(r.score||0)}</td>
+      <td>${statusFlags(r)}</td>
+      <td style="color:var(--muted);font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((r.transcript||'').slice(0,80))}</td>
+    </tr>`).join('');
+}
+
+function statusFlags(r){
+  let f='';
+  if(r.has_greeting)f+='<span class="flag ok">Привет</span> ';
+  if(r.has_bonus)f+='<span class="flag bonus">Допродажа</span> ';
+  if(r.has_bad)f+='<span class="flag bad">Нарушение</span> ';
+  if(r.has_fraud)f+='<span class="flag bad">Фрод</span> ';
+  return f||'<span class="flag" style="background:rgba(255,255,255,.05);color:var(--muted)">Норма</span>';
+}
+
+/* ── ALERTS ── */
+async function loadAlerts(){
+  const type=document.getElementById('filterType')?.value||'';
+  const days=document.getElementById('filterDays')?.value||'7';
+  let qs='?days='+days+'&unresolved_only=true';
+  if(type)qs+='&alert_type='+type;
+  const d=await apiFetch('/alerts/'+qs);
+  const el=document.getElementById('alertsList');if(!el)return;
+  if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет тревог — всё спокойно ✓</p>';return;}
+  el.innerHTML=d.map(a=>`
+    <div class="alert-card">
+      <div class="alert-card-hdr">
+        <span class="at-badge">${alertName(a.alert_type)}</span>
+        <span class="sev-badge ${a.severity}">${a.severity}</span>
+        <time>${fmt(a.timestamp)}</time>
+      </div>
+      ${a.trigger_phrase?`<p class="alert-phrase">"${esc(a.trigger_phrase)}"</p>`:''}
+      ${a.transcript?`<p class="alert-text">${esc(a.transcript.slice(0,300))}</p>`:''}
+      <button class="btn-sm" onclick="resolveAlert(${a.id},this)">Отметить решённым</button>
+    </div>`).join('');
+}
+
+async function resolveAlert(id,btn){
+  if(btn){btn.disabled=true;btn.textContent='...';}
+  await apiFetch('/alerts/'+id+'/resolve',{method:'PATCH',body:'{}'});
+  loadAlerts();
+}
+
+/* ── REPORTS ── */
+async function loadReportsPage(){
+  const days=document.getElementById('reportDays')?.value||'7';
+  const d=await apiFetch('/reports/?days='+days+'&limit=50');
+  const mobile=window.innerWidth<768;
+  if(mobile){
+    const el=document.getElementById('reportsCards');if(!el)return;
+    el.style.display='';
+    document.getElementById('reportsDesktop').style.display='none';
+    if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет отчётов за период</p>';return;}
+    el.innerHTML=d.map(r=>`
+      <div class="rc">
+        <div class="rc-top"><span class="rc-time">${fmt(r.timestamp||r.created_at)}</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:${r.score>=80?'#10B981':r.score>=60?'#F59E0B':'#EF4444'}">${Math.round(r.score||0)}</span>
+        </div>
+        <p class="rc-quote">${esc((r.transcript||'Нет транскрипции').slice(0,200))}</p>
+        <div class="rc-footer">${statusFlags(r)}</div>
+      </div>`).join('');
+  }else{
+    const el=document.getElementById('reportsDesktop');if(!el)return;
+    el.style.display='';
+    document.getElementById('reportsCards').style.display='none';
+    if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет отчётов за период</p>';return;}
+    el.innerHTML=d.map(r=>`
+      <div class="rep-row">
+        <span class="rep-time">${fmt(r.timestamp||r.created_at)}</span>
+        <span class="rep-score ${r.score>=80?'g':r.score>=60?'y':'r'}">${Math.round(r.score||0)}</span>
+        <span class="rep-tone">${toneName(r.tone)}</span>
+        <span class="rep-flags">${statusFlags(r)}</span>
+        <span class="rep-text">${esc((r.transcript||'').slice(0,100))}</span>
+      </div>`).join('');
+  }
+}
+
+/* ── LOCATIONS ── */
+async function loadLocations(){
+  const d=await apiFetch('/locations/');
+  const el=document.getElementById('locationsList');if(!el)return;
+  if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет торговых точек. Добавьте первую!</p>';return;}
+  el.innerHTML=d.map(loc=>`
+    <div class="loc-card">
+      <div class="loc-card-hdr">
+        <div class="loc-name">${esc(loc.name)}</div>
+        <span class="loc-type">${loc.business_type||''}</span>
+      </div>
+      <div class="loc-addr">${esc(loc.address||'—')}</div>
+      <div class="loc-key-block">
+        <div>
+          <div class="loc-key-label">API ключ</div>
+          <div class="loc-key-val">${maskKey(loc.api_key)}</div>
+        </div>
+        <button class="btn-icon" onclick="copyKey('${esc(loc.api_key||'')}')" title="Копировать">⧉</button>
+      </div>
+      <button class="btn-sm" onclick="openEditLoc(${loc.id})">Редактировать</button>
+    </div>`).join('');
+}
+
+function maskKey(k){if(!k||k.length<8)return k||'—';return k.slice(0,6)+'···'+k.slice(-4);}
+function copyKey(k){navigator.clipboard.writeText(k).then(()=>showErr('Ключ скопирован ✓'));}
+
+function showAddLocation(){document.getElementById('addLocationModal').style.display='flex';}
+function closeAddLocation(){document.getElementById('addLocationModal').style.display='none';}
+
+async function createLocation(){
+  const payload={
+    name:val('locName'),address:val('locAddress'),
+    business_type:document.getElementById('locType')?.value||'shop',
+    allowed_phones:[],
+  };
+  if(!payload.name)return showErr('Введите название точки');
+  const btn=document.getElementById('createLocBtn');
+  if(btn){btn.disabled=true;btn.textContent='Создание...';}
+  const d=await apiFetch('/locations/',{method:'POST',body:JSON.stringify(payload)});
+  if(btn){btn.disabled=false;btn.textContent='Создать точку';}
+  if(d){closeAddLocation();loadLocations();}
+}
+
+async function openEditLoc(id){
+  const d=await apiFetch('/locations/'+id);if(!d)return;
+  document.getElementById('editLocId').value=id;
+  setVal('editLocName',d.name);
+  setVal('editLocAddress',d.address);
+  const et=document.getElementById('editLocType');if(et)et.value=d.business_type||'shop';
+  setVal('editLocTg',d.telegram_chat);
+  setVal('editLocPhones',(d.allowed_phones||[]).join('\n'));
+  const cbOk=document.getElementById('editLocNotifyOk');if(cbOk)cbOk.checked=!!d.notify_ok_conversations;
+  const tr=document.getElementById('testTgResult');if(tr){tr.textContent='';tr.style.color='';}
+  document.getElementById('editLocationModal').style.display='flex';
+}
+function closeEditLocation(){document.getElementById('editLocationModal').style.display='none';}
+
+async function saveLocation(){
+  const id=val('editLocId');if(!id)return;
+  const phonesRaw=val('editLocPhones');
+  const phones=phonesRaw.split(/[\n,]/).map(p=>p.trim()).filter(Boolean);
+  const cbOk=document.getElementById('editLocNotifyOk');
+  const payload={
+    name:val('editLocName'),address:val('editLocAddress'),
+    business_type:document.getElementById('editLocType')?.value,
+    telegram_chat:val('editLocTg'),
+    allowed_phones:phones,
+    notify_ok_conversations: cbOk?cbOk.checked:false,
+  };
+  const btn=document.getElementById('saveLocBtn');
+  if(btn){btn.disabled=true;btn.textContent='Сохранение...';}
+  const d=await apiFetch('/locations/'+id,{method:'PATCH',body:JSON.stringify(payload)});
+  if(btn){btn.disabled=false;btn.textContent='Сохранить';}
+  if(d){closeEditLocation();loadLocations();}
+}
+
+async function testTelegram(){
+  const id=val('editLocId');const res=document.getElementById('testTgResult');if(!id)return;
+  if(res){res.textContent='Отправка...';res.style.color='';}
+  const d=await apiFetch('/locations/'+id+'/test-telegram',{method:'POST',body:'{}'});
+  if(res){
+    if(d){res.textContent='✓ Тест-сообщение отправлено';res.style.color='#10B981';}
+    else{res.textContent='✗ Ошибка — проверьте Chat ID';res.style.color='#EF4444';}
+  }
+}
+
+/* ── HELPERS ── */
+function set(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
+function setVal(id,v){const e=document.getElementById(id);if(e)e.value=v||'';}
+function val(id){return document.getElementById(id)?.value||'';}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmt(iso){if(!iso)return'—';try{return new Date(iso).toLocaleString('ru-KZ',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}catch{return iso;}}
+function alertName(t){return({fraud:'Мошенничество',bad_language:'Грубость',negative_tone:'Негатив',no_greeting:'Без привет.',no_goodbye:'Без прощ.'})[t]||t;}
+function incName(t){return({KASPI_FRAUD:'Каспи-фрод',FRAUD:'Мошенничество',AGGRESSION:'Агрессия',UPSELL_GAP:'Упуш.продажа'})[t]||t;}
+function toneName(t){return({positive:'😊 Позитив',neutral:'😐 Нейтральный',negative:'😤 Негатив'})[t]||t||'—';}
+
+/* ── INIT ── */
+(async function init(){
+  try{
+    document.getElementById('authSection').style.display='none';
+    document.getElementById('appWrap').style.display='none';
+    document.getElementById('landingPage').style.display='';  // always show landing first
+
+    if(!_token){return;}
+
+    const me=await apiFetch('/auth/me',{},true);
+    if(!me){
+      _token='';localStorage.removeItem('tc_token');
+      return;
+    }
+    startDashboard();
+  }catch(e){
+    // JS crash → stay on landing so user always sees something
+    document.getElementById('landingPage').style.display='';
+  }
+})();
+</script>
+</body>
+</html>
