@@ -335,6 +335,7 @@ async def me(user: User = Depends(get_current_user)):
         "name":            user.name,
         "phone":           user.phone,
         "email":           user.email or "",
+        "telegram_chat":   user.telegram_chat or "",
         "plan":            user.plan,
         "is_verified":     user.is_verified,
         "plan_expires":    user.plan_expires.isoformat() if user.plan_expires else None,
@@ -344,3 +345,30 @@ async def me(user: User = Depends(get_current_user)):
             and user.plan_expires > datetime.utcnow()
         ),
     }
+
+
+class UpdateMeRequest(BaseModel):
+    name:         str | None = None
+    email:        str | None = None
+    telegram_chat:str | None = None
+    password:     str | None = None
+
+
+@router.patch("/me")
+async def update_me(
+    data: UpdateMeRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if data.name is not None:
+        user.name = data.name.strip()
+    if data.email is not None:
+        user.email = data.email.strip() or None
+    if data.telegram_chat is not None:
+        user.telegram_chat = data.telegram_chat.strip() or None
+    if data.password:
+        if len(data.password) < 8:
+            raise HTTPException(status_code=400, detail="Пароль минимум 8 символов")
+        user.hashed_password = hash_password(data.password)
+    await db.commit()
+    return {"status": "ok"}

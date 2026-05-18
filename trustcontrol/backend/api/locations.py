@@ -74,6 +74,30 @@ async def list_locations(
     ]
 
 
+@router.get("/{location_id}")
+async def get_location(
+    location_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    loc = await db.get(Location, location_id)
+    if not loc or loc.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Точка не найдена")
+    return {
+        "id":            loc.id,
+        "name":          loc.name,
+        "business_type": loc.business_type,
+        "city":          loc.city,
+        "address":       loc.address,
+        "language":      loc.language,
+        "is_active":     loc.is_active,
+        "api_key":       loc.api_key,
+        "telegram_chat": loc.telegram_chat,
+        "allowed_phones":            loc.allowed_phones or [],
+        "notify_ok_conversations":   bool(getattr(loc, "notify_ok_conversations", False)),
+    }
+
+
 @router.post("/")
 async def create_location(
     data: LocationCreate,

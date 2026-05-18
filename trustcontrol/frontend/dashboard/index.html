@@ -1706,7 +1706,7 @@ async function loadIncidents(){
 
 async function resolveInc(id,btn){
   if(btn){btn.disabled=true;btn.textContent='...';}
-  await apiFetch('/incidents/'+id+'/resolve',{method:'PATCH',body:'{}'});
+  await apiFetch('/incidents/'+id+'/resolve',{method:'POST',body:'{}'});
   loadIncidents();
 }
 
