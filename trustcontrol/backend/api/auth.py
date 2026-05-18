@@ -201,35 +201,45 @@ async def app_config():
 
 @router.post("/register")
 async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(User).where(User.phone == data.phone))
-    existing_user = existing.scalar()
+    import traceback, logging
+    _log = logging.getLogger("auth.register")
+    try:
+        existing = await db.execute(select(User).where(User.phone == data.phone))
+        existing_user = existing.scalar()
 
-    if existing_user:
-        if existing_user.is_verified:
-            raise HTTPException(status_code=400, detail="Номер уже зарегистрирован")
-        existing_user.name            = data.name
-        existing_user.email           = data.email or None
-        existing_user.hashed_password = hash_password(data.password)
+        if existing_user:
+            if existing_user.is_verified:
+                raise HTTPException(status_code=400, detail="Номер уже зарегистрирован")
+            existing_user.name            = data.name
+            existing_user.email           = data.email or None
+            existing_user.hashed_password = hash_password(data.password)
+            code = await _create_and_send_otp(data.phone, data.name, db)
+            await db.commit()
+            return {"status": "otp_sent", "phone": data.phone, "bypass": settings.OTP_BYPASS, "otp_code": code}
+
+        user = User(
+            name=data.name,
+            phone=data.phone,
+            email=data.email or None,
+            hashed_password=hash_password(data.password),
+            plan="trial",
+            plan_expires=datetime.utcnow() + timedelta(days=14),
+            is_verified=False,
+        )
+        db.add(user)
+        await db.flush()
+
         code = await _create_and_send_otp(data.phone, data.name, db)
         await db.commit()
+
         return {"status": "otp_sent", "phone": data.phone, "bypass": settings.OTP_BYPASS, "otp_code": code}
 
-    user = User(
-        name=data.name,
-        phone=data.phone,
-        email=data.email or None,
-        hashed_password=hash_password(data.password),
-        plan="trial",
-        plan_expires=datetime.utcnow() + timedelta(days=14),
-        is_verified=False,
-    )
-    db.add(user)
-    await db.flush()
-
-    code = await _create_and_send_otp(data.phone, data.name, db)
-    await db.commit()
-
-    return {"status": "otp_sent", "phone": data.phone, "bypass": settings.OTP_BYPASS, "otp_code": code}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        err = traceback.format_exc()
+        _log.error(f"register 500: {err}")
+        raise HTTPException(status_code=500, detail=f"Ошибка регистрации: {type(exc).__name__}: {exc}")
 
 
 @router.post("/send-otp")
