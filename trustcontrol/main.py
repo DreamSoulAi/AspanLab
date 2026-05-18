@@ -274,7 +274,7 @@ async def _fix_schema():
     import sqlalchemy as sa
     from backend.database import AsyncSessionLocal
 
-    is_pg = "postgresql" in settings.DATABASE_URL
+    is_pg = "postgresql" in settings.DATABASE_URL or settings.DATABASE_URL.startswith("postgres")
 
     async with AsyncSessionLocal() as db:
         try:
