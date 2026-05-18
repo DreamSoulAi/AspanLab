@@ -355,17 +355,23 @@ async def _fix_schema():
 @app.on_event("startup")
 async def startup():
     try:
-        await _run_alembic()
+        await asyncio.wait_for(_run_alembic(), timeout=25)
+    except asyncio.TimeoutError:
+        log.warning("⚠️ Alembic timeout (25s) — пропускаем, продолжаем старт")
     except Exception as e:
         log.error(f"Alembic startup error (non-fatal): {e}")
 
     try:
-        await init_db()
+        await asyncio.wait_for(init_db(), timeout=15)
+    except asyncio.TimeoutError:
+        log.warning("⚠️ init_db timeout (15s) — продолжаем старт")
     except Exception as e:
         log.error(f"init_db error (non-fatal): {e}")
 
     try:
-        await _fix_schema()
+        await asyncio.wait_for(_fix_schema(), timeout=15)
+    except asyncio.TimeoutError:
+        log.warning("⚠️ _fix_schema timeout (15s) — продолжаем старт")
     except Exception as e:
         log.error(f"_fix_schema error (non-fatal): {e}")
 
