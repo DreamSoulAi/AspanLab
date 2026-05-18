@@ -1,7 +1,7 @@
-# ╔══════════════════════════════════════════════════════════╗
+# ╔═══════════════════════════════════════════════════════════╗
 # ║              TrustControl — Главный файл  (v3.0)         ║
 # ║         Запускает API сервер для всех точек               ║
-# ╚══════════════════════════════════════════════════════════╝
+# ╚═══════════════════════════════════════════════════════════╝
 
 import asyncio
 import logging
@@ -36,7 +36,7 @@ app = FastAPI(
     redoc_url=None,
 )
 
-# ── CORS ─────────────────────────────────────────────────────
+# ── CORS ────────────────────────────────────────────
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000"
 ).split(",")
@@ -51,7 +51,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-API-Key"],
 )
 
-# ── API роуты ────────────────────────────────────────────────
+# ── API роуты ────────────────────────────────────────
 app.include_router(auth_router,      prefix="/api/auth",        tags=["Auth"])
 app.include_router(locations_router, prefix="/api/locations",   tags=["Locations"])
 app.include_router(reports_router,   prefix="/api/reports",     tags=["Reports"])
@@ -63,7 +63,7 @@ app.include_router(summary_router,   prefix="/api/v1/summary",   tags=["Summary"
 app.include_router(incidents_router, prefix="/api/v1/incidents", tags=["Incidents"])
 app.include_router(tg_router,        prefix="/telegram",         tags=["Telegram"])
 
-# ── Фронтенд ─────────────────────────────────────────────────
+# ── Фронтенд ─────────────────────────────────────────
 DASHBOARD_DIR = Path(__file__).parent / "frontend" / "dashboard"
 if DASHBOARD_DIR.exists():
     app.mount("/app", StaticFiles(directory=str(DASHBOARD_DIR), html=True), name="dashboard")
@@ -76,7 +76,7 @@ if DASHBOARD_DIR.exists():
         return resp
 
 
-# ── Фоновые задачи ───────────────────────────────────────────
+# ── Фоновые задачи ───────────────────────────────────
 
 async def _retry_worker():
     """
@@ -236,7 +236,7 @@ async def _daily_report_worker():
             log.error(f"Daily report worker ошибка: {e}")
 
 
-# ── Lifecycle ─────────────────────────────────────────────────
+# ── Lifecycle ─────────────────────────────────────────────
 
 async def _run_alembic():
     """
@@ -274,11 +274,11 @@ async def _fix_schema():
     import sqlalchemy as sa
     from backend.database import AsyncSessionLocal
 
-    is_pg = "postgresql" in settings.DATABASE_URL
+    is_pg = "postgresql" in settings.DATABASE_URL or settings.DATABASE_URL.startswith("postgres")
 
     async with AsyncSessionLocal() as db:
         try:
-            # ── users.email → nullable ──────────────────────────────────────
+            # ── users.email → nullable ──────────────────────────────────────────────
             # Old DBs created before phone-auth have email NOT NULL.
             # Registration without email now fails with 500 — fix it.
             if is_pg:
