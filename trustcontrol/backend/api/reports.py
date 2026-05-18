@@ -12,6 +12,7 @@
 # ════════════════════════════════════════════════════════════
 
 import logging
+import time
 import uuid
 from collections import defaultdict
 from pathlib import Path
@@ -55,14 +56,13 @@ _AUDIO_MAGIC = [b"RIFF", b"ID3", b"OggS", b"fLaC", b"\xff\xfb", b"\xff\xf3", b"\
 
 
 def _check_submit_rate(api_key: str):
-    import time
     now = time.time()
     _submit_attempts[api_key] = [t for t in _submit_attempts[api_key] if now - t < 60]
     if len(_submit_attempts[api_key]) >= MAX_SUBMITS_PER_MIN:
+        if not _submit_attempts[api_key]:
+            del _submit_attempts[api_key]
         raise HTTPException(status_code=429, detail="Слишком много запросов от этой точки")
     _submit_attempts[api_key].append(now)
-    if not _submit_attempts[api_key]:
-        del _submit_attempts[api_key]
 RETRY_DIR = Path("uploads/retry")
 RETRY_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -341,7 +341,9 @@ def send_audio_to_server(wav_bytes: bytes):
     """Отправляем аудио. При ошибке — сохраняем в fails/ для повторной отправки."""
     try:
         audio_bytes, content_type, filename = compress_audio(wav_bytes)
+        data = {"language": LANGUAGE} if LANGUAGE else None
         r = _post(
+            data=data,
             files={"audio": (filename, audio_bytes, content_type)},
         )
         _handle_response(r, wav_bytes=wav_bytes)
@@ -359,7 +361,10 @@ def send_audio_to_server(wav_bytes: bytes):
 def send_text_to_server(transcript: str):
     """Отправляем готовый транскрипт (режим local-whisper)."""
     try:
-        r = _post(data={"transcript_text": transcript})
+        data = {"transcript_text": transcript}
+        if LANGUAGE:
+            data["language"] = LANGUAGE
+        r = _post(data=data)
         _handle_response(r)
     except Exception as e:
         log.warning(f"Ошибка отправки текста: {e}")
@@ -398,7 +403,9 @@ def _retry_fails():
     for fpath in sorted(FAILS_DIR.glob("*.wav")):
         try:
             wav_bytes = fpath.read_bytes()
+            data = {"language": LANGUAGE} if LANGUAGE else None
             r = _post(
+                data=data,
                 files={"audio": ("audio.wav", wav_bytes, "audio/wav")},
                 timeout=30,
             )
@@ -413,11 +420,11 @@ def _retry_fails():
 
 def _ping_loop():
     """
-    Шлёт health-ping на сервер каждые 5 минут.
+    Шлёт health-ping на сервер каждые 30 секунд.
     Запускается как daemon-поток при старте.
     Если сервер недоступен — молча пропускает (без ошибок).
     """
-    PING_INTERVAL = 30    # 30 секунд — офлайн-порог 60с на сервере
+    PING_INTERVAL = 30    # 30 секунд — сервер считает офлайн при отсутствии > 10 мин
     while True:
         time.sleep(PING_INTERVAL)
         try:
