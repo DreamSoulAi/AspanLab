@@ -28,7 +28,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update as sa_update
 from pydantic import BaseModel, field_validator
-from passlib.context import CryptContext
+import bcrypt as _bcrypt
 from jose import JWTError, jwt
 
 from backend.database import get_db
@@ -37,7 +37,6 @@ from backend.models.otp_code import OtpCode
 from backend.config import settings
 
 router    = APIRouter()
-pwd_ctx   = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2    = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 ALGORITHM = "HS256"
 
@@ -152,11 +151,14 @@ class TokenResponse(BaseModel):
 # ── JWT utils ─────────────────────────────────────────────────────────────────
 
 def hash_password(password: str) -> str:
-    return pwd_ctx.hash(password)
+    return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_ctx.verify(plain, hashed)
+    try:
+        return _bcrypt.checkpw(plain.encode(), hashed.encode())
+    except Exception:
+        return False
 
 
 def create_token(user_id: int) -> str:
