@@ -1533,7 +1533,7 @@ function doLogout(){
 function startDashboard(){
   document.getElementById('landingPage').style.display='none';
   document.getElementById('authSection').style.display='none';
-  document.getElementById('appWrap').style.display='';
+  document.getElementById('appWrap').style.display='flex';
   // hide dashboard content until first data load so spinner shows instead of empty cards
   const dc=document.getElementById('dashContent');
   if(dc)dc.style.display='none';
