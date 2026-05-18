@@ -1498,7 +1498,7 @@ async function doVerifyOtp(){
   if(!code)return showErr('Введите код');
   const btn=document.getElementById('verifyOtpBtn');
   btn.disabled=true;btn.textContent='Проверка...';
-  const d=await apiFetch('/auth/verify-otp',{method:'POST',body:JSON.stringify({phone,password,otp_code:code})});
+  const d=await apiFetch('/auth/verify-otp',{method:'POST',body:JSON.stringify({phone,code})});
   btn.disabled=false;btn.textContent='Подтвердить →';
   if(!d)return;
   if(d.access_token){
