@@ -83,13 +83,11 @@ class Settings:
     SMTP_PASS: str = os.getenv("SMTP_PASS", "")
     SMTP_FROM: str = os.getenv("SMTP_FROM", "")
 
-    # ── OTP / Auth ───────────────────────────────────────────
-    # OTP_BYPASS=true → код всегда 000000 (только для dev/тестов, НИКОГДА в проде)
-    OTP_BYPASS: bool = os.getenv("OTP_BYPASS", "false").lower() == "true"
-
     # ── Telegram бот ─────────────────────────────────────────
     # Имя бота без @ — показывается кнопкой "Получить код в Telegram"
     TELEGRAM_BOT_USERNAME: str = os.getenv("TELEGRAM_BOT_USERNAME", "")
+    # Секрет для проверки подписи Telegram webhook (setWebhook secret_token)
+    TELEGRAM_WEBHOOK_SECRET: str = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
 
     def validate(self):
         """Log warnings for missing optional env vars — never crash on startup."""

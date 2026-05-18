@@ -8,15 +8,19 @@
 #    tc_fp:{incident_id}       — ошибка (false positive)
 #                                → авто-добавляет номер/фразу в whitelist
 #
-#  Настройка webhook:
+#  SECURITY: Webhook защищён HMAC-подписью.
+#  Настройка webhook с секретом:
 #    curl -F "url=https://ВАШ_ДОМЕН/telegram/webhook" \
+#         -F "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
 #         https://api.telegram.org/bot{TOKEN}/setWebhook
 # ════════════════════════════════════════════════════════════
 
+import hmac
 import logging
+import os
 from datetime import datetime
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 from sqlalchemy import select
 
 from backend.database import AsyncSessionLocal
@@ -27,13 +31,21 @@ from backend.services.notifier import get_bot
 log    = logging.getLogger("tg_webhook")
 router = APIRouter()
 
+_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+
 
 @router.post("/webhook")
 async def telegram_webhook(request: Request):
     """
     Принимает Telegram Bot API updates.
-    Обрабатывает callback_query от InlineKeyboard под инцидент-алертами.
+    Проверяет X-Telegram-Bot-Api-Secret-Token если TELEGRAM_WEBHOOK_SECRET задан.
     """
+    if _WEBHOOK_SECRET:
+        incoming = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+        if not hmac.compare_digest(incoming, _WEBHOOK_SECRET):
+            log.warning("Telegram webhook: неверный secret token — запрос отклонён")
+            return Response(status_code=403)
+
     try:
         update = await request.json()
     except Exception:
@@ -58,14 +70,15 @@ async def telegram_webhook(request: Request):
         elif data.startswith("tc_fp:"):
             incident_id = int(data.split(":", 1)[1])
             answer_text = await _handle_false_positive(incident_id)
-            show_alert  = True   # всплывающее сообщение о добавлении в whitelist
+            show_alert  = True
 
+    except (ValueError, IndexError):
+        return {"ok": True}
     except Exception as e:
         log.error(f"Ошибка обработки callback '{data}': {e}")
         answer_text = "Ошибка обработки"
         show_alert  = True
 
-    # Отвечаем Telegram чтобы убрать «часики» на кнопке
     try:
         bot = get_bot()
         await bot.answer_callback_query(
@@ -80,7 +93,6 @@ async def telegram_webhook(request: Request):
 
 
 async def _handle_confirm(incident_id: int) -> str:
-    """Подтверждает инцидент как реальное нарушение."""
     async with AsyncSessionLocal() as db:
         incident = await db.get(Incident, incident_id)
         if not incident:
@@ -94,10 +106,6 @@ async def _handle_confirm(incident_id: int) -> str:
 
 
 async def _handle_false_positive(incident_id: int) -> str:
-    """
-    Помечает инцидент как ошибку.
-    Если KASPI_FRAUD — добавляет номер в allowed_phones (обучение системы).
-    """
     async with AsyncSessionLocal() as db:
         incident = await db.get(Incident, incident_id)
         if not incident:

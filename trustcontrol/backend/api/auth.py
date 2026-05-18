@@ -1,8 +1,8 @@
 # ════════════════════════════════════════════════════════════
-#  API: Авторизация v3.0 — Phone OTP
+#  API: Авторизация v3.1 — Phone OTP
 #
 #  Флоу регистрации:
-#    POST /register  → создаёт юзера (is_verified=False), OTP_BYPASS=000000
+#    POST /register  → создаёт юзера (is_verified=False)
 #    POST /verify-otp → проверяет OTP, ставит is_verified=True, возвращает JWT
 #
 #  Флоу входа:
@@ -10,16 +10,18 @@
 #    POST /send-otp  → (переотправка) генерирует новый код
 #
 #  SECURITY:
-#    - Rate limit: 5 попыток логина / 60 сек
+#    - Rate limit: 5 попыток / 60 сек на все auth-эндпоинты
 #    - Пароль: минимум 8 символов
 #    - Телефон: нормализация в +7XXXXXXXXXX (KZ формат), уникальный ключ
-#    - OTP: 6 цифр, 10 минут, одноразовый (OTP_BYPASS=true → всегда 000000)
+#    - OTP: 6 цифр, secrets.randbelow (CSPRNG), 10 минут, одноразовый
+#    - otp_code НЕ возвращается в продакшн-ответах (только OTP_BYPASS=true)
 # ════════════════════════════════════════════════════════════
 
 import re
 import time
-import random
-import string
+import secrets
+import traceback
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -27,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update as sa_update
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, Field
 import bcrypt as _bcrypt
 from jose import JWTError, jwt
 
@@ -36,14 +38,15 @@ from backend.models.user import User
 from backend.models.otp_code import OtpCode
 from backend.config import settings
 
-router    = APIRouter()
-oauth2    = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+_log    = logging.getLogger("auth")
+router  = APIRouter()
+oauth2  = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 ALGORITHM = "HS256"
 
-# ── Rate limiting ─────────────────────────────────────────────────────────────
+# ── Rate limiting ──────────────────────────────────────────────────────────────
 _login_attempts: dict[str, list[float]] = defaultdict(list)
-MAX_ATTEMPTS   = 5
-WINDOW_SECONDS = 60
+MAX_ATTEMPTS    = 5
+WINDOW_SECONDS  = 60
 
 
 def _check_rate_limit(ip: str):
@@ -55,9 +58,12 @@ def _check_rate_limit(ip: str):
             detail=f"Слишком много попыток. Подождите {WINDOW_SECONDS} секунд.",
         )
     _login_attempts[ip].append(now)
+    # Prune empty entries to prevent memory growth from unique IPs
+    if len(_login_attempts[ip]) == 0:
+        del _login_attempts[ip]
 
 
-# ── Phone helpers ─────────────────────────────────────────────────────────────
+# ── Phone helpers ──────────────────────────────────────────────────────────────
 
 def normalize_phone(raw: str) -> str | None:
     """Normalise any KZ phone string → +7XXXXXXXXXX, or None if invalid."""
@@ -74,14 +80,11 @@ def normalize_phone(raw: str) -> str | None:
 def _generate_otp() -> str:
     if settings.OTP_BYPASS:
         return "000000"
-    return "".join(random.choices(string.digits, k=6))
+    return f"{secrets.randbelow(1_000_000):06d}"
 
 
 async def _create_and_send_otp(phone: str, name: str, db: AsyncSession) -> str:
-    """Invalidate old codes, generate a new one. Returns the code (shown on UI until SMS is live)."""
-    import logging
-    _log = logging.getLogger("auth")
-
+    """Invalidate old codes, generate a new one. Returns the code."""
     await db.execute(
         sa_update(OtpCode)
         .where(OtpCode.phone == phone, OtpCode.used == False)  # noqa: E712
@@ -95,18 +98,22 @@ async def _create_and_send_otp(phone: str, name: str, db: AsyncSession) -> str:
     ))
     await db.flush()
 
-    _log.info(f"OTP generated: phone={phone} code={code} bypass={settings.OTP_BYPASS}")
+    # Only log the code in bypass/dev mode — never in production
+    if settings.OTP_BYPASS:
+        _log.info(f"OTP (bypass): phone={phone} code={code}")
+    else:
+        _log.info(f"OTP generated: phone={phone}")
     # Future: await send_sms(phone, code, name)
     return code
 
 
-# ── Pydantic schemas ──────────────────────────────────────────────────────────
+# ── Pydantic schemas ───────────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
-    name:     str
+    name:     str = Field(..., min_length=2, max_length=100)
     phone:    str
     password: str
-    email:    str = ""   # опциональный, только для уведомлений
+    email:    str = Field("", max_length=150)
 
     @field_validator("password")
     @classmethod
@@ -114,13 +121,6 @@ class RegisterRequest(BaseModel):
         if len(v) < 8:
             raise ValueError("Пароль должен быть минимум 8 символов")
         return v
-
-    @field_validator("name")
-    @classmethod
-    def name_length(cls, v):
-        if len(v.strip()) < 2:
-            raise ValueError("Имя слишком короткое")
-        return v.strip()
 
     @field_validator("phone")
     @classmethod
@@ -137,7 +137,7 @@ class OtpSendRequest(BaseModel):
 
 class OtpVerifyRequest(BaseModel):
     phone: str
-    code:  str
+    code:  str = Field(..., min_length=6, max_length=6)
 
 
 class TokenResponse(BaseModel):
@@ -192,17 +192,14 @@ async def get_current_user(
 async def app_config():
     """Public config returned to frontend on load."""
     return {
-        "otp_bypass":      settings.OTP_BYPASS,
         "tg_bot_username": settings.TELEGRAM_BOT_USERNAME,
-        "kaspi_number":    settings.KASPI_NUMBER,
-        "kaspi_name":      settings.KASPI_NAME,
     }
 
 
 @router.post("/register")
-async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    import traceback, logging
-    _log = logging.getLogger("auth.register")
+async def register(data: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(client_ip)
     try:
         existing = await db.execute(select(User).where(User.phone == data.phone))
         existing_user = existing.scalar()
@@ -215,7 +212,10 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
             existing_user.hashed_password = hash_password(data.password)
             code = await _create_and_send_otp(data.phone, data.name, db)
             await db.commit()
-            return {"status": "otp_sent", "phone": data.phone, "bypass": settings.OTP_BYPASS, "otp_code": code}
+            resp = {"status": "otp_sent", "phone": data.phone}
+            if settings.OTP_BYPASS:
+                resp["otp_code"] = code
+            return resp
 
         user = User(
             name=data.name,
@@ -232,31 +232,43 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
         code = await _create_and_send_otp(data.phone, data.name, db)
         await db.commit()
 
-        return {"status": "otp_sent", "phone": data.phone, "bypass": settings.OTP_BYPASS, "otp_code": code}
+        resp = {"status": "otp_sent", "phone": data.phone}
+        if settings.OTP_BYPASS:
+            resp["otp_code"] = code
+        return resp
 
     except HTTPException:
         raise
-    except Exception as exc:
-        err = traceback.format_exc()
-        _log.error(f"register 500: {err}")
-        raise HTTPException(status_code=500, detail=f"Ошибка регистрации: {type(exc).__name__}: {exc}")
+    except Exception:
+        _log.error(f"register 500: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Внутренняя ошибка. Попробуйте позже.")
 
 
 @router.post("/send-otp")
-async def send_otp(data: OtpSendRequest, db: AsyncSession = Depends(get_db)):
+async def send_otp(data: OtpSendRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(client_ip)
+
     phone = normalize_phone(data.phone) or data.phone.strip()
     result = await db.execute(select(User).where(User.phone == phone))
     user = result.scalar()
     if not user:
-        return {"status": "sent"}
+        return {"status": "sent"}  # Don't reveal whether phone exists
 
     code = await _create_and_send_otp(phone, user.name, db)
     await db.commit()
-    return {"status": "sent", "bypass": settings.OTP_BYPASS, "otp_code": code}
+
+    resp = {"status": "sent"}
+    if settings.OTP_BYPASS:
+        resp["otp_code"] = code
+    return resp
 
 
 @router.post("/verify-otp", response_model=TokenResponse)
-async def verify_otp(data: OtpVerifyRequest, db: AsyncSession = Depends(get_db)):
+async def verify_otp(data: OtpVerifyRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(client_ip)
+
     phone = normalize_phone(data.phone) or data.phone.strip()
 
     result = await db.execute(
@@ -299,7 +311,6 @@ async def login(
     client_ip = request.client.host if request.client else "unknown"
     _check_rate_limit(client_ip)
 
-    # username field = phone number (raw or normalized)
     phone = normalize_phone(form.username) or form.username.strip()
 
     result = await db.execute(select(User).where(User.phone == phone))
@@ -312,12 +323,12 @@ async def login(
         raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
 
     if not user.is_verified:
-        code = await _create_and_send_otp(user.phone, user.name, db)
+        await _create_and_send_otp(user.phone, user.name, db)
         await db.commit()
-        raise HTTPException(status_code=403, detail=f"PHONE_NOT_VERIFIED:{code}")
+        raise HTTPException(status_code=403, detail="PHONE_NOT_VERIFIED")
 
     user.last_login = datetime.utcnow()
-    _login_attempts[client_ip] = []
+    _login_attempts.pop(client_ip, None)
     await db.commit()
 
     return TokenResponse(
@@ -348,10 +359,10 @@ async def me(user: User = Depends(get_current_user)):
 
 
 class UpdateMeRequest(BaseModel):
-    name:         str | None = None
-    email:        str | None = None
-    telegram_chat:str | None = None
-    password:     str | None = None
+    name:          str | None = Field(None, max_length=100)
+    email:         str | None = Field(None, max_length=150)
+    telegram_chat: str | None = Field(None, max_length=50)
+    password:      str | None = None
 
 
 @router.patch("/me")

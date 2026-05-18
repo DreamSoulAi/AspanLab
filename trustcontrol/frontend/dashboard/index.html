@@ -1467,7 +1467,7 @@ async function doLogin(){
       body:new URLSearchParams({username:phone,password})
     });
     const data=await res.json().catch(()=>({}));
-    if(res.status===403&&String(data.detail||'').startsWith('PHONE_NOT_VERIFIED')){
+    if(res.status===403&&String(data.detail||'').includes('PHONE_NOT_VERIFIED')){
       localStorage.setItem('tc_otp_phone',phone);
       localStorage.setItem('tc_otp_pass',password);
       const lbl=document.getElementById('otpPhoneLabel');
@@ -1503,6 +1503,9 @@ async function doRegister(){
     localStorage.setItem('tc_otp_pass',password);
     const lbl=document.getElementById('otpPhoneLabel');
     if(lbl)lbl.textContent=phone;
+    // Show dev bypass banner if server is in bypass mode
+    const banner=document.getElementById('otpBypassBanner');
+    if(banner&&d.otp_code){banner.style.display='block';}
     showOtp();
   }
 }

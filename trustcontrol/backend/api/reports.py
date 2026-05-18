@@ -13,6 +13,7 @@
 
 import logging
 import uuid
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 from datetime import datetime, timedelta
@@ -42,7 +43,26 @@ from backend.api.deps import get_location_by_api_key
 log = logging.getLogger("reports")
 router = APIRouter()
 
-MAX_AUDIO_SIZE_MB = 10
+MAX_AUDIO_SIZE_MB    = 10
+MAX_TRANSCRIPT_CHARS = 10_000
+
+# Per-API-key rate limit: max 60 submissions per minute
+_submit_attempts: dict[str, list[float]] = defaultdict(list)
+MAX_SUBMITS_PER_MIN = 60
+
+# Audio magic bytes — only accept real audio files
+_AUDIO_MAGIC = [b"RIFF", b"ID3", b"OggS", b"fLaC", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"]
+
+
+def _check_submit_rate(api_key: str):
+    import time
+    now = time.time()
+    _submit_attempts[api_key] = [t for t in _submit_attempts[api_key] if now - t < 60]
+    if len(_submit_attempts[api_key]) >= MAX_SUBMITS_PER_MIN:
+        raise HTTPException(status_code=429, detail="Слишком много запросов от этой точки")
+    _submit_attempts[api_key].append(now)
+    if not _submit_attempts[api_key]:
+        del _submit_attempts[api_key]
 RETRY_DIR = Path("uploads/retry")
 RETRY_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -437,19 +457,18 @@ async def _delete_job(job_id: int):
 @router.post("/submit")
 async def submit_audio(
     background_tasks: BackgroundTasks,
-    audio: Optional[UploadFile] = File(None),
-    api_key:         Optional[str] = Form(None),
-    x_api_key:       Optional[str] = Header(None),
-    transcript_text: Optional[str] = Form(None),
-    language:        Optional[str] = Form(None),
+    audio:           Optional[UploadFile] = File(None),
+    x_api_key:       Optional[str]        = Header(None),
+    transcript_text: Optional[str]        = Form(None),
+    language:        Optional[str]        = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Мгновенно принимает аудио и ставит в очередь GPT-обработки.
-    """
-    effective_key = (api_key or "").strip() or (x_api_key or "").strip()
+    """Мгновенно принимает аудио и ставит в очередь GPT-обработки."""
+    effective_key = (x_api_key or "").strip()
     if not effective_key:
-        raise HTTPException(status_code=401, detail="API ключ обязателен")
+        raise HTTPException(status_code=401, detail="API ключ обязателен (X-API-Key заголовок)")
+
+    _check_submit_rate(effective_key)
 
     location = await get_location_by_api_key(effective_key, db)
     location.last_seen = datetime.utcnow()
@@ -464,7 +483,14 @@ async def submit_audio(
             raise HTTPException(status_code=413, detail=f"Файл > {MAX_AUDIO_SIZE_MB}MB")
         if len(wav_bytes) < 100:
             raise HTTPException(status_code=400, detail="Файл пустой или повреждён")
+        # Validate audio magic bytes
+        header = wav_bytes[:4]
+        if not any(header[:len(m)] == m for m in _AUDIO_MAGIC):
+            raise HTTPException(status_code=400, detail="Неверный формат аудио")
         audio_size_kb = len(wav_bytes) // 1024
+
+    if transcript_text and len(transcript_text) > MAX_TRANSCRIPT_CHARS:
+        raise HTTPException(status_code=400, detail=f"transcript_text не может быть длиннее {MAX_TRANSCRIPT_CHARS} символов")
 
     if not wav_bytes and not (transcript_text and transcript_text.strip()):
         raise HTTPException(status_code=400, detail="Нужно аудио или transcript_text")

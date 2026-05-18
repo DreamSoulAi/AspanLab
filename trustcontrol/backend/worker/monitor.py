@@ -326,12 +326,11 @@ def transcribe_local(wav_bytes: bytes) -> str | None:
 #  ОТПРАВКА НА СЕРВЕР
 # ════════════════════════════════════════════════════════════
 
-def _post(data: dict, files: dict | None = None, timeout: int = 60):
-    """
-    POST на сервер. API-ключ в form-поле (UTF-8), не в заголовке — нет latin-1.
-    """
+def _post(data: dict | None = None, files: dict | None = None, timeout: int = 60):
+    """POST на сервер. API-ключ передаётся в заголовке X-API-Key."""
     return requests.post(
         f"{SERVER_URL}/api/reports/submit",
+        headers={"X-API-Key": API_KEY},
         data=data,
         files=files,
         timeout=timeout,
@@ -343,7 +342,6 @@ def send_audio_to_server(wav_bytes: bytes):
     try:
         audio_bytes, content_type, filename = compress_audio(wav_bytes)
         r = _post(
-            data={"api_key": API_KEY},
             files={"audio": (filename, audio_bytes, content_type)},
         )
         _handle_response(r, wav_bytes=wav_bytes)
@@ -361,7 +359,7 @@ def send_audio_to_server(wav_bytes: bytes):
 def send_text_to_server(transcript: str):
     """Отправляем готовый транскрипт (режим local-whisper)."""
     try:
-        r = _post(data={"api_key": API_KEY, "transcript_text": transcript})
+        r = _post(data={"transcript_text": transcript})
         _handle_response(r)
     except Exception as e:
         log.warning(f"Ошибка отправки текста: {e}")
@@ -401,7 +399,6 @@ def _retry_fails():
         try:
             wav_bytes = fpath.read_bytes()
             r = _post(
-                data={"api_key": API_KEY},
                 files={"audio": ("audio.wav", wav_bytes, "audio/wav")},
                 timeout=30,
             )

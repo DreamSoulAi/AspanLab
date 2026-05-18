@@ -3,11 +3,13 @@
 # ════════════════════════════════════════════════════════════
 
 import secrets
+from datetime import datetime
+from typing import Literal, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field, field_validator
 
 from backend.database import get_db
 from backend.models.location import Location
@@ -16,32 +18,85 @@ from backend.models.user import User
 
 router = APIRouter()
 
+VALID_BUSINESS_TYPES = {"coffee", "gas", "fastfood", "cafe", "beauty", "shop", "fitness", "hotel"}
+VALID_LANGUAGES      = {"ru", "kk", "mixed"}
+
 
 class LocationCreate(BaseModel):
-    name:          str
-    business_type: str = "coffee"
-    address:       Optional[str] = None
-    city:          str = "Алматы"
-    telegram_chat: Optional[str] = None
-    language:      str = "ru"
-    vad_level:     int = 2
+    name:          str  = Field(..., min_length=1, max_length=150)
+    business_type: str  = "coffee"
+    address:       Optional[str] = Field(None, max_length=255)
+    city:          str  = Field("Алматы", max_length=100)
+    telegram_chat: Optional[str] = Field(None, max_length=50)
+    language:      str  = "ru"
+    vad_level:     int  = Field(2, ge=0, le=3)
+
+    @field_validator("business_type")
+    @classmethod
+    def validate_business_type(cls, v):
+        if v not in VALID_BUSINESS_TYPES:
+            raise ValueError(f"business_type должен быть одним из {VALID_BUSINESS_TYPES}")
+        return v
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v):
+        if v not in VALID_LANGUAGES:
+            raise ValueError(f"language должен быть одним из {VALID_LANGUAGES}")
+        return v
 
 
 class LocationUpdate(BaseModel):
-    name:                      Optional[str]  = None
+    name:                      Optional[str]  = Field(None, max_length=150)
     business_type:             Optional[str]  = None
-    address:                   Optional[str]  = None
-    city:                      Optional[str]  = None
-    telegram_chat:             Optional[str]  = None
+    address:                   Optional[str]  = Field(None, max_length=255)
+    city:                      Optional[str]  = Field(None, max_length=100)
+    telegram_chat:             Optional[str]  = Field(None, max_length=50)
     language:                  Optional[str]  = None
-    vad_level:                 Optional[int]  = None
+    vad_level:                 Optional[int]  = Field(None, ge=0, le=3)
     ignore_internal_profanity: Optional[bool] = None
     notify_ok_conversations:   Optional[bool] = None
+
+    @field_validator("business_type")
+    @classmethod
+    def validate_business_type(cls, v):
+        if v is not None and v not in VALID_BUSINESS_TYPES:
+            raise ValueError(f"business_type должен быть одним из {VALID_BUSINESS_TYPES}")
+        return v
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v):
+        if v is not None and v not in VALID_LANGUAGES:
+            raise ValueError(f"language должен быть одним из {VALID_LANGUAGES}")
+        return v
 
 
 class AntifraudSettings(BaseModel):
     allowed_phones:   Optional[list[str]] = None
     required_upsells: Optional[list[str]] = None
+
+    @field_validator("allowed_phones")
+    @classmethod
+    def validate_phones(cls, v):
+        if v is not None:
+            if len(v) > 50:
+                raise ValueError("Максимум 50 номеров в белом списке")
+            for p in v:
+                if len(p) > 20:
+                    raise ValueError(f"Номер слишком длинный: {p[:20]}")
+        return v
+
+    @field_validator("required_upsells")
+    @classmethod
+    def validate_upsells(cls, v):
+        if v is not None:
+            if len(v) > 30:
+                raise ValueError("Максимум 30 фраз в списке допродаж")
+            for phrase in v:
+                if len(phrase) > 100:
+                    raise ValueError("Фраза допродажи слишком длинная (макс. 100 символов)")
+        return v
 
 
 @router.get("/")
@@ -104,7 +159,17 @@ async def create_location(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Проверяем лимит по тарифу
+    # Enforce subscription expiry for trial accounts
+    if (
+        user.plan == "trial"
+        and user.plan_expires is not None
+        and user.plan_expires < datetime.utcnow()
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Пробный период истёк. Пожалуйста, обновите тариф для продолжения.",
+        )
+
     result = await db.execute(
         select(Location).where(Location.owner_id == user.id, Location.is_active == True)
     )
@@ -128,7 +193,7 @@ async def create_location(
         telegram_chat=data.telegram_chat,
         language=data.language,
         vad_level=data.vad_level,
-        api_key=secrets.token_hex(32),  # уникальный ключ для скрипта
+        api_key=secrets.token_hex(32),
     )
     db.add(loc)
     await db.flush()
@@ -137,7 +202,7 @@ async def create_location(
         "id":      loc.id,
         "name":    loc.name,
         "api_key": loc.api_key,
-        "message": "Точка создана. Используйте api_key в config.py на кассе.",
+        "message": "Точка создана. Используйте api_key в config.ini на кассе.",
     }
 
 
@@ -173,11 +238,6 @@ async def update_antifraud(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Обновляет антифрод-настройки точки:
-      allowed_phones   — белый список Каспи-номеров владельца
-      required_upsells — обязательные фразы допродажи для UPSELL_GAP детектора
-    """
     loc = await db.get(Location, location_id)
     if not loc or loc.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Точка не найдена")
@@ -201,7 +261,6 @@ async def test_telegram(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Отправляет тестовое сообщение в Telegram группу точки."""
     loc = await db.get(Location, location_id)
     if not loc or loc.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Точка не найдена")
@@ -211,7 +270,6 @@ async def test_telegram(
         raise HTTPException(status_code=400, detail="Telegram Chat ID не задан в настройках точки")
 
     from backend.services import notifier
-    from datetime import datetime
     try:
         await notifier._send(
             chat_id,
@@ -224,6 +282,7 @@ async def test_telegram(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
 
+
 @router.delete("/{location_id}")
 async def delete_location(
     location_id: int,
@@ -234,4 +293,5 @@ async def delete_location(
     if not loc or loc.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Точка не найдена")
     loc.is_active = False
+    await db.commit()
     return {"message": "Точка отключена"}

@@ -35,7 +35,7 @@ async def list_incidents(
     incident_type: Optional[str]  = None,
     status:        Optional[str]  = None,   # open | resolved | false_positive
     days:          int            = 7,
-    limit:         int            = 50,
+    limit:         int            = 50,  # max 200
     db:            AsyncSession   = Depends(get_db),
     user:          User           = Depends(get_current_user),
 ):
@@ -43,6 +43,7 @@ async def list_incidents(
     Возвращает ленту инцидентов за последние N дней.
     Используется фронтендом для ленты фрода.
     """
+    days  = min(days, 90)
     limit = min(limit, 200)
 
     locs_r = await db.execute(

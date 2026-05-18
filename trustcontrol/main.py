@@ -47,7 +47,7 @@ if settings.DEBUG:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=(ALLOWED_ORIGINS != ["*"]),  # credentials forbidden with wildcard
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-API-Key"],
 )
