@@ -436,6 +436,17 @@ textarea.f-input{resize:vertical;line-height:1.6}
 .loc-key-block{background:var(--surface2);border:1px solid var(--bdr);border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px}
 .loc-key-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
 .loc-key-val{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent2);word-break:break-all}
+.loc-notify-row{margin-bottom:10px}
+.toggle-wrap{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.toggle-cb{display:none}
+.toggle-track{width:36px;height:20px;border-radius:10px;background:var(--surface2);border:1px solid var(--bdr2);position:relative;flex-shrink:0;transition:background .2s}
+.toggle-cb:checked+.toggle-track{background:var(--accent);border-color:var(--accent)}
+.toggle-thumb{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s}
+.toggle-cb:checked+.toggle-track .toggle-thumb{left:18px}
+.toggle-lbl{font-size:12px;color:var(--dim)}
+.loc-tg-hint{font-size:11px;color:var(--muted);margin-bottom:10px}
+.loc-tg-hint code{color:var(--accent2);font-family:'JetBrains Mono',monospace}
+.loc-tg-warn{color:var(--orange)}
 .btn-icon{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;border-radius:6px;transition:color .2s}
 .btn-icon:hover{color:var(--txt)}
 
@@ -1813,8 +1824,20 @@ async function loadLocations(){
         </div>
         <button class="btn-icon" onclick="copyKey('${esc(loc.api_key||'')}')" title="Копировать">⧉</button>
       </div>
+      <div class="loc-notify-row">
+        <label class="toggle-wrap" title="Уведомлять о каждом разговоре, не только о нарушениях">
+          <input type="checkbox" class="toggle-cb" ${loc.notify_ok_conversations?'checked':''} onchange="toggleNotifyOk(${loc.id},this.checked)">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="toggle-lbl">Уведомлять о каждом разговоре</span>
+        </label>
+      </div>
+      ${loc.telegram_chat?`<div class="loc-tg-hint">📨 Telegram: <code>${esc(loc.telegram_chat)}</code></div>`:'<div class="loc-tg-hint loc-tg-warn">⚠️ Telegram не настроен</div>'}
       <button class="btn-sm" onclick="openEditLoc(${loc.id})">Редактировать</button>
     </div>`).join('');
+}
+
+async function toggleNotifyOk(id, val){
+  await apiFetch('/locations/'+id,{method:'PATCH',body:JSON.stringify({notify_ok_conversations:val})});
 }
 
 function maskKey(k){if(!k||k.length<8)return k||'—';return k.slice(0,6)+'···'+k.slice(-4);}
