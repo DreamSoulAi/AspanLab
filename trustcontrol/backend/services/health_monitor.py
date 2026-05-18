@@ -88,5 +88,8 @@ async def run_health_monitor():
                 if offline_locs:
                     await db.commit()
 
+        except OSError as e:
+            # DNS / network unavailable (e.g. Render free tier, no Telegram token)
+            log.debug(f"health_monitor сеть недоступна: {e}")
         except Exception as e:
-            log.error(f"health_monitor ошибка: {e}")
+            log.warning(f"health_monitor ошибка: {e}")
