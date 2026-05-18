@@ -240,10 +240,13 @@ async def _daily_report_worker():
 
 async def _run_alembic():
     """
-    Run Alembic migrations at startup.
-    Non-fatal — any Alembic error is logged and skipped;
-    _fix_schema() handles critical column fixes as a safety net.
+    Run Alembic migrations at startup — PostgreSQL only.
+    For SQLite, init_db() create_all handles schema directly.
     """
+    if "sqlite" in settings.DATABASE_URL:
+        log.info("SQLite detected — пропускаем Alembic, используем create_all")
+        return
+
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
 

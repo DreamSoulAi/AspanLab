@@ -44,11 +44,23 @@ async def get_db():
 async def init_db():
     """
     Создаём все таблицы при старте.
-    Модели импортируются через backend.models для регистрации в Base.metadata
+    Для SQLite: если схема устарела — пересоздаём все таблицы (данных нет, Render ephemeral).
     """
     import backend.models  # noqa — регистрирует все модели через __init__.py
 
     async with engine.begin() as conn:
+        if "sqlite" in settings.DATABASE_URL:
+            # Проверяем актуальность схемы по одной новой колонке
+            try:
+                await conn.execute(
+                    __import__("sqlalchemy").text(
+                        "SELECT notify_ok_conversations FROM locations LIMIT 0"
+                    )
+                )
+            except Exception:
+                # Схема устарела — пересоздаём все таблицы
+                await conn.run_sync(Base.metadata.drop_all)
+                print("⚠️ SQLite schema outdated — пересоздаём таблицы")
         await conn.run_sync(Base.metadata.create_all)
 
     print("✅ База данных инициализирована")
