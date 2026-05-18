@@ -850,12 +850,12 @@ textarea.f-input{resize:vertical;line-height:1.6}
         <div class="auth-sub">Войдите в свой аккаунт</div>
         <div class="f-group">
           <label class="f-label">Номер телефона</label>
-          <input class="f-input" type="tel" id="loginPhone" placeholder="+7 7XX XXX XX XX" maxlength="18">
+          <input class="f-input" type="tel" id="loginPhone" placeholder="+7 7XX XXX XX XX" maxlength="18" autocomplete="tel" autocorrect="off" autocapitalize="off">
         </div>
         <div class="f-group">
           <label class="f-label">Пароль</label>
           <input class="f-input" type="password" id="loginPassword" placeholder="••••••••"
-                 onkeydown="if(event.key==='Enter')doLogin()">
+                 autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
         </div>
         <button class="f-btn" id="loginBtn" onclick="doLogin()">Войти →</button>
         <div id="loginError" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:13px;color:#FCA5A5;text-align:center"></div>
@@ -869,15 +869,15 @@ textarea.f-input{resize:vertical;line-height:1.6}
         <div class="auth-sub">14 дней бесплатно — без карты</div>
         <div class="f-group">
           <label class="f-label">Ваше имя</label>
-          <input class="f-input" type="text" id="regName" placeholder="Иван Иванов">
+          <input class="f-input" type="text" id="regName" placeholder="Иван Иванов" autocomplete="name" autocorrect="off">
         </div>
         <div class="f-group">
           <label class="f-label">Номер телефона</label>
-          <input class="f-input" type="tel" id="regPhone" placeholder="+7 7XX XXX XX XX" maxlength="18">
+          <input class="f-input" type="tel" id="regPhone" placeholder="+7 7XX XXX XX XX" maxlength="18" autocomplete="tel" autocorrect="off" autocapitalize="off">
         </div>
         <div class="f-group">
           <label class="f-label">Пароль</label>
-          <input class="f-input" type="password" id="regPassword" placeholder="минимум 8 символов">
+          <input class="f-input" type="password" id="regPassword" placeholder="минимум 8 символов" autocomplete="new-password">
         </div>
         <button class="f-btn" id="registerBtn" onclick="doRegister()">Зарегистрироваться — 14 дней бесплатно</button>
         <div class="f-switch">Уже есть аккаунт? <a onclick="showLogin()">Войти</a></div>
@@ -895,7 +895,8 @@ textarea.f-input{resize:vertical;line-height:1.6}
         <div class="f-group" style="margin-top:16px">
           <label class="f-label">6-значный код из SMS</label>
           <input class="f-input otp-big" type="text" id="otpCode" placeholder="000000"
-                 maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'')"
+                 maxlength="6" inputmode="numeric" autocomplete="one-time-code"
+                 oninput="this.value=this.value.replace(/\D/g,'')"
                  onkeydown="if(event.key==='Enter')doVerifyOtp()">
         </div>
         <button class="f-btn" id="verifyOtpBtn" onclick="doVerifyOtp()">Подтвердить →</button>
@@ -1260,7 +1261,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <h3 style="margin-bottom:16px">Аккаунт</h3>
           <div class="f-group">
             <label class="f-label">Имя</label>
-            <input class="f-input" type="text" id="settingsName" placeholder="Ваше имя">
+            <input class="f-input" type="text" id="settingsName" placeholder="Ваше имя" autocomplete="name" autocorrect="off">
           </div>
           <div class="f-group">
             <label class="f-label">Телефон (только просмотр)</label>
@@ -1272,7 +1273,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
           </div>
           <div class="f-group">
             <label class="f-label">Email</label>
-            <input class="f-input" type="email" id="settingsEmail" placeholder="you@example.com">
+            <input class="f-input" type="email" id="settingsEmail" placeholder="you@example.com" autocomplete="email" autocorrect="off" autocapitalize="off">
           </div>
           <div class="f-group">
             <label class="f-label">Telegram Chat ID (для общих уведомлений)</label>
@@ -1280,7 +1281,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
           </div>
           <div class="f-group">
             <label class="f-label">Новый пароль (оставьте пустым чтобы не менять)</label>
-            <input class="f-input" type="password" id="settingsPassword" placeholder="••••••••">
+            <input class="f-input" type="password" id="settingsPassword" placeholder="••••••••" autocomplete="new-password">
           </div>
           <button class="f-btn" onclick="saveSettings()">Сохранить изменения</button>
         </div>
@@ -1577,6 +1578,8 @@ function showPage(page){
   });
   document.querySelectorAll('.s-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page));
   document.querySelectorAll('.mn-item').forEach(el=>el.classList.toggle('active',el.id==='mn-'+page));
+  // On mobile scroll to top when switching pages (bottom nav stays fixed)
+  if(window.innerWidth<768)window.scrollTo({top:0,behavior:'instant'});
   if(page==='overview')loadDashboard();
   else if(page==='alerts')loadAlerts();
   else if(page==='reports')loadReportsPage();
