@@ -330,6 +330,8 @@ textarea.f-input{resize:vertical;line-height:1.6}
 .btn-a:hover{background:#2563EB;box-shadow:0 4px 20px rgba(59,130,246,.35)}
 .btn-o{background:transparent;color:var(--dim);border:1px solid var(--bdr2)}
 .btn-o:hover{background:rgba(255,255,255,.05);color:var(--txt)}
+.btn-ghost{background:transparent;color:var(--dim);border:1px solid var(--bdr2);text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent2)}
 .btn-sm{padding:5px 12px;font-size:12px;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:rgba(59,130,246,.1);color:var(--accent2);transition:all .18s}
 .btn-sm:hover{background:rgba(59,130,246,.2)}
 .btn-sm:disabled{opacity:.5;cursor:not-allowed}
@@ -1242,7 +1244,10 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <div class="page" id="page-locations">
         <div class="topbar">
           <div class="page-title">Торговые точки</div>
-          <button class="btn btn-a" onclick="showAddLocation()">+ Добавить</button>
+          <div style="display:flex;gap:8px">
+            <a class="btn btn-ghost" href="/api/download/installer" download="TrustControl_installer.zip" title="Скачать установщик для кассового ПК">⬇ Скачать установщик</a>
+            <button class="btn btn-a" onclick="showAddLocation()">+ Добавить</button>
+          </div>
         </div>
         <div id="locationsList"></div>
       </div>
