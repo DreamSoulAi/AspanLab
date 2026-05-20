@@ -1,11 +1,8 @@
 import io
 import zipfile
 from pathlib import Path
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-
-from backend.api.auth import get_current_user
-from backend.models.user import User
 
 router = APIRouter()
 
@@ -13,7 +10,7 @@ BASE = Path(__file__).parent.parent.parent   # trustcontrol/
 
 
 @router.get("/installer")
-async def download_installer(user: User = Depends(get_current_user)):
+async def download_installer():
     """Возвращает ZIP с файлами для установки на кассовый ПК."""
     buf = io.BytesIO()
 
