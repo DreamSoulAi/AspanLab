@@ -1013,17 +1013,23 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <input class="f-input" type="text" id="editLocAddress">
     </div>
     <hr class="modal-divider">
-    <div class="modal-sec-title">Telegram-уведомления</div>
-    <div class="f-group">
-      <label class="f-label">Telegram — групповой чат (необязательно)</label>
-      <input class="f-input" type="text" id="editLocTg" placeholder="-1001234567890">
-      <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6">
-        Если хотите получать тревоги в общий чат с партнёром или администратором —
-        создайте группу, добавьте туда нашего бота и напишите нам в Telegram, мы пришлём ID чата.
-      </div>
-      <button class="test-tg-btn" onclick="testTelegram()">📨 Проверить уведомление</button>
-      <div id="testTgResult"></div>
+    <div class="modal-sec-title">Уведомления</div>
+    <div style="font-size:13px;color:var(--dim);line-height:1.6;margin-bottom:14px">
+      Тревоги и отчёты приходят в ваш Telegram, подключённый в <a onclick="document.getElementById('editLocationModal').style.display='none';showPage('settings')" style="color:var(--accent2);cursor:pointer">Настройках</a>.<br>
+      Если хотите отдельный чат для этой точки — разверните ниже.
     </div>
+    <details style="margin-bottom:14px">
+      <summary style="font-size:12px;color:var(--muted);cursor:pointer;padding:6px 0;user-select:none">⚙️ Отдельный групповой чат для этой точки</summary>
+      <div style="margin-top:12px">
+        <div class="f-group">
+          <label class="f-label">ID группового чата</label>
+          <input class="f-input" type="text" id="editLocTg" placeholder="-1001234567890">
+          <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">Напишите нам в Telegram — мы добавим бота и пришлём ID.</div>
+        </div>
+        <button class="test-tg-btn" onclick="testTelegram()">📨 Проверить уведомление</button>
+        <div id="testTgResult"></div>
+      </div>
+    </details>
     <hr class="modal-divider">
     <div class="modal-sec-title">Уведомления</div>
     <div class="f-group" style="display:flex;align-items:center;gap:10px">
@@ -1366,10 +1372,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <div class="page" id="page-locations">
         <div class="topbar">
           <div class="page-title">Торговые точки</div>
-          <div style="display:flex;gap:8px">
-            <a class="btn btn-ghost" href="/api/download/installer" download="TrustControl_installer.zip" title="Скачать установщик для кассового ПК">⬇ Скачать установщик</a>
-            <button class="btn btn-a" onclick="showAddLocation()">+ Добавить</button>
-          </div>
+          <button class="btn btn-a" onclick="showAddLocation()">+ Добавить кассу</button>
         </div>
         <div id="locationsList"></div>
       </div>
@@ -1431,13 +1434,12 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
         <div class="panel">
           <h3 style="margin-bottom:14px">Быстрый старт</h3>
-          <div style="font-size:13px;color:var(--muted);line-height:2.1">
-            <div>1. Раздел <b style="color:var(--txt)">Точки</b> → нажми <b style="color:var(--txt)">+ Добавить</b> → создай первую точку</div>
-            <div>2. В <b style="color:var(--txt)">Настройках</b> нажми <b style="color:var(--txt)">Подключить через Telegram</b></div>
-            <div>3. В карточке точки скопируй ключ (кнопка ⧉)</div>
-            <div>4. Скачай и запусти <b style="color:var(--txt)">установщик</b> на кассовом ПК:</div>
-            <div class="qs-code">py monitor.py --api-url https://ВАШ-САЙТ.onrender.com --api-key КЛЮЧ</div>
-            <div>5. Скажи что-нибудь — отчёт придёт через ~15 сек</div>
+          <div style="font-size:13px;color:var(--muted);line-height:2.2">
+            <div>1. Раздел <b style="color:var(--txt)">Точки</b> → <b style="color:var(--txt)">+ Добавить кассу</b></div>
+            <div>2. <b style="color:var(--txt)">Настройки</b> → <b style="color:var(--txt)">Подключить через Telegram</b></div>
+            <div>3. На карточке кассы нажми <b style="color:var(--txt)">⬇ Скачать для кассы</b></div>
+            <div>4. На кассовом ПК: разархивируй → двойной клик <b style="color:var(--txt)">1_SETUP.bat</b></div>
+            <div>5. Затем двойной клик <b style="color:var(--txt)">3_RUN.bat</b> — готово!</div>
           </div>
         </div>
       </div>
@@ -1501,7 +1503,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
 const API='/api';
 let _token=localStorage.getItem('tc_token')||'';
-let _pollTimer=null,_currentPage='overview',_chartWeek=null,_silentPoll=false,_tgLinkPoll=null;
+let _pollTimer=null,_currentPage='overview',_chartWeek=null,_silentPoll=false,_tgLinkPoll=null,_userTgLinked=false;
 
 /* ── API FETCH (15s timeout) ── */
 async function apiFetch(path,opts={},silent=false){
@@ -1736,6 +1738,7 @@ async function loadUserInfo(){
   const planNames={trial:'Пробный период — 14 дней бесплатно',start:'Старт — 15 000 ₸/мес',business:'Базовый — 25 000 ₸/мес',network:'Enterprise — от 120 000 ₸/мес'};
   set('sPlanDesc',planNames[d.plan]||d.plan||'');
   // Telegram status
+  _userTgLinked = !!(d.telegram_chat);
   renderTgStatus(d);
 }
 
@@ -1965,12 +1968,11 @@ async function loadLocations(){
         <span class="loc-type">${loc.business_type||''}</span>
       </div>
       <div class="loc-addr">${esc(loc.address||'—')}</div>
-      <div class="loc-key-block">
-        <div>
-          <div class="loc-key-label">API ключ</div>
-          <div class="loc-key-val">${maskKey(loc.api_key)}</div>
-        </div>
-        <button class="btn-icon" onclick="copyKey('${esc(loc.api_key||'')}')" title="Копировать">⧉</button>
+      <div style="margin:12px 0 4px">
+        ${(_userTgLinked||loc.telegram_chat)
+          ?`<div class="loc-tg-hint">📱 Уведомления активны</div>`
+          :`<div class="loc-tg-hint loc-tg-warn">⚠️ Подключите Telegram в <a onclick="showPage('settings')" style="color:var(--accent2);cursor:pointer">Настройках</a></div>`
+        }
       </div>
       <div class="loc-notify-row">
         <label class="toggle-wrap" title="Уведомлять о каждом разговоре, не только о нарушениях">
@@ -1979,8 +1981,10 @@ async function loadLocations(){
           <span class="toggle-lbl">Уведомлять о каждом разговоре</span>
         </label>
       </div>
-      ${loc.telegram_chat?`<div class="loc-tg-hint">📨 Telegram: <code>${esc(loc.telegram_chat)}</code></div>`:'<div class="loc-tg-hint loc-tg-warn">⚠️ Telegram не настроен</div>'}
-      <button class="btn-sm" onclick="openEditLoc(${loc.id})">Редактировать</button>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-ghost" style="flex:1" onclick="downloadInstaller(${loc.id},'${esc(loc.name)}',this)">⬇ Скачать для кассы</button>
+        <button class="btn-sm" onclick="openEditLoc(${loc.id})">Настройки</button>
+      </div>
     </div>`).join('');
 }
 
@@ -2049,6 +2053,24 @@ async function testTelegram(){
     if(d){res.textContent='✓ Тест-сообщение отправлено';res.style.color='#10B981';}
     else{res.textContent='✗ Ошибка — проверьте Chat ID';res.style.color='#EF4444';}
   }
+}
+
+/* ── INSTALLER DOWNLOAD ── */
+async function downloadInstaller(locId, locName, btn){
+  if(btn){btn.disabled=true;btn.textContent='Подготовка...';}
+  try{
+    const res=await fetch('/api/download/installer/'+locId,{
+      headers:{Authorization:'Bearer '+_token}
+    });
+    if(!res.ok){showErr('Ошибка загрузки установщика');return;}
+    const blob=await res.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='TrustControl_'+locName.replace(/[^\w\-]/g,'_')+'.zip';
+    a.click();URL.revokeObjectURL(url);
+  }catch(e){showErr('Ошибка: '+e.message);}
+  finally{if(btn){btn.disabled=false;btn.textContent='⬇ Скачать для кассы';}}
 }
 
 /* ── HELPERS ── */
