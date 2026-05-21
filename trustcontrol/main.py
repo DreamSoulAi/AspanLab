@@ -353,6 +353,43 @@ async def _fix_schema():
                     await db.commit()
                     log.info("✅ schema fix: otp_codes.email made nullable")
 
+            # ── users.company_name ──────────────────────────────────────────
+            r_cn = await db.execute(sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name='users' AND column_name='company_name'"
+            ))
+            if not r_cn.fetchone():
+                await db.execute(sa.text(
+                    "ALTER TABLE users ADD COLUMN company_name VARCHAR(150)"
+                ))
+                await db.commit()
+                log.info("✅ schema fix: users.company_name added")
+
+            # ── locations.ignore_background_media (новый флаг) ─────────────
+            r_ibm = await db.execute(sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name='locations' AND column_name='ignore_background_media'"
+            ))
+            if not r_ibm.fetchone():
+                await db.execute(sa.text(
+                    "ALTER TABLE locations ADD COLUMN ignore_background_media BOOLEAN DEFAULT TRUE"
+                ))
+                await db.commit()
+                log.info("✅ schema fix: locations.ignore_background_media added")
+
+            # ── otp_codes.code — enlarge to 64 chars for SHA-256 hash ──────
+            if is_pg:
+                r_otp = await db.execute(sa.text(
+                    "SELECT character_maximum_length FROM information_schema.columns "
+                    "WHERE table_name='otp_codes' AND column_name='code'"
+                ))
+                row_otp = r_otp.fetchone()
+                if row_otp and row_otp[0] is not None and row_otp[0] < 64:
+                    await db.execute(sa.text(
+                        "ALTER TABLE otp_codes ALTER COLUMN code TYPE VARCHAR(64)"
+                    ))
+                    await db.commit()
+                    log.info("✅ schema fix: otp_codes.code enlarged to VARCHAR(64)")
         except Exception as e:
             log.warning(f"_fix_schema warning (non-fatal): {e}")
 

@@ -19,6 +19,7 @@
 
 import re
 import time
+import hashlib
 import secrets
 import traceback
 import logging
@@ -29,7 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update as sa_update
-from pydantic import BaseModel, field_validator, Field
+from pydantic import BaseModel, EmailStr, field_validator, Field
 import bcrypt as _bcrypt
 from jose import JWTError, jwt
 
@@ -47,6 +48,13 @@ ALGORITHM = "HS256"
 _login_attempts: dict[str, list[float]] = defaultdict(list)
 MAX_ATTEMPTS    = 5
 WINDOW_SECONDS  = 60
+
+
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 def _check_rate_limit(ip: str):
@@ -83,8 +91,12 @@ def _generate_otp() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
+def _hash_otp(code: str) -> str:
+    return hashlib.sha256(code.encode()).hexdigest()
+
+
 async def _create_and_send_otp(phone: str, name: str, db: AsyncSession) -> str:
-    """Invalidate old codes, generate a new one. Returns the code."""
+    """Invalidate old codes, generate a new one. Returns the plain code (never stored)."""
     await db.execute(
         sa_update(OtpCode)
         .where(OtpCode.phone == phone, OtpCode.used == False)  # noqa: E712
@@ -93,7 +105,7 @@ async def _create_and_send_otp(phone: str, name: str, db: AsyncSession) -> str:
     code = _generate_otp()
     db.add(OtpCode(
         phone=phone,
-        code=code,
+        code=_hash_otp(code),  # store hash, not plain text
         expires_at=datetime.utcnow() + timedelta(minutes=10),
     ))
     await db.flush()
@@ -113,7 +125,7 @@ class RegisterRequest(BaseModel):
     name:     str = Field(..., min_length=2, max_length=100)
     phone:    str
     password: str
-    email:    str = Field("", max_length=150)
+    email:    EmailStr | None = None
 
     @field_validator("password")
     @classmethod
@@ -198,7 +210,7 @@ async def app_config():
 
 @router.post("/register")
 async def register(data: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _get_client_ip(request)
     _check_rate_limit(client_ip)
     try:
         existing = await db.execute(select(User).where(User.phone == data.phone))
@@ -208,7 +220,7 @@ async def register(data: RegisterRequest, request: Request, db: AsyncSession = D
             if existing_user.is_verified:
                 raise HTTPException(status_code=400, detail="Номер уже зарегистрирован")
             existing_user.name            = data.name
-            existing_user.email           = data.email or None
+            existing_user.email           = data.email
             existing_user.hashed_password = hash_password(data.password)
             code = await _create_and_send_otp(data.phone, data.name, db)
             await db.commit()
@@ -220,7 +232,7 @@ async def register(data: RegisterRequest, request: Request, db: AsyncSession = D
         user = User(
             name=data.name,
             phone=data.phone,
-            email=data.email or None,
+            email=data.email,
             hashed_password=hash_password(data.password),
             plan="trial",
             plan_expires=datetime.utcnow() + timedelta(days=14),
@@ -246,7 +258,7 @@ async def register(data: RegisterRequest, request: Request, db: AsyncSession = D
 
 @router.post("/send-otp")
 async def send_otp(data: OtpSendRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _get_client_ip(request)
     _check_rate_limit(client_ip)
 
     phone = normalize_phone(data.phone) or data.phone.strip()
@@ -266,7 +278,7 @@ async def send_otp(data: OtpSendRequest, request: Request, db: AsyncSession = De
 
 @router.post("/verify-otp", response_model=TokenResponse)
 async def verify_otp(data: OtpVerifyRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _get_client_ip(request)
     _check_rate_limit(client_ip)
 
     phone = normalize_phone(data.phone) or data.phone.strip()
@@ -274,7 +286,7 @@ async def verify_otp(data: OtpVerifyRequest, request: Request, db: AsyncSession 
     result = await db.execute(
         select(OtpCode).where(
             OtpCode.phone      == phone,
-            OtpCode.code       == data.code.strip(),
+            OtpCode.code       == _hash_otp(data.code.strip()),
             OtpCode.used       == False,           # noqa: E712
             OtpCode.expires_at >  datetime.utcnow(),
         )
@@ -308,7 +320,7 @@ async def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _get_client_ip(request)
     _check_rate_limit(client_ip)
 
     phone = normalize_phone(form.username) or form.username.strip()
@@ -359,10 +371,11 @@ async def me(user: User = Depends(get_current_user)):
 
 
 class UpdateMeRequest(BaseModel):
-    name:          str | None = Field(None, max_length=100)
-    email:         str | None = Field(None, max_length=150)
-    telegram_chat: str | None = Field(None, max_length=50)
-    password:      str | None = None
+    name:          str | None      = Field(None, max_length=100)
+    company_name:  str | None      = Field(None, max_length=150)
+    email:         EmailStr | None = None
+    telegram_chat: str | None      = Field(None, max_length=50)
+    password:      str | None      = None
 
 
 @router.patch("/me")
@@ -373,8 +386,10 @@ async def update_me(
 ):
     if data.name is not None:
         user.name = data.name.strip()
+    if data.company_name is not None:
+        user.company_name = data.company_name.strip() or None
     if data.email is not None:
-        user.email = data.email.strip() or None
+        user.email = str(data.email)  # EmailStr already validated
     if data.telegram_chat is not None:
         user.telegram_chat = data.telegram_chat.strip() or None
     if data.password:
