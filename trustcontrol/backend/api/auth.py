@@ -390,16 +390,24 @@ async def tg_link(
     user: User = Depends(get_current_user),
 ):
     """
-    Генерирует одноразовый токен для привязки Telegram.
-    Возвращает ссылку вида t.me/BOT?start=TOKEN.
-    Токен действителен 10 минут.
+    Генерирует одноразовый токен для привязки Telegram к профилю пользователя.
+    Если TELEGRAM_BOT_USERNAME не задан — получает username бота из Telegram API.
     """
     from backend.api.telegram_webhook import generate_link_token
     from backend.config import settings
 
-    token    = generate_link_token(user.id)
+    token    = generate_link_token({"type": "user", "user_id": user.id})
     bot_name = settings.TELEGRAM_BOT_USERNAME
-    url      = f"https://t.me/{bot_name}?start={token}" if bot_name else None
+
+    if not bot_name:
+        try:
+            from backend.services.notifier import get_bot
+            me       = await get_bot().get_me()
+            bot_name = me.username
+        except Exception:
+            pass
+
+    url = f"https://t.me/{bot_name}?start={token}" if bot_name else None
     return {"token": token, "url": url, "bot_username": bot_name}
 
 

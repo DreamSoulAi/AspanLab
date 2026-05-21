@@ -283,6 +283,38 @@ async def test_telegram(
         raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
 
 
+@router.post("/{location_id}/tg-link")
+async def location_tg_link(
+    location_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Генерирует одноразовый токен для привязки Telegram к точке.
+    Если TELEGRAM_BOT_USERNAME не задан — получает его из Telegram API.
+    """
+    loc = await db.get(Location, location_id)
+    if not loc or loc.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Точка не найдена")
+
+    from backend.api.telegram_webhook import generate_link_token
+    from backend.config import settings
+
+    token    = generate_link_token({"type": "location", "location_id": location_id, "user_id": user.id})
+    bot_name = settings.TELEGRAM_BOT_USERNAME
+
+    if not bot_name:
+        try:
+            from backend.services.notifier import get_bot
+            me       = await get_bot().get_me()
+            bot_name = me.username
+        except Exception:
+            pass
+
+    url = f"https://t.me/{bot_name}?start={token}" if bot_name else None
+    return {"token": token, "url": url, "bot_username": bot_name}
+
+
 @router.delete("/{location_id}")
 async def delete_location(
     location_id: int,

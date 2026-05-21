@@ -63,15 +63,17 @@ _WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
 _link_tokens: dict[str, dict] = {}
 
 
-def generate_link_token(user_id: int) -> str:
-    """Create a one-time token used in the /start deep-link."""
+def generate_link_token(payload: dict) -> str:
+    """
+    Create a one-time token used in the /start deep-link.
+    payload must contain 'type': 'user' | 'location', plus 'user_id' or 'location_id'.
+    """
     now = time.time()
-    # Prune expired tokens
     for t in list(_link_tokens):
         if _link_tokens[t]["expires"] < now:
             del _link_tokens[t]
     token = secrets.token_urlsafe(16)
-    _link_tokens[token] = {"user_id": user_id, "expires": now + 600}
+    _link_tokens[token] = {**payload, "expires": now + 600}
     return token
 
 
@@ -230,22 +232,30 @@ async def _handle_false_positive(incident_id: int) -> str:
 # ── Account linking ────────────────────────────────────────────────────────────
 
 async def _handle_link(chat_id: str, token: str):
-    bot       = get_bot()
+    bot        = get_bot()
     token_data = _link_tokens.get(token)
 
     if not token_data or token_data["expires"] < time.time():
         await bot.send_message(
             chat_id=chat_id,
-            text="❌ Ссылка устарела или недействительна.\n\nПолучите новую в личном кабинете → *Настройки*.",
+            text="❌ Ссылка устарела или недействительна.\n\nПолучите новую в личном кабинете.",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
 
-    user_id = token_data["user_id"]
     del _link_tokens[token]
+    link_type = token_data.get("type", "user")
 
+    if link_type == "location":
+        await _handle_link_location(chat_id, token_data)
+    else:
+        await _handle_link_user(chat_id, token_data)
+
+
+async def _handle_link_user(chat_id: str, token_data: dict):
+    bot = get_bot()
     async with AsyncSessionLocal() as db:
-        user = await db.get(User, user_id)
+        user = await db.get(User, token_data["user_id"])
         if not user:
             await bot.send_message(chat_id=chat_id, text="❌ Пользователь не найден.")
             return
@@ -256,15 +266,37 @@ async def _handle_link(chat_id: str, token: str):
     await bot.send_message(
         chat_id=chat_id,
         text=(
-            f"✅ *Telegram успешно привязан!*\n\n"
+            f"✅ *Telegram привязан к профилю!*\n\n"
             f"Привет, *{name}*! Теперь сюда будут приходить:\n"
             f"• Уведомления о нарушениях\n"
-            f"• Ежедневный итог\n"
+            f"• Ежедневный итог в 22:00\n"
             f"• Тревоги с кнопками\n\n"
             f"Используйте кнопки ниже:"
         ),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_main_keyboard(),
+    )
+
+
+async def _handle_link_location(chat_id: str, token_data: dict):
+    bot = get_bot()
+    async with AsyncSessionLocal() as db:
+        loc = await db.get(Location, token_data["location_id"])
+        if not loc:
+            await bot.send_message(chat_id=chat_id, text="❌ Точка не найдена.")
+            return
+        loc.telegram_chat = chat_id
+        await db.commit()
+        loc_name = loc.name
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            f"✅ *Telegram привязан к точке «{loc_name}»!*\n\n"
+            f"Сюда будут приходить уведомления с этой кассы.\n\n"
+            f"Чтобы проверить — скажите что-нибудь на кассе."
+        ),
+        parse_mode=ParseMode.MARKDOWN,
     )
 
 

@@ -972,8 +972,8 @@ textarea.f-input{resize:vertical;line-height:1.6}
     <div class="f-group">
       <div id="locTgStatus" style="font-size:13px;color:var(--muted);margin-bottom:10px"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-        <button class="btn btn-primary" onclick="useMyTelegram()" style="font-size:13px;padding:8px 14px">👤 Использовать мой Telegram</button>
-        <button class="btn btn-ghost" onclick="toggleLocTgManual()" style="font-size:13px;padding:8px 14px" id="locTgManualToggle">⚙️ Групповой чат</button>
+        <button class="btn btn-primary" id="locTgLinkBtn" onclick="linkLocationTelegram()" style="font-size:13px;padding:8px 14px">🔗 Привязать Telegram</button>
+        <button class="btn btn-ghost" onclick="toggleLocTgManual()" style="font-size:13px;padding:8px 14px">⚙️ Групповой чат</button>
       </div>
       <div id="locTgManualBlock" style="display:none">
         <label class="f-label" style="margin-bottom:4px">Chat ID группы</label>
@@ -1959,17 +1959,30 @@ async function saveLocation(){
   if(d){closeEditLocation();loadLocations();}
 }
 
-async function useMyTelegram(){
-  const me=await apiFetch('/auth/me');if(!me)return;
-  if(!me.telegram_chat){
-    showErr('Сначала привяжите Telegram в Настройках профиля',true);return;
+async function linkLocationTelegram(){
+  const id=val('editLocId');if(!id)return;
+  const d=await apiFetch('/locations/'+id+'/tg-link',{method:'POST',body:'{}'});
+  if(!d)return;
+  if(d.url){
+    window.open(d.url,'_blank');
+    showErr('Telegram открыт — нажмите Start в боте');
+    // Poll 30s until location.telegram_chat is set
+    let tries=0;
+    const timer=setInterval(async()=>{
+      tries++;
+      const loc=await apiFetch('/locations/'+id);
+      if(loc&&loc.telegram_chat){
+        clearInterval(timer);
+        setVal('editLocTg',loc.telegram_chat);
+        const statusEl=document.getElementById('locTgStatus');
+        if(statusEl)statusEl.innerHTML=`✅ Telegram привязан: <code>${esc(loc.telegram_chat)}</code>`;
+        showErr('✅ Telegram привязан к точке!');
+      }
+      if(tries>=6)clearInterval(timer);
+    },5000);
+  } else {
+    showErr('Бот не настроен на сервере',true);
   }
-  setVal('editLocTg',me.telegram_chat);
-  const statusEl=document.getElementById('locTgStatus');
-  if(statusEl)statusEl.innerHTML=`✅ Установлен ваш Telegram: <code>${esc(me.telegram_chat)}</code>`;
-  const manualBlock=document.getElementById('locTgManualBlock');
-  if(manualBlock)manualBlock.style.display='none';
-  showErr('Telegram скопирован — нажмите Сохранить');
 }
 
 function toggleLocTgManual(){
