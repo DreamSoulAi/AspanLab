@@ -498,6 +498,51 @@ textarea.f-input{resize:vertical;line-height:1.6}
 .mn-ico{font-size:18px}
 .mn-badge{position:absolute;top:4px;right:calc(50% - 16px);background:var(--red);color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 3px;border-radius:8px;display:none;align-items:center;justify-content:center}
 @media(max-width:768px){.mob-nav{display:block}}
+
+/* ONBOARDING */
+#onboardModal{display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.88);backdrop-filter:blur(8px);align-items:center;justify-content:center;padding:16px}
+.onboard-box{background:var(--surface);border:1px solid var(--bdr2);border-radius:24px;padding:36px 32px;max-width:440px;width:100%}
+.onboard-step{display:flex;align-items:flex-start;gap:14px;padding:12px 0;border-bottom:1px solid var(--bdr)}
+.onboard-step:last-child{border-bottom:none}
+.onboard-ico{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;margin-top:1px}
+.onboard-ico.done{background:rgba(16,185,129,.15);color:#10B981}
+.onboard-ico.todo{background:rgba(255,255,255,.06);color:var(--muted)}
+.onboard-step-title{font-weight:600;font-size:14px;margin-bottom:3px}
+.onboard-step-desc{font-size:12px;color:var(--muted);line-height:1.5}
+
+/* STAFF / SHIFTS */
+.shift-card{background:var(--surface);border:1px solid var(--bdr);border-radius:14px;padding:20px 24px;margin-bottom:12px;transition:border-color .2s}
+.shift-card:hover{border-color:var(--bdr2)}
+.shift-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.shift-badge{background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);color:var(--accent2);font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px}
+.shift-time{font-size:12px;color:var(--muted)}
+.shift-score{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:28px;margin-left:auto}
+.shift-score.g{color:#10B981}.shift-score.y{color:#F59E0B}.shift-score.r{color:#EF4444}
+.shift-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.shift-stat{background:var(--surface2);border-radius:10px;padding:12px;text-align:center}
+.shift-stat-val{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:20px;margin-bottom:3px}
+.shift-stat-lbl{font-size:11px;color:var(--muted)}
+.staff-empty{text-align:center;padding:60px 24px;color:var(--muted);font-size:14px;line-height:1.7}
+
+/* PAYMENT MODAL */
+.pay-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+@media(max-width:480px){.pay-grid{grid-template-columns:1fr}}
+.pay-plan{background:var(--surface2);border:1px solid var(--bdr);border-radius:12px;padding:16px;position:relative;transition:border-color .2s}
+.pay-plan.hot{border-color:rgba(59,130,246,.4);background:rgba(59,130,246,.04)}
+.pay-plan-name{font-weight:700;font-size:14px;margin-bottom:4px}
+.pay-plan-price{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:17px;color:var(--accent2);margin-bottom:6px}
+.pay-plan-desc{font-size:11px;color:var(--muted);line-height:1.5}
+
+/* TG STATUS in settings */
+.tg-status-box{padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tg-status-box.linked{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);color:#10B981}
+.tg-status-box.unlinked{background:rgba(255,255,255,.04);border:1px solid var(--bdr);color:var(--muted)}
+.tg-link-btn{background:rgba(34,158,217,.12);color:#229ED9;border:1px solid rgba(34,158,217,.25);padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif;width:100%}
+.tg-link-btn:hover{background:rgba(34,158,217,.22)}
+.tg-unlink-btn{background:transparent;color:var(--muted);border:1px solid var(--bdr);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-left:auto}
+.tg-unlink-btn:hover{border-color:#EF4444;color:#EF4444}
+.upgrade-btn{display:inline-flex;align-items:center;gap:8px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);color:var(--accent2);padding:9px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif}
+.upgrade-btn:hover{background:rgba(59,130,246,.2);border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -1000,6 +1045,55 @@ textarea.f-input{resize:vertical;line-height:1.6}
 </div>
 
 <!-- ════════════════════════════════
+     ONBOARDING MODAL
+════════════════════════════════ -->
+<div id="onboardModal">
+  <div class="onboard-box">
+    <div style="font-size:44px;margin-bottom:14px;text-align:center">🎉</div>
+    <h2 style="font-family:'Syne',sans-serif;font-weight:800;font-size:22px;letter-spacing:-.3px;margin-bottom:8px;text-align:center">Добро пожаловать!</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:22px;line-height:1.6;text-align:center">Три шага — и первый отчёт придёт в Telegram</p>
+    <div id="onboardSteps"></div>
+    <button onclick="closeOnboard();showPage('locations')" style="width:100%;background:var(--accent);color:#fff;border:none;padding:12px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:20px">Создать первую точку →</button>
+    <div onclick="closeOnboard()" style="margin-top:10px;font-size:12px;color:var(--muted);cursor:pointer;text-align:center;padding:4px">Закрыть</div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════
+     MODAL — Оплата / тариф
+════════════════════════════════ -->
+<div class="modal-overlay" id="payModal" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal-box" style="max-width:520px">
+    <button class="modal-close" onclick="document.getElementById('payModal').style.display='none'">✕</button>
+    <div class="modal-title">Сменить тариф</div>
+    <div class="pay-grid">
+      <div class="pay-plan">
+        <div class="pay-plan-name">Старт</div>
+        <div class="pay-plan-price">15 000 ₸/мес</div>
+        <div class="pay-plan-desc">1 касса · 50 ч ИИ-анализа</div>
+      </div>
+      <div class="pay-plan hot">
+        <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:3px 12px;border-radius:10px;white-space:nowrap">ХИТ</div>
+        <div class="pay-plan-name">Базовый</div>
+        <div class="pay-plan-price">25 000 ₸/мес</div>
+        <div class="pay-plan-desc">1–2 точки · 120 ч · Оборудование в подарок</div>
+      </div>
+      <div class="pay-plan">
+        <div class="pay-plan-name">Pro</div>
+        <div class="pay-plan-price">50 000 ₸/мес</div>
+        <div class="pay-plan-desc">До 10 точек · 240 ч · AI-Pin в подарок</div>
+      </div>
+      <div class="pay-plan">
+        <div class="pay-plan-name">Enterprise</div>
+        <div class="pay-plan-price">от 120 000 ₸/мес</div>
+        <div class="pay-plan-desc">10+ точек · SLA 99.9% · Данные в РК</div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px;text-align:center">Напишите нам — оформим оплату через Kaspi или счёт. Ответим в течение часа.</p>
+    <button onclick="window.open('https://t.me/aspanlab','_blank')" style="width:100%;background:#229ED9;color:#fff;border:none;padding:13px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">✈️ Написать в Telegram</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════
      APP / DASHBOARD
 ════════════════════════════════ -->
 <div id="appWrap">
@@ -1026,6 +1120,9 @@ textarea.f-input{resize:vertical;line-height:1.6}
         <a class="s-item" data-page="alerts" onclick="showPage('alerts')">
           <span class="s-ico">🚨</span> Тревоги
           <span class="s-badge" id="alertsBadge" style="display:none">0</span>
+        </a>
+        <a class="s-item" data-page="staff" onclick="showPage('staff')">
+          <span class="s-ico">📈</span> Сотрудники
         </a>
         <a class="s-item" data-page="locations" onclick="showPage('locations')">
           <span class="s-ico">🏪</span> Точки
@@ -1231,6 +1328,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
               <option value="7" selected>7 дней</option>
               <option value="30">30 дней</option>
             </select>
+            <button class="btn btn-ghost" onclick="exportCSV()">⬇ CSV</button>
             <button class="btn btn-a" onclick="loadReportsPage()">Обновить</button>
           </div>
         </div>
@@ -1240,6 +1338,28 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <!-- Desktop list -->
           <div id="reportsDesktop"></div>
         </div>
+      </div>
+
+      <!-- ── STAFF / SHIFTS ── -->
+      <div class="page" id="page-staff">
+        <div class="topbar">
+          <div class="page-title">📈 Сотрудники</div>
+          <div class="topbar-r">
+            <select class="loc-select" id="staffDays" onchange="loadStaff()">
+              <option value="7" selected>7 дней</option>
+              <option value="30">30 дней</option>
+            </select>
+            <button class="btn btn-ghost" onclick="exportCSV()">⬇ Экспорт CSV</button>
+            <button class="btn btn-a" onclick="loadStaff()">Обновить</button>
+          </div>
+        </div>
+        <div class="panel" style="margin-bottom:12px;background:rgba(59,130,246,.03);border-color:rgba(59,130,246,.15)">
+          <p style="font-size:13px;color:var(--muted);line-height:1.6">
+            Данные разбиты по сменам на основе времени разговора.
+            <b style="color:var(--txt)">Смена 1</b> — утро (06–14), <b style="color:var(--txt)">Смена 2</b> — день (14–22), <b style="color:var(--txt)">Смена 3</b> — ночь (22–06).
+          </p>
+        </div>
+        <div id="staffContent"></div>
       </div>
 
       <!-- ── LOCATIONS ── -->
@@ -1277,8 +1397,9 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <input class="f-input" type="email" id="settingsEmail" placeholder="you@example.com" autocomplete="email" autocorrect="off" autocapitalize="off">
           </div>
           <div class="f-group">
-            <label class="f-label">Telegram Chat ID (для общих уведомлений)</label>
-            <input class="f-input" type="text" id="settingsTelegram" placeholder="-1001234567890">
+            <label class="f-label">Telegram</label>
+            <div id="tgStatusBlock" style="margin-top:2px"></div>
+            <div id="tgLinkInfo" style="font-size:12px;margin-top:6px;min-height:16px;color:var(--accent2)"></div>
           </div>
           <div class="f-group">
             <label class="f-label">Новый пароль (оставьте пустым чтобы не менять)</label>
@@ -1289,11 +1410,12 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
         <div class="panel" style="margin-bottom:14px">
           <h3 style="margin-bottom:14px">Тариф</h3>
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
             <span class="plan-badge" id="sPlanBadge">—</span>
             <span id="sPlanExpiry" style="font-size:12px;color:var(--muted)"></span>
           </div>
-          <div id="sPlanDesc" style="font-size:13px;color:var(--muted);line-height:1.6"></div>
+          <div id="sPlanDesc" style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px"></div>
+          <button class="upgrade-btn" onclick="document.getElementById('payModal').style.display='flex'">🚀 Сменить / продлить тариф</button>
         </div>
 
         <div class="panel" style="margin-bottom:14px;border-color:rgba(59,130,246,.2);background:rgba(59,130,246,.03)">
@@ -1310,10 +1432,10 @@ textarea.f-input{resize:vertical;line-height:1.6}
         <div class="panel">
           <h3 style="margin-bottom:14px">Быстрый старт</h3>
           <div style="font-size:13px;color:var(--muted);line-height:2.1">
-            <div>1. Раздел <b style="color:var(--txt)">Точки</b> → нажми <b style="color:var(--txt)">Редактировать</b></div>
-            <div>2. Вставь <b style="color:var(--txt)">Telegram Chat ID</b> и протестируй</div>
-            <div>3. Скопируй <b style="color:var(--txt)">API ключ</b> точки</div>
-            <div>4. На кассовом ПК запусти:</div>
+            <div>1. Раздел <b style="color:var(--txt)">Точки</b> → нажми <b style="color:var(--txt)">+ Добавить</b> → создай первую точку</div>
+            <div>2. В <b style="color:var(--txt)">Настройках</b> нажми <b style="color:var(--txt)">Подключить через Telegram</b></div>
+            <div>3. В карточке точки скопируй ключ (кнопка ⧉)</div>
+            <div>4. Скачай и запусти <b style="color:var(--txt)">установщик</b> на кассовом ПК:</div>
             <div class="qs-code">py monitor.py --api-url https://ВАШ-САЙТ.onrender.com --api-key КЛЮЧ</div>
             <div>5. Скажи что-нибудь — отчёт придёт через ~15 сек</div>
           </div>
@@ -1379,7 +1501,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
 const API='/api';
 let _token=localStorage.getItem('tc_token')||'';
-let _pollTimer=null,_currentPage='overview',_chartWeek=null,_silentPoll=false;
+let _pollTimer=null,_currentPage='overview',_chartWeek=null,_silentPoll=false,_tgLinkPoll=null;
 
 /* ── API FETCH (15s timeout) ── */
 async function apiFetch(path,opts={},silent=false){
@@ -1560,6 +1682,7 @@ function startDashboard(){
   if(dc)dc.style.display='none';
   loadUserInfo();
   showPage('overview');
+  setTimeout(checkOnboarding, 1800);
   clearInterval(_pollTimer);
   _pollTimer=setInterval(()=>{
     _silentPoll=true;
@@ -1572,7 +1695,7 @@ function startDashboard(){
 /* ── PAGE NAV ── */
 function showPage(page){
   _currentPage=page;
-  ['overview','alerts','reports','locations','settings'].forEach(p=>{
+  ['overview','alerts','reports','staff','locations','settings'].forEach(p=>{
     const el=document.getElementById('page-'+p);
     if(el)el.style.display=p===page?'':'none';
     const cl=el;if(cl)cl.classList.toggle('active',p===page);
@@ -1584,6 +1707,7 @@ function showPage(page){
   if(page==='overview')loadDashboard();
   else if(page==='alerts')loadAlerts();
   else if(page==='reports')loadReportsPage();
+  else if(page==='staff')loadStaff();
   else if(page==='locations')loadLocations();
   else if(page==='settings')loadUserInfo();
 }
@@ -1598,15 +1722,27 @@ async function loadUserInfo(){
   setVal('settingsPhone',d.phone);
   setVal('settingsCompany',d.company_name);
   setVal('settingsEmail',d.email);
-  setVal('settingsTelegram',d.telegram_chat);
   set('sPlanBadge',(d.plan||'trial').toUpperCase());
   document.getElementById('sPlanBadge').className='plan-badge';
+  // Plan expiry
+  if(d.plan_expires){
+    const exp=new Date(d.plan_expires),now=new Date();
+    const days=Math.ceil((exp-now)/(1000*60*60*24));
+    const dateStr=exp.toLocaleDateString('ru-KZ',{day:'2-digit',month:'2-digit',year:'numeric'});
+    set('sPlanExpiry',days>0?`до ${dateStr} (${days} дн.)`:'Истёк — обновите тариф');
+    if(days<=3&&days>0)document.getElementById('sPlanExpiry').style.color='#F59E0B';
+    if(days<=0)document.getElementById('sPlanExpiry').style.color='#EF4444';
+  }
+  const planNames={trial:'Пробный период — 14 дней бесплатно',start:'Старт — 15 000 ₸/мес',business:'Базовый — 25 000 ₸/мес',network:'Enterprise — от 120 000 ₸/мес'};
+  set('sPlanDesc',planNames[d.plan]||d.plan||'');
+  // Telegram status
+  renderTgStatus(d);
 }
 
 async function saveSettings(){
   const payload={
     name:val('settingsName'),company_name:val('settingsCompany'),
-    email:val('settingsEmail'),telegram_chat:val('settingsTelegram'),
+    email:val('settingsEmail'),
   };
   const p=val('settingsPassword');if(p)payload.password=p;
   const d=await apiFetch('/auth/me',{method:'PATCH',body:JSON.stringify(payload)});
@@ -1695,7 +1831,7 @@ function buildWeekChart(week){
       datasets:[
         {label:'Разговоры',data:rev.map(d=>d.total||0),borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.1)',tension:.4,fill:true,pointRadius:3},
         {label:'Приветствия %',data:rev.map(d=>d.greetings_pct||0),borderColor:'#10B981',backgroundColor:'transparent',tension:.4,pointRadius:3},
-        {label:'Фрод',data:rev.map(d=>d.fraud_count||0),borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.06)',tension:.4,fill:true,pointRadius:3},
+        {label:'Мошенничество',data:rev.map(d=>d.fraud_count||0),borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.06)',tension:.4,fill:true,pointRadius:3},
       ],
     },
     options:{
@@ -1924,6 +2060,155 @@ function fmt(iso){if(!iso)return'—';try{return new Date(iso).toLocaleString('r
 function alertName(t){return({fraud:'Мошенничество',bad_language:'Грубость',negative_tone:'Негатив',no_greeting:'Без приветствия',no_goodbye:'Без прощания'})[t]||t;}
 function incName(t){return({KASPI_FRAUD:'Kaspi-мошенничество',FRAUD:'Мошенничество',AGGRESSION:'Агрессия',UPSELL_GAP:'Упущ. допродажа'})[t]||t;}
 function toneName(t){return({positive:'😊 Позитив',neutral:'😐 Нейтральный',negative:'😤 Негатив'})[t]||t||'—';}
+
+/* ── STAFF / SHIFTS ── */
+async function loadStaff(){
+  const days=document.getElementById('staffDays')?.value||'7';
+  const el=document.getElementById('staffContent');if(!el)return;
+  el.innerHTML='<p style="color:var(--muted);text-align:center;padding:48px">Загрузка...</p>';
+  const d=await apiFetch('/reports/?days='+days+'&limit=500');
+  if(!d||!d.length){
+    el.innerHTML='<div class="staff-empty">Нет данных за выбранный период.<br>Данные появятся после первых разговоров на кассе.</div>';
+    return;
+  }
+  const shifts=[
+    {n:1,label:'Смена 1',time:'06:00 – 14:00'},
+    {n:2,label:'Смена 2',time:'14:00 – 22:00'},
+    {n:3,label:'Смена 3',time:'22:00 – 06:00'},
+  ];
+  const groups={1:[],2:[],3:[]};
+  d.forEach(r=>{
+    const h=new Date(r.timestamp||r.created_at).getHours();
+    groups[h>=6&&h<14?1:h>=14&&h<22?2:3].push(r);
+  });
+  el.innerHTML=shifts.map(s=>{
+    const rows=groups[s.n];
+    if(!rows.length)return`<div class="shift-card"><div class="shift-header"><span class="shift-badge">${s.label}</span><span class="shift-time">${s.time}</span><span style="margin-left:auto;font-size:12px;color:var(--muted)">Нет разговоров</span></div></div>`;
+    const total=rows.length;
+    const avg=Math.round(rows.reduce((a,r)=>a+(r.score||0),0)/total);
+    const greet=Math.round(rows.filter(r=>r.has_greeting).length/total*100);
+    const bad=rows.filter(r=>r.has_bad||r.has_fraud).length;
+    const bonus=rows.filter(r=>r.has_bonus).length;
+    const sc=avg>=80?'g':avg>=60?'y':'r';
+    return`<div class="shift-card">
+      <div class="shift-header">
+        <span class="shift-badge">${s.label}</span>
+        <span class="shift-time">${s.time}</span>
+        <span class="shift-score ${sc}">${avg}</span>
+      </div>
+      <div class="shift-stats">
+        <div class="shift-stat"><div class="shift-stat-val">${total}</div><div class="shift-stat-lbl">Разговоров</div></div>
+        <div class="shift-stat"><div class="shift-stat-val" style="color:${greet>=80?'#10B981':greet>=60?'#F59E0B':'#EF4444'}">${greet}%</div><div class="shift-stat-lbl">Приветствий</div></div>
+        <div class="shift-stat"><div class="shift-stat-val" style="color:${bonus>0?'#10B981':'var(--muted)'}">${bonus}</div><div class="shift-stat-lbl">Допродаж</div></div>
+        <div class="shift-stat"><div class="shift-stat-val" style="color:${bad>0?'#EF4444':'#10B981'}">${bad}</div><div class="shift-stat-lbl">Нарушений</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ── CSV EXPORT ── */
+async function exportCSV(){
+  const days=document.getElementById('reportDays')?.value||document.getElementById('staffDays')?.value||'7';
+  showErr('Подготовка экспорта...');
+  const d=await apiFetch('/reports/?days='+days+'&limit=2000');
+  if(!d||!d.length){showErr('Нет данных для экспорта');return;}
+  const rows=[['Дата','Время','Точка','Тон','Оценка','Приветствие','Допродажа','Нарушение','Мошенничество','Текст разговора']];
+  d.forEach(r=>{
+    const dt=new Date(r.timestamp||r.created_at);
+    rows.push([
+      dt.toLocaleDateString('ru-KZ'),
+      dt.toLocaleTimeString('ru-KZ',{hour:'2-digit',minute:'2-digit'}),
+      r.location_name||r.location_id||'',
+      ({positive:'Позитив',neutral:'Нейтральный',negative:'Негатив'})[r.tone]||r.tone||'',
+      Math.round(r.score||0),
+      r.has_greeting?'Да':'Нет',
+      r.has_bonus?'Да':'Нет',
+      r.has_bad?'Да':'Нет',
+      r.has_fraud?'Да':'Нет',
+      (r.transcript||'').replace(/[\n\r]/g,' '),
+    ]);
+  });
+  const csv='﻿'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;
+  a.download='trustcontrol_'+days+'d_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();URL.revokeObjectURL(url);
+  showErr('Экспорт готов ✓');
+}
+
+/* ── ONBOARDING ── */
+async function checkOnboarding(){
+  if(localStorage.getItem('tc_onboarded')==='1')return;
+  const [locs,me]=await Promise.all([
+    apiFetch('/locations/',{},true),
+    apiFetch('/auth/me',{},true),
+  ]);
+  const hasLoc=locs&&locs.length>0;
+  const hasTg=me&&!!me.telegram_chat;
+  const steps=[
+    {done:hasLoc,title:'Создайте первую точку',    desc:'Раздел «Точки» → кнопка «+ Добавить»'},
+    {done:hasTg, title:'Подключите Telegram',       desc:'«Настройки» → «Подключить через Telegram»'},
+    {done:false, title:'Запустите кассовый скрипт', desc:'Скачайте установщик в разделе «Точки»'},
+  ];
+  document.getElementById('onboardSteps').innerHTML=steps.map(s=>`
+    <div class="onboard-step">
+      <div class="onboard-ico ${s.done?'done':'todo'}">${s.done?'✓':'○'}</div>
+      <div>
+        <div class="onboard-step-title" style="color:${s.done?'var(--green)':'var(--txt)'}">${s.title}</div>
+        <div class="onboard-step-desc">${s.done?'<span style="color:var(--green)">Готово ✓</span>':s.desc}</div>
+      </div>
+    </div>`).join('');
+  document.getElementById('onboardModal').style.display='flex';
+}
+
+function closeOnboard(){
+  document.getElementById('onboardModal').style.display='none';
+  localStorage.setItem('tc_onboarded','1');
+}
+
+/* ── TELEGRAM LINK / UNLINK ── */
+function renderTgStatus(d){
+  const el=document.getElementById('tgStatusBlock');if(!el)return;
+  if(d&&d.telegram_chat){
+    el.innerHTML=`<div class="tg-status-box linked">
+      <span>✅ Telegram подключён</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;opacity:.7">${esc(d.telegram_chat)}</span>
+      <button class="tg-unlink-btn" onclick="unlinkTelegram()">Отвязать</button>
+    </div>`;
+  }else{
+    el.innerHTML=`<div class="tg-status-box unlinked">⚡ Telegram не подключён — тревоги не будут приходить</div>
+    <button class="tg-link-btn" id="tgLinkBtn" onclick="linkTelegram()">🔗 Подключить через Telegram</button>`;
+  }
+}
+
+async function linkTelegram(){
+  const btn=document.getElementById('tgLinkBtn');
+  if(btn){btn.disabled=true;btn.textContent='Создаём ссылку...';}
+  const d=await apiFetch('/auth/tg-link',{method:'POST',body:'{}'});
+  if(btn){btn.disabled=false;btn.textContent='🔗 Подключить через Telegram';}
+  if(!d)return;
+  if(d.url)window.open(d.url,'_blank');
+  const info=document.getElementById('tgLinkInfo');
+  if(info){info.textContent='📱 Откройте ссылку в Telegram и нажмите «Старт» — страница обновится автоматически';info.style.color='var(--accent2)';}
+  clearInterval(_tgLinkPoll);
+  let polls=0;
+  _tgLinkPoll=setInterval(async()=>{
+    if(++polls>20){clearInterval(_tgLinkPoll);if(info)info.textContent='';return;}
+    const me=await apiFetch('/auth/me',{},true);
+    if(me&&me.telegram_chat){
+      clearInterval(_tgLinkPoll);
+      renderTgStatus(me);
+      if(info){info.textContent='✅ Telegram успешно подключён!';info.style.color='#10B981';setTimeout(()=>{if(info)info.textContent='';},4000);}
+    }
+  },3000);
+}
+
+async function unlinkTelegram(){
+  if(!confirm('Отвязать Telegram? Тревоги перестанут приходить.'))return;
+  const d=await apiFetch('/auth/tg-unlink',{method:'POST',body:'{}'});
+  if(d)loadUserInfo();
+}
 
 /* ── INIT ── */
 (async function init(){
