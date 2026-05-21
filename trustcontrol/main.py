@@ -353,6 +353,18 @@ async def _fix_schema():
                     await db.commit()
                     log.info("✅ schema fix: otp_codes.email made nullable")
 
+            # ── locations.ignore_background_media (новый флаг) ─────────────
+            r_ibm = await db.execute(sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name='locations' AND column_name='ignore_background_media'"
+            ))
+            if not r_ibm.fetchone():
+                await db.execute(sa.text(
+                    "ALTER TABLE locations ADD COLUMN ignore_background_media BOOLEAN DEFAULT TRUE"
+                ))
+                await db.commit()
+                log.info("✅ schema fix: locations.ignore_background_media added")
+
         except Exception as e:
             log.warning(f"_fix_schema warning (non-fatal): {e}")
 

@@ -34,6 +34,9 @@ class Location(Base):
 
     # Анти-спам: Contextual Severity
     ignore_internal_profanity = Column(Boolean, default=False)
+    # Мат из фонового ТВ/видео/телефона другого человека не считается нарушением сотрудника.
+    # По умолчанию True — защита от ложных срабатываний.
+    ignore_background_media   = Column(Boolean, default=True)
     notify_ok_conversations   = Column(Boolean, default=False)
     # notify_ok_conversations=False → Telegram только при нарушениях (рекомендуется)
     # notify_ok_conversations=True  → краткое сообщение на каждый разговор

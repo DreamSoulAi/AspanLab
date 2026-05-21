@@ -83,6 +83,7 @@ async def _process_submission(
     allowed_phones: Optional[list] = None,
     required_upsells: Optional[list] = None,
     ignore_internal_profanity: bool = False,
+    ignore_background_media: bool = True,
     notify_ok_conversations: bool = False,
 ) -> None:
     """
@@ -516,6 +517,7 @@ async def submit_audio(
         allowed_phones=location.allowed_phones or [],
         required_upsells=location.required_upsells or [],
         ignore_internal_profanity=bool(location.ignore_internal_profanity),
+        ignore_background_media=bool(getattr(location, "ignore_background_media", True)),
         notify_ok_conversations=bool(getattr(location, "notify_ok_conversations", False)),
     )
 

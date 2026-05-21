@@ -987,6 +987,20 @@ textarea.f-input{resize:vertical;line-height:1.6}
     </div>
     <hr class="modal-divider">
     <div class="modal-sec-title">Уведомления</div>
+    <div class="f-group" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+      <input type="checkbox" id="editLocIgnoreBg" style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;margin-top:2px">
+      <label for="editLocIgnoreBg" style="font-size:13px;color:var(--dim);line-height:1.4;cursor:pointer">
+        <b style="color:var(--txt)">Не считать матом нарушения</b> из видео / ТВ / динамика телефона рядом<br>
+        <span style="font-size:11px;color:var(--muted)">Рекомендуется — защита от ложных тревог из фонового звука</span>
+      </label>
+    </div>
+    <div class="f-group" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+      <input type="checkbox" id="editLocIgnoreInternal" style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;margin-top:2px">
+      <label for="editLocIgnoreInternal" style="font-size:13px;color:var(--dim);line-height:1.4;cursor:pointer">
+        <b style="color:var(--txt)">Игнорировать мат сотрудников между собой</b> (когда нет клиента)<br>
+        <span style="font-size:11px;color:var(--muted)">Сотрудники матерятся в паузах — не твоё дело пока клиента нет</span>
+      </label>
+    </div>
     <div class="f-group" style="display:flex;align-items:center;gap:10px">
       <input type="checkbox" id="editLocNotifyOk" style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0">
       <label for="editLocNotifyOk" style="font-size:13px;color:var(--dim);line-height:1.4;cursor:pointer">
@@ -1926,6 +1940,8 @@ async function openEditLoc(id){
   setVal('editLocTg',d.telegram_chat);
   setVal('editLocPhones',(d.allowed_phones||[]).join('\n'));
   const cbOk=document.getElementById('editLocNotifyOk');if(cbOk)cbOk.checked=!!d.notify_ok_conversations;
+  const cbBg=document.getElementById('editLocIgnoreBg');if(cbBg)cbBg.checked=d.ignore_background_media!==false;
+  const cbInt=document.getElementById('editLocIgnoreInternal');if(cbInt)cbInt.checked=!!d.ignore_internal_profanity;
   const tr=document.getElementById('testTgResult');if(tr){tr.textContent='';tr.style.color='';}
   // Update TG status label
   const statusEl=document.getElementById('locTgStatus');
@@ -1945,12 +1961,16 @@ async function saveLocation(){
   const phonesRaw=val('editLocPhones');
   const phones=phonesRaw.split(/[\n,]/).map(p=>p.trim()).filter(Boolean);
   const cbOk=document.getElementById('editLocNotifyOk');
+  const cbBg=document.getElementById('editLocIgnoreBg');
+  const cbInt=document.getElementById('editLocIgnoreInternal');
   const payload={
     name:val('editLocName'),address:val('editLocAddress'),
     business_type:document.getElementById('editLocType')?.value,
     telegram_chat:val('editLocTg'),
     allowed_phones:phones,
-    notify_ok_conversations: cbOk?cbOk.checked:false,
+    notify_ok_conversations:   cbOk?cbOk.checked:false,
+    ignore_background_media:   cbBg?cbBg.checked:true,
+    ignore_internal_profanity: cbInt?cbInt.checked:false,
   };
   const btn=document.getElementById('saveLocBtn');
   if(btn){btn.disabled=true;btn.textContent='Сохранение...';}
