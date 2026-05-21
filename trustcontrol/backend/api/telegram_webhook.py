@@ -26,6 +26,7 @@ from sqlalchemy import select
 from backend.database import AsyncSessionLocal
 from backend.models.incident import Incident
 from backend.models.location import Location
+from backend.models.user import User
 from backend.services.notifier import get_bot
 
 log    = logging.getLogger("tg_webhook")
@@ -50,6 +51,16 @@ async def telegram_webhook(request: Request):
         update = await request.json()
     except Exception:
         return {"ok": True}
+
+    # Handle /start link_TOKEN for Telegram account linking
+    message = update.get("message", {})
+    if message:
+        text    = (message.get("text") or "").strip()
+        chat_id = str(message.get("chat", {}).get("id", ""))
+        if text.startswith("/start link_") and chat_id:
+            token = text[len("/start link_"):]
+            await _handle_tg_link(token, chat_id, message)
+            return {"ok": True}
 
     callback = update.get("callback_query")
     if not callback:
@@ -133,3 +144,47 @@ async def _handle_false_positive(incident_id: int) -> str:
         await db.commit()
 
     return f"❌ Помечено как ошибка системы.{whitelisted}"
+
+
+async def _handle_tg_link(token: str, chat_id: str, message: dict):
+    """Link a Telegram chat to a user account via one-time token."""
+    import time
+    from backend.api.auth import _tg_link_tokens
+
+    entry = _tg_link_tokens.pop(token, None)
+    if not entry:
+        try:
+            bot = get_bot()
+            await bot.send_message(chat_id=chat_id,
+                text="❌ Ссылка устарела или уже использована. Создайте новую в личном кабинете.")
+        except Exception as e:
+            log.error(f"tg_link reply error: {e}")
+        return
+
+    user_id, expires = entry
+    if time.time() > expires:
+        try:
+            bot = get_bot()
+            await bot.send_message(chat_id=chat_id,
+                text="❌ Ссылка устарела (10 минут). Создайте новую в личном кабинете.")
+        except Exception as e:
+            log.error(f"tg_link expired reply error: {e}")
+        return
+
+    telegram_id = str(message.get("from", {}).get("id", chat_id))
+
+    async with AsyncSessionLocal() as db:
+        user = await db.get(User, user_id)
+        if not user:
+            return
+        user.telegram_chat = chat_id
+        user.telegram_id   = telegram_id
+        await db.commit()
+
+    log.info(f"User #{user_id} linked Telegram chat {chat_id}")
+    try:
+        bot = get_bot()
+        await bot.send_message(chat_id=chat_id,
+            text=f"✅ Telegram подключён к TrustControl!\n\nТревоги и отчёты по вашим точкам будут приходить сюда.")
+    except Exception as e:
+        log.error(f"tg_link success reply error: {e}")

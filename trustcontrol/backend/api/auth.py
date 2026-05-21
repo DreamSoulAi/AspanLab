@@ -25,6 +25,7 @@ import traceback
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
+from typing import Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -46,6 +47,10 @@ ALGORITHM = "HS256"
 
 # ── Rate limiting ──────────────────────────────────────────────────────────────
 _login_attempts: dict[str, list[float]] = defaultdict(list)
+
+# ── Telegram link tokens ───────────────────────────────────────────────────────
+# token -> (user_id, expires_timestamp)
+_tg_link_tokens: dict[str, Tuple[int, float]] = {}
 MAX_ATTEMPTS    = 5
 WINDOW_SECONDS  = 60
 
@@ -402,5 +407,37 @@ async def update_me(
         if len(data.password) < 8:
             raise HTTPException(status_code=400, detail="Пароль минимум 8 символов")
         user.hashed_password = hash_password(data.password)
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.post("/tg-link")
+async def tg_link(user: User = Depends(get_current_user)):
+    """Generate a one-time Telegram deep link for account linking."""
+    # Clean expired tokens
+    now = time.time()
+    expired = [k for k, (_, exp) in _tg_link_tokens.items() if exp < now]
+    for k in expired:
+        del _tg_link_tokens[k]
+
+    token = secrets.token_urlsafe(16)
+    _tg_link_tokens[token] = (user.id, now + 600)  # 10 minutes
+
+    bot_username = settings.TELEGRAM_BOT_USERNAME
+    if not bot_username:
+        raise HTTPException(status_code=503, detail="Telegram бот не настроен")
+
+    url = f"https://t.me/{bot_username}?start=link_{token}"
+    return {"url": url, "token": token}
+
+
+@router.post("/tg-unlink")
+async def tg_unlink(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Remove Telegram link from account."""
+    user.telegram_chat = None
+    user.telegram_id   = None
     await db.commit()
     return {"status": "ok"}
