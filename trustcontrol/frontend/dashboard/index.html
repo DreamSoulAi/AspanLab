@@ -970,12 +970,19 @@ textarea.f-input{resize:vertical;line-height:1.6}
     <hr class="modal-divider">
     <div class="modal-sec-title">Telegram-уведомления</div>
     <div class="f-group">
-      <label class="f-label">Telegram Chat ID</label>
-      <input class="f-input" type="text" id="editLocTg" placeholder="-1001234567890">
-      <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">
-        Создайте группу → добавьте бота → найдите Chat ID через <span style="color:var(--accent2)">getUpdates</span>
+      <div id="locTgStatus" style="font-size:13px;color:var(--muted);margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn btn-primary" onclick="useMyTelegram()" style="font-size:13px;padding:8px 14px">👤 Использовать мой Telegram</button>
+        <button class="btn btn-ghost" onclick="toggleLocTgManual()" style="font-size:13px;padding:8px 14px" id="locTgManualToggle">⚙️ Групповой чат</button>
       </div>
-      <button class="test-tg-btn" onclick="testTelegram()">📨 Проверить Telegram</button>
+      <div id="locTgManualBlock" style="display:none">
+        <label class="f-label" style="margin-bottom:4px">Chat ID группы</label>
+        <input class="f-input" type="text" id="editLocTg" placeholder="-1001234567890" style="margin-bottom:6px">
+        <div style="font-size:11px;color:var(--muted);line-height:1.5">
+          Создайте группу → добавьте бота → найдите Chat ID через <span style="color:var(--accent2)">getUpdates</span>
+        </div>
+      </div>
+      <button class="test-tg-btn" onclick="testTelegram()" style="margin-top:10px">📨 Проверить Telegram</button>
       <div id="testTgResult"></div>
     </div>
     <hr class="modal-divider">
@@ -1920,6 +1927,15 @@ async function openEditLoc(id){
   setVal('editLocPhones',(d.allowed_phones||[]).join('\n'));
   const cbOk=document.getElementById('editLocNotifyOk');if(cbOk)cbOk.checked=!!d.notify_ok_conversations;
   const tr=document.getElementById('testTgResult');if(tr){tr.textContent='';tr.style.color='';}
+  // Update TG status label
+  const statusEl=document.getElementById('locTgStatus');
+  if(statusEl){
+    if(d.telegram_chat)statusEl.innerHTML=`✅ Telegram настроен: <code>${esc(d.telegram_chat)}</code>`;
+    else statusEl.textContent='⚠️ Telegram не настроен — уведомления не придут';
+  }
+  // Show manual block only if chat_id looks like a group (starts with -)
+  const manualBlock=document.getElementById('locTgManualBlock');
+  if(manualBlock)manualBlock.style.display=(d.telegram_chat&&d.telegram_chat.startsWith('-'))?'':'none';
   document.getElementById('editLocationModal').style.display='flex';
 }
 function closeEditLocation(){document.getElementById('editLocationModal').style.display='none';}
@@ -1941,6 +1957,24 @@ async function saveLocation(){
   const d=await apiFetch('/locations/'+id,{method:'PATCH',body:JSON.stringify(payload)});
   if(btn){btn.disabled=false;btn.textContent='Сохранить';}
   if(d){closeEditLocation();loadLocations();}
+}
+
+async function useMyTelegram(){
+  const me=await apiFetch('/auth/me');if(!me)return;
+  if(!me.telegram_chat){
+    showErr('Сначала привяжите Telegram в Настройках профиля',true);return;
+  }
+  setVal('editLocTg',me.telegram_chat);
+  const statusEl=document.getElementById('locTgStatus');
+  if(statusEl)statusEl.innerHTML=`✅ Установлен ваш Telegram: <code>${esc(me.telegram_chat)}</code>`;
+  const manualBlock=document.getElementById('locTgManualBlock');
+  if(manualBlock)manualBlock.style.display='none';
+  showErr('Telegram скопирован — нажмите Сохранить');
+}
+
+function toggleLocTgManual(){
+  const block=document.getElementById('locTgManualBlock');
+  if(block)block.style.display=block.style.display==='none'?'':'none';
 }
 
 async function testTelegram(){
