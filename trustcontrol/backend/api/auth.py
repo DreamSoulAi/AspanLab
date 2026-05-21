@@ -383,3 +383,32 @@ async def update_me(
         user.hashed_password = hash_password(data.password)
     await db.commit()
     return {"status": "ok"}
+
+
+@router.post("/tg-link")
+async def tg_link(
+    user: User = Depends(get_current_user),
+):
+    """
+    Генерирует одноразовый токен для привязки Telegram.
+    Возвращает ссылку вида t.me/BOT?start=TOKEN.
+    Токен действителен 10 минут.
+    """
+    from backend.api.telegram_webhook import generate_link_token
+    from backend.config import settings
+
+    token    = generate_link_token(user.id)
+    bot_name = settings.TELEGRAM_BOT_USERNAME
+    url      = f"https://t.me/{bot_name}?start={token}" if bot_name else None
+    return {"token": token, "url": url, "bot_username": bot_name}
+
+
+@router.post("/tg-unlink")
+async def tg_unlink(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Отвязывает Telegram от аккаунта."""
+    user.telegram_chat = None
+    await db.commit()
+    return {"status": "ok"}

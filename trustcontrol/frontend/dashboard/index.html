@@ -1276,8 +1276,13 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <input class="f-input" type="email" id="settingsEmail" placeholder="you@example.com" autocomplete="email" autocorrect="off" autocapitalize="off">
           </div>
           <div class="f-group">
-            <label class="f-label">Telegram Chat ID (для общих уведомлений)</label>
-            <input class="f-input" type="text" id="settingsTelegram" placeholder="-1001234567890">
+            <label class="f-label">Telegram для уведомлений</label>
+            <div id="tgLinkStatus" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary" id="tgLinkBtn" onclick="linkTelegram()" style="font-size:13px;padding:8px 14px">🔗 Привязать Telegram</button>
+              <button class="btn btn-ghost" id="tgUnlinkBtn" onclick="unlinkTelegram()" style="font-size:13px;padding:8px 14px;display:none">❌ Отвязать</button>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:6px">После нажатия откроется Telegram — нажмите Start в боте</div>
           </div>
           <div class="f-group">
             <label class="f-label">Новый пароль (оставьте пустым чтобы не менять)</label>
@@ -1597,19 +1602,53 @@ async function loadUserInfo(){
   setVal('settingsPhone',d.phone);
   setVal('settingsCompany',d.company_name);
   setVal('settingsEmail',d.email);
-  setVal('settingsTelegram',d.telegram_chat);
   set('sPlanBadge',(d.plan||'trial').toUpperCase());
   document.getElementById('sPlanBadge').className='plan-badge';
+  // Telegram link status
+  const statusEl=document.getElementById('tgLinkStatus');
+  const unlinkBtn=document.getElementById('tgUnlinkBtn');
+  if(d.telegram_chat){
+    if(statusEl)statusEl.innerHTML=`✅ Telegram привязан (chat_id: <code>${esc(d.telegram_chat)}</code>)`;
+    if(unlinkBtn)unlinkBtn.style.display='';
+  } else {
+    if(statusEl)statusEl.textContent='⚠️ Telegram не привязан — уведомления не придут';
+    if(unlinkBtn)unlinkBtn.style.display='none';
+  }
 }
 
 async function saveSettings(){
   const payload={
     name:val('settingsName'),company_name:val('settingsCompany'),
-    email:val('settingsEmail'),telegram_chat:val('settingsTelegram'),
+    email:val('settingsEmail'),
   };
   const p=val('settingsPassword');if(p)payload.password=p;
   const d=await apiFetch('/auth/me',{method:'PATCH',body:JSON.stringify(payload)});
   if(d){showErr('Сохранено ✓');loadUserInfo();}
+}
+
+async function linkTelegram(){
+  const d=await apiFetch('/auth/tg-link',{method:'POST',body:'{}'});
+  if(!d)return;
+  if(d.url){
+    window.open(d.url,'_blank');
+    showErr('Telegram открыт — нажмите Start в боте');
+    // Poll for 30s to detect when link completes
+    let tries=0;
+    const timer=setInterval(async()=>{
+      tries++;
+      const me=await apiFetch('/auth/me');
+      if(me&&me.telegram_chat){clearInterval(timer);loadUserInfo();showErr('✅ Telegram привязан!');}
+      if(tries>=6)clearInterval(timer);
+    },5000);
+  } else {
+    showErr('TELEGRAM_BOT_USERNAME не настроен на сервере',true);
+  }
+}
+
+async function unlinkTelegram(){
+  if(!confirm('Отвязать Telegram? Уведомления перестанут приходить.'))return;
+  const d=await apiFetch('/auth/tg-unlink',{method:'POST',body:'{}'});
+  if(d){showErr('Telegram отвязан');loadUserInfo();}
 }
 
 /* ── OVERVIEW ── */
