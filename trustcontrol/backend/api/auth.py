@@ -53,22 +53,28 @@ WINDOW_SECONDS  = 60
 def _get_client_ip(request: Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        # Take the RIGHTMOST entry — added by Render's trusted proxy.
+        # Client controls left entries (can spoof them); rightmost is injected by the proxy.
+        return forwarded.split(",")[-1].strip()
     return request.client.host if request.client else "unknown"
 
 
 def _check_rate_limit(ip: str):
     now = time.time()
-    _login_attempts[ip] = [t for t in _login_attempts[ip] if now - t < WINDOW_SECONDS]
-    if len(_login_attempts[ip]) >= MAX_ATTEMPTS:
+    window_start = now - WINDOW_SECONDS
+    # Prune all stale IPs from the dict on every call to prevent memory growth
+    stale = [k for k, v in _login_attempts.items() if not v or max(v) < window_start]
+    for k in stale:
+        del _login_attempts[k]
+
+    recent = [t for t in _login_attempts[ip] if t > window_start]
+    if len(recent) >= MAX_ATTEMPTS:
         raise HTTPException(
             status_code=429,
             detail=f"Слишком много попыток. Подождите {WINDOW_SECONDS} секунд.",
         )
-    _login_attempts[ip].append(now)
-    # Prune empty entries to prevent memory growth from unique IPs
-    if len(_login_attempts[ip]) == 0:
-        del _login_attempts[ip]
+    recent.append(now)
+    _login_attempts[ip] = recent
 
 
 # ── Phone helpers ──────────────────────────────────────────────────────────────
