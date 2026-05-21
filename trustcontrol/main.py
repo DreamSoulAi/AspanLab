@@ -353,6 +353,18 @@ async def _fix_schema():
                     await db.commit()
                     log.info("✅ schema fix: otp_codes.email made nullable")
 
+            # ── users.company_name ──────────────────────────────────────────
+            r_cn = await db.execute(sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name='users' AND column_name='company_name'"
+            ))
+            if not r_cn.fetchone():
+                await db.execute(sa.text(
+                    "ALTER TABLE users ADD COLUMN company_name VARCHAR(150)"
+                ))
+                await db.commit()
+                log.info("✅ schema fix: users.company_name added")
+
             # ── locations.ignore_background_media (новый флаг) ─────────────
             r_ibm = await db.execute(sa.text(
                 "SELECT 1 FROM information_schema.columns "

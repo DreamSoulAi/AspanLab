@@ -344,6 +344,7 @@ async def me(user: User = Depends(get_current_user)):
     return {
         "id":              user.id,
         "name":            user.name,
+        "company_name":    user.company_name or "",
         "phone":           user.phone,
         "email":           user.email or "",
         "telegram_chat":   user.telegram_chat or "",
@@ -360,6 +361,7 @@ async def me(user: User = Depends(get_current_user)):
 
 class UpdateMeRequest(BaseModel):
     name:          str | None = Field(None, max_length=100)
+    company_name:  str | None = Field(None, max_length=150)
     email:         str | None = Field(None, max_length=150)
     telegram_chat: str | None = Field(None, max_length=50)
     password:      str | None = None
@@ -373,6 +375,8 @@ async def update_me(
 ):
     if data.name is not None:
         user.name = data.name.strip()
+    if data.company_name is not None:
+        user.company_name = data.company_name.strip() or None
     if data.email is not None:
         user.email = data.email.strip() or None
     if data.telegram_chat is not None:

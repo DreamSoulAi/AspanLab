@@ -13,6 +13,7 @@ class User(Base):
 
     id              = Column(Integer, primary_key=True, index=True)
     name            = Column(String(100), nullable=False)
+    company_name    = Column(String(150), nullable=True)
 
     # Телефон — основной идентификатор (уникальный)
     phone           = Column(String(20), unique=True, index=True, nullable=False)
