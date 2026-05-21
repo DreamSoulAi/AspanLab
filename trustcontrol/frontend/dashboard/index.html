@@ -602,7 +602,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
         <!-- БАЗОВЫЙ -->
         <div class="lp-plan hot">
-          <div class="lp-plan-tag">POPULAR</div>
+          <div class="lp-plan-tag">ХИТ</div>
           <div class="lp-plan-badge blue">Оборудование в подарок</div>
           <div class="lp-plan-name">Базовый</div>
           <div class="lp-plan-price">25 000 <sup>₸</sup></div>
@@ -613,7 +613,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <li>120 часов AI-анализа в месяц</li>
             <li>Ежедневный + еженедельный отчёт</li>
             <li>Скрипты под ваш бизнес</li>
-            <li>Антифрод-маркеры</li>
+            <li>Защита от мошенничества</li>
             <li>Email-поддержка 24ч</li>
           </ul>
           <button class="lp-plan-btn solid" onclick="goToAuth(true)">Попробовать бесплатно</button>
@@ -631,7 +631,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <li>240 часов AI-анализа в месяц</li>
             <li>Telegram + Slack-интеграция</li>
             <li>Кастомные скрипты под стандарты</li>
-            <li>Антифрод: Kaspi мимо кассы</li>
+            <li>Выявление Kaspi-мошенничества</li>
             <li>Рейтинг сотрудников по точкам</li>
             <li>WhatsApp-поддержка</li>
           </ul>
@@ -733,14 +733,14 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <div class="lp-step-num">2</div>
           <div class="lp-step-ico">🧠</div>
           <h3>ИИ анализирует речь</h3>
-          <p>OpenAI Whisper транскрибирует разговор. Система находит тон, фразы, нарушения и допродажи.</p>
+          <p>ИИ переводит речь в текст за секунды. Система находит тон, фразы, нарушения и допродажи.</p>
         </div>
         <div class="lp-step-arr">→</div>
         <div class="lp-step">
           <div class="lp-step-num">3</div>
           <div class="lp-step-ico">📱</div>
           <h3>Отчёт в Telegram</h3>
-          <p>Оценка смены, транскрипция, тревоги — прямо на ваш телефон. Тревоги приходят мгновенно.</p>
+          <p>Оценка смены, текст разговора, тревоги — прямо на ваш телефон. Тревоги приходят мгновенно.</p>
         </div>
       </div>
     </div>
@@ -765,7 +765,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
         <div class="lp-feat-card">
           <div class="lp-feat-ico g">💰</div>
           <h3>Упущенные продажи</h3>
-          <p>Сотрудник не предложил допродажу? Система зафиксирует UPSELL GAP с суммой потерь.</p>
+          <p>Сотрудник не предложил допродажу? Система зафиксирует упущенную продажу и посчитает потери.</p>
         </div>
         <div class="lp-feat-card">
           <div class="lp-feat-ico b">👋</div>
@@ -970,12 +970,13 @@ textarea.f-input{resize:vertical;line-height:1.6}
     <hr class="modal-divider">
     <div class="modal-sec-title">Telegram-уведомления</div>
     <div class="f-group">
-      <label class="f-label">Telegram Chat ID</label>
+      <label class="f-label">Telegram — групповой чат (необязательно)</label>
       <input class="f-input" type="text" id="editLocTg" placeholder="-1001234567890">
-      <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">
-        Создайте группу → добавьте бота → найдите Chat ID через <span style="color:var(--accent2)">getUpdates</span>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6">
+        Если хотите получать тревоги в общий чат с партнёром или администратором —
+        создайте группу, добавьте туда нашего бота и напишите нам в Telegram, мы пришлём ID чата.
       </div>
-      <button class="test-tg-btn" onclick="testTelegram()">📨 Проверить Telegram</button>
+      <button class="test-tg-btn" onclick="testTelegram()">📨 Проверить уведомление</button>
       <div id="testTgResult"></div>
     </div>
     <hr class="modal-divider">
@@ -987,12 +988,12 @@ textarea.f-input{resize:vertical;line-height:1.6}
       </label>
     </div>
     <hr class="modal-divider">
-    <div class="modal-sec-title">Антифрод</div>
+    <div class="modal-sec-title">Защита от мошенничества</div>
     <div class="f-group">
-      <label class="f-label">Белый список Kaspi-телефонов</label>
+      <label class="f-label">Свои Kaspi-номера (не тревожить)</label>
       <textarea class="f-input" id="editLocPhones" rows="3"
         placeholder="+77001234567&#10;+77009876543"></textarea>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">Через запятую или по строкам — не будут помечаться как фрод</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Номера ваших кассиров или партнёров — система не будет их отмечать как подозрительные</div>
     </div>
     <button class="f-btn" id="saveLocBtn" onclick="saveLocation()">Сохранить</button>
   </div>
@@ -1076,7 +1077,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <div class="card-val" id="statBad">—</div>
           </div>
           <div class="card red">
-            <div class="card-label">🚨 Фрод</div>
+            <div class="card-label">🚨 Мошенничество</div>
             <div class="card-val" id="statFraud">—</div>
           </div>
           <div class="card">
@@ -1176,7 +1177,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
         </div>
 
         <div class="panel">
-          <h3 style="margin-bottom:14px">🚨 Последние инциденты</h3>
+          <h3 style="margin-bottom:14px">🔴 Критические нарушения</h3>
           <div id="incidentFeed"><p style="color:var(--muted);font-size:13px">Загрузка...</p></div>
         </div>
 
@@ -1185,7 +1186,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <div class="table-wrap">
             <table class="tbl">
               <thead>
-                <tr><th>Время</th><th>Тон</th><th>Оценка</th><th>Статус</th><th>Транскрипция</th></tr>
+                <tr><th>Время</th><th>Тон</th><th>Оценка</th><th>Статус</th><th>Текст разговора</th></tr>
               </thead>
               <tbody id="reportsTable">
                 <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted)">Загрузка...</td></tr>
@@ -1750,7 +1751,7 @@ function statusFlags(r){
   if(r.has_greeting)f+='<span class="flag ok">Привет</span> ';
   if(r.has_bonus)f+='<span class="flag bonus">Допродажа</span> ';
   if(r.has_bad)f+='<span class="flag bad">Нарушение</span> ';
-  if(r.has_fraud)f+='<span class="flag bad">Фрод</span> ';
+  if(r.has_fraud)f+='<span class="flag bad">Мошенничество</span> ';
   return f||'<span class="flag" style="background:rgba(255,255,255,.05);color:var(--muted)">Норма</span>';
 }
 
@@ -1797,7 +1798,7 @@ async function loadReportsPage(){
         <div class="rc-top"><span class="rc-time">${fmt(r.timestamp||r.created_at)}</span>
           <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:${r.score>=80?'#10B981':r.score>=60?'#F59E0B':'#EF4444'}">${Math.round(r.score||0)}</span>
         </div>
-        <p class="rc-quote">${esc((r.transcript||'Нет транскрипции').slice(0,200))}</p>
+        <p class="rc-quote">${esc((r.transcript||'Нет текста разговора').slice(0,200))}</p>
         <div class="rc-footer">${statusFlags(r)}</div>
       </div>`).join('');
   }else{
@@ -1920,8 +1921,8 @@ function setVal(id,v){const e=document.getElementById(id);if(e)e.value=v||'';}
 function val(id){return document.getElementById(id)?.value||'';}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmt(iso){if(!iso)return'—';try{return new Date(iso).toLocaleString('ru-KZ',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}catch{return iso;}}
-function alertName(t){return({fraud:'Мошенничество',bad_language:'Грубость',negative_tone:'Негатив',no_greeting:'Без привет.',no_goodbye:'Без прощ.'})[t]||t;}
-function incName(t){return({KASPI_FRAUD:'Каспи-фрод',FRAUD:'Мошенничество',AGGRESSION:'Агрессия',UPSELL_GAP:'Упуш.продажа'})[t]||t;}
+function alertName(t){return({fraud:'Мошенничество',bad_language:'Грубость',negative_tone:'Негатив',no_greeting:'Без приветствия',no_goodbye:'Без прощания'})[t]||t;}
+function incName(t){return({KASPI_FRAUD:'Kaspi-мошенничество',FRAUD:'Мошенничество',AGGRESSION:'Агрессия',UPSELL_GAP:'Упущ. допродажа'})[t]||t;}
 function toneName(t){return({positive:'😊 Позитив',neutral:'😐 Нейтральный',negative:'😤 Негатив'})[t]||t||'—';}
 
 /* ── INIT ── */
