@@ -96,27 +96,14 @@ async def telegram_webhook(request: Request):
     except Exception:
         return {"ok": True}
 
-    # Handle text messages (/start, /help, /start link_TOKEN)
-    message = update.get("message", {})
-    if message:
-        text    = (message.get("text") or "").strip()
-        chat_id = str(message.get("chat", {}).get("id", ""))
-        if chat_id:
-            if text.startswith("/start link_"):
-                token = text[len("/start link_"):]
-                await _handle_tg_link(token, chat_id, message)
-            elif text in ("/start", "/help", "start", "помощь"):
-                await _handle_start(chat_id)
-            return {"ok": True}
+    message = update.get("message")
+    if message and message.get("text"):
+        await _handle_message(message)
+        return {"ok": True}
 
     callback = update.get("callback_query")
     if callback:
         await _handle_callback(callback)
-        return {"ok": True}
-
-    message = update.get("message")
-    if message and message.get("text"):
-        await _handle_message(message)
 
     return {"ok": True}
 
