@@ -305,7 +305,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
 /* ════════════════════════════════
    APP LAYOUT
 ════════════════════════════════ */
-#appWrap{display:none}
+#appWrap{display:none;flex-direction:column}
 .layout{display:flex;min-height:100vh}
 
 /* SIDEBAR */
@@ -326,7 +326,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
 .s-logout:hover{background:rgba(255,255,255,.08);color:var(--txt)}
 
 /* MOBILE HEADER */
-.mob-header{display:none;position:sticky;top:0;z-index:90;background:rgba(8,10,14,.95);backdrop-filter:blur(24px);border-bottom:1px solid var(--bdr);padding:14px 16px;flex-direction:row;align-items:center;justify-content:space-between}
+.mob-header{display:none;position:sticky;top:0;z-index:90;width:100%;background:rgba(8,10,14,.95);backdrop-filter:blur(24px);border-bottom:1px solid var(--bdr);padding:14px 16px;flex-direction:row;align-items:center;justify-content:space-between;box-sizing:border-box}
 .mob-logo{font-family:'Syne',sans-serif;font-weight:800;font-size:16px}
 .mob-logo span{color:var(--accent2)}
 .mob-user{font-size:12px;color:var(--muted)}
@@ -338,9 +338,10 @@ textarea.f-input{resize:vertical;line-height:1.6}
 @media(max-width:768px){.sidebar{display:none}.mob-header{display:flex}}
 
 /* TOPBAR */
-.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;width:100%;box-sizing:border-box}
 .page-title{font-family:'Syne',sans-serif;font-size:24px;font-weight:800;letter-spacing:-.5px}
 .topbar-r{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+@media(max-width:768px){.page-title{font-size:20px;letter-spacing:-.3px}}
 .loc-select{background:var(--surface);border:1px solid var(--bdr2);color:var(--txt);padding:8px 12px;font-size:13px;border-radius:8px;outline:none;cursor:pointer}
 .btn{padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;border:none;border-radius:8px;font-family:'DM Sans',sans-serif;transition:all .18s}
 .btn-a{background:var(--accent);color:#fff}
@@ -389,7 +390,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
 /* SCORE + TONE GRID */
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
 @media(max-width:768px){.grid-2{grid-template-columns:1fr}}
-.panel{background:var(--surface);border:1px solid var(--bdr);border-radius:16px;padding:20px;margin-bottom:16px}
+.panel{background:var(--surface);border:1px solid var(--bdr);border-radius:16px;padding:20px;margin-bottom:16px;width:100%;box-sizing:border-box;overflow:hidden}
 .panel h3{font-family:'Syne',sans-serif;font-weight:700;font-size:15px;letter-spacing:-.2px}
 .score-row{display:flex;align-items:center;gap:18px}
 .score-ring-wrap{position:relative;width:88px;height:88px;flex-shrink:0}
@@ -1709,7 +1710,7 @@ function doLogout(){
 function startDashboard(){
   document.getElementById('landingPage').style.display='none';
   document.getElementById('authSection').style.display='none';
-  document.getElementById('appWrap').style.display='flex';
+  document.getElementById('appWrap').style.display='block';
   // hide dashboard content until first data load so spinner shows instead of empty cards
   const dc=document.getElementById('dashContent');
   if(dc)dc.style.display='none';
