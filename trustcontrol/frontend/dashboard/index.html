@@ -17,8 +17,8 @@
   --green:#10B981;--red:#EF4444;--orange:#F59E0B;--r:14px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--txt);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+html{scroll-behavior:smooth;overflow-x:hidden;max-width:100vw}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--txt);-webkit-font-smoothing:antialiased;overflow-x:hidden;max-width:100vw}
 a{text-decoration:none;color:inherit;cursor:pointer}
 button{font-family:'DM Sans',sans-serif;cursor:pointer}
 
@@ -36,7 +36,7 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer}
 /* ════════════════════════════════
    LANDING PAGE
 ════════════════════════════════ */
-#landingPage{min-height:100vh;background:var(--bg);
+#landingPage{min-height:100vh;background:var(--bg);overflow-x:hidden}
   background-image:radial-gradient(ellipse at 10% 0%,rgba(59,130,246,.12) 0,transparent 55%),
   radial-gradient(ellipse at 90% 100%,rgba(59,130,246,.05) 0,transparent 50%);
 }
@@ -140,7 +140,8 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer}
 .lp-nav-link{background:transparent;border:none;color:var(--muted);padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;border-radius:6px;transition:color .2s;font-family:'DM Sans',sans-serif}
 .lp-nav-link:hover{color:var(--txt)}
 @media(max-width:640px){.lp-nav-links{display:none}}
-@media(max-width:400px){.lp-primary{font-size:12px;padding:8px 14px}}
+@media(max-width:480px){.lp-hide-xs{display:none!important}.lp-show-xs{display:inline!important}}
+@media(min-width:481px){.lp-show-xs{display:none!important}.lp-hide-xs{display:inline!important}}
 
 /* PROOF SECTION */
 .lp-proof{padding:80px 24px;background:var(--bg)}
@@ -582,8 +583,8 @@ textarea.f-input{resize:vertical;line-height:1.6}
         <button class="lp-nav-link" onclick="document.getElementById('hardware').scrollIntoView({behavior:'smooth'})">Оборудование</button>
       </div>
       <div class="lp-nav-r">
-        <button class="lp-ghost" onclick="goToAuth(false)">Войти</button>
-        <button class="lp-primary" onclick="goToAuth(true)">Попробовать бесплатно →</button>
+        <button class="lp-ghost lp-hide-xs" onclick="goToAuth(false)">Войти</button>
+        <button class="lp-primary" onclick="goToAuth(true)"><span class="lp-hide-xs">Попробовать бесплатно</span><span class="lp-show-xs">Начать</span> →</button>
       </div>
     </div>
   </nav>
@@ -716,7 +717,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <li>SLA 99.9%</li>
             <li>On-premise (данные в РК)</li>
           </ul>
-          <button class="lp-plan-btn outline" onclick="window.open('https://t.me/aspanlab','_blank')">Запросить расчёт</button>
+          <button class="lp-plan-btn outline" onclick="window.open('https://t.me/trustcontrol_kzbot','_blank')">Запросить расчёт</button>
         </div>
 
       </div>
@@ -857,7 +858,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <p>Регистрация за 2 минуты. Первый анализ разговора придёт прямо в Telegram.</p>
       <div class="lp-cta-btns">
         <button class="lp-btn-hero" onclick="goToAuth(true)">Начать бесплатно →</button>
-        <button class="lp-btn-outline" onclick="window.open('https://t.me/aspanlab','_blank')">Написать нам в Telegram</button>
+        <button class="lp-btn-outline" onclick="window.open('https://t.me/trustcontrol_kzbot','_blank')">Написать нам в Telegram</button>
       </div>
       <div class="lp-cta-micro">Без карты · Без контракта · Оборудование привезём сами · Отменить в 1 клик</div>
     </div>
@@ -1127,7 +1128,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
       </div>
     </div>
     <p style="font-size:13px;color:var(--muted);margin-bottom:16px;text-align:center">Напишите нам — оформим оплату через Kaspi или счёт. Ответим в течение часа.</p>
-    <button onclick="window.open('https://t.me/aspanlab','_blank')" style="width:100%;background:#229ED9;color:#fff;border:none;padding:13px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">✈️ Написать в Telegram</button>
+    <button onclick="window.open('https://t.me/trustcontrol_kzbot','_blank')" style="width:100%;background:#229ED9;color:#fff;border:none;padding:13px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">✈️ Написать в Telegram</button>
   </div>
 </div>
 
