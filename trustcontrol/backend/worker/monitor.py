@@ -11,7 +11,7 @@
   py -3.13 -m pip install -r requirements-monitor.txt faster-whisper
 
 ЗАПУСК:
-  py -3.13 monitor.py --api-url https://aspanlab-1.onrender.com --api-key ВАШ_КЛЮЧ
+  py -3.13 monitor.py --api-url https://aspanlab.onrender.com --api-key ВАШ_КЛЮЧ
 
 ЗАПУСК (локальная транскрипция, бесплатно):
   py -3.13 monitor.py --api-url https://... --api-key ВАШ_КЛЮЧ --local-whisper
@@ -48,7 +48,7 @@ import requests
 
 _parser = argparse.ArgumentParser(description="TrustControl — монитор кассы")
 _parser.add_argument("--api-url", default="http://localhost:8000",
-                     help="Адрес сервера (например https://aspanlab-1.onrender.com)")
+                     help="Адрес сервера (например https://aspanlab.onrender.com)")
 _parser.add_argument("--api-key", default="",
                      help="API-ключ точки из личного кабинета")
 _parser.add_argument("--vad-level", type=int, default=2,
@@ -197,7 +197,7 @@ if "localhost" in SERVER_URL:
     log.error("=" * 60)
     log.error("ОШИБКА: SERVER_URL указывает на localhost!")
     log.error(f"  Сейчас: {SERVER_URL}")
-    log.error("  Нужно:  --api-url https://aspanlab-1.onrender.com")
+    log.error("  Нужно:  --api-url https://aspanlab.onrender.com")
     log.error("=" * 60)
     _ok = False
 
