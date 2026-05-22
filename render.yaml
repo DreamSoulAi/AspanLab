@@ -18,7 +18,9 @@ services:
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
-      - key: TELEGRAM_CHAT_ID
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
         sync: false
       - key: DATABASE_URL
         value: sqlite+aiosqlite:///trustcontrol.db
@@ -29,4 +31,6 @@ services:
       - key: KASPI_NAME
         sync: false
       - key: ALLOWED_ORIGINS
+        sync: false
+      - key: APP_URL
         sync: false
