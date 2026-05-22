@@ -409,29 +409,25 @@ async def update_me(
 
 
 @router.post("/tg-link")
-async def tg_link(
-    user: User = Depends(get_current_user),
-):
-    """
-    Генерирует одноразовый токен для привязки Telegram к профилю пользователя.
-    Если TELEGRAM_BOT_USERNAME не задан — получает username бота из Telegram API.
-    """
+async def tg_link(user: User = Depends(get_current_user)):
+    """Generate one-time Telegram deep link for account linking."""
     from backend.api.telegram_webhook import generate_link_token
-    from backend.config import settings
 
     token    = generate_link_token({"type": "user", "user_id": user.id})
-    bot_name = settings.TELEGRAM_BOT_USERNAME
+    bot_name = settings.TELEGRAM_BOT_USERNAME.strip()
 
     if not bot_name:
         try:
             from backend.services.notifier import get_bot
             me       = await get_bot().get_me()
-            bot_name = me.username
-        except Exception:
-            pass
+            bot_name = me.username or ""
+        except Exception as e:
+            _log.error(f"tg_link get_me failed: {e}")
 
-    url = f"https://t.me/{bot_name}?start={token}" if bot_name else None
-    return {"token": token, "url": url, "bot_username": bot_name}
+    if not bot_name:
+        raise HTTPException(status_code=503, detail="Бот не настроен — обратитесь в поддержку")
+
+    return {"url": f"https://t.me/{bot_name}?start={token}", "token": token}
 
 
 @router.post("/tg-unlink")

@@ -24,6 +24,8 @@
   Дважды кликни на run.bat (не забудь заполнить API_KEY внутри)
 """
 
+from __future__ import annotations
+
 import argparse
 import io
 import sys
