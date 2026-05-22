@@ -114,12 +114,18 @@ async def telegram_webhook(request: Request):
 
     message = update.get("message")
     if message and message.get("text"):
-        await _handle_message(message)
+        try:
+            await _handle_message(message)
+        except Exception as e:
+            log.error(f"_handle_message error: {e}", exc_info=True)
         return {"ok": True}
 
     callback = update.get("callback_query")
     if callback:
-        await _handle_callback(callback)
+        try:
+            await _handle_callback(callback)
+        except Exception as e:
+            log.error(f"_handle_callback error: {e}", exc_info=True)
 
     return {"ok": True}
 
@@ -283,14 +289,13 @@ async def _handle_link_user(chat_id: str, token_data: dict):
             await bot.send_message(
                 chat_id=chat_id,
                 text=(
-                    f"❌ *Аккаунт не найден*\n\n"
-                    f"_debug: ищем user\\_id={user_id}, всего юзеров в БД: {total}_\n\n"
+                    f"❌ Аккаунт не найден\n\n"
+                    f"[debug] user_id={user_id}, users_in_db={total}\n\n"
                     f"Пожалуйста:\n"
-                    f"1️⃣ Выйдите из личного кабинета\n"
-                    f"2️⃣ Войдите снова\n"
-                    f"3️⃣ Нажмите *Привязать Telegram* заново"
+                    f"1. Выйдите из личного кабинета\n"
+                    f"2. Войдите снова\n"
+                    f"3. Нажмите Привязать Telegram заново"
                 ),
-                parse_mode=ParseMode.MARKDOWN,
             )
             return
         user.telegram_chat = chat_id
