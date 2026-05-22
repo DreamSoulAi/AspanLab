@@ -269,11 +269,26 @@ async def _handle_link(chat_id: str, token: str):
 
 
 async def _handle_link_user(chat_id: str, token_data: dict):
-    bot = get_bot()
+    bot     = get_bot()
+    user_id = token_data["user_id"]
+    log.info(f"_handle_link_user: chat_id={chat_id} user_id={user_id}")
     async with AsyncSessionLocal() as db:
-        user = await db.get(User, token_data["user_id"])
+        result = await db.execute(select(User).where(User.id == user_id))
+        user   = result.scalar()
         if not user:
-            await bot.send_message(chat_id=chat_id, text="❌ Пользователь не найден.")
+            log.warning(f"_handle_link_user: user_id={user_id} not found in DB")
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "❌ *Аккаунт не найден.*\n\n"
+                    "Возможно, сервер обновился и сессия устарела.\n\n"
+                    "Пожалуйста:\n"
+                    "1️⃣ Выйдите из личного кабинета\n"
+                    "2️⃣ Войдите снова\n"
+                    "3️⃣ Нажмите *Привязать Telegram* заново"
+                ),
+                parse_mode=ParseMode.MARKDOWN,
+            )
             return
         user.telegram_chat = chat_id
         await db.commit()
