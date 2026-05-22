@@ -1785,31 +1785,6 @@ async function saveSettings(){
   if(d){showErr('Сохранено ✓');loadUserInfo();}
 }
 
-async function linkTelegram(){
-  const d=await apiFetch('/auth/tg-link',{method:'POST',body:'{}'});
-  if(!d)return;
-  if(d.url){
-    window.open(d.url,'_blank');
-    showErr('Telegram открыт — нажмите Start в боте');
-    // Poll for 30s to detect when link completes
-    let tries=0;
-    const timer=setInterval(async()=>{
-      tries++;
-      const me=await apiFetch('/auth/me');
-      if(me&&me.telegram_chat){clearInterval(timer);loadUserInfo();showErr('✅ Telegram привязан!');}
-      if(tries>=6)clearInterval(timer);
-    },5000);
-  } else {
-    showErr('TELEGRAM_BOT_USERNAME не настроен на сервере',true);
-  }
-}
-
-async function unlinkTelegram(){
-  if(!confirm('Отвязать Telegram? Уведомления перестанут приходить.'))return;
-  const d=await apiFetch('/auth/tg-unlink',{method:'POST',body:'{}'});
-  if(d){showErr('Telegram отвязан');loadUserInfo();}
-}
-
 /* ── OVERVIEW ── */
 async function loadDashboard(){
   const loading=document.getElementById('dashLoading');
@@ -2314,7 +2289,8 @@ async function linkTelegram(){
   const d=await apiFetch('/auth/tg-link',{method:'POST',body:'{}'});
   if(btn){btn.disabled=false;btn.textContent='🔗 Подключить через Telegram';}
   if(!d)return;
-  if(d.url)window.open(d.url,'_blank');
+  if(!d.url){showErr('Бот не настроен — обратитесь в поддержку',true);return;}
+  window.open(d.url,'_blank');
   const info=document.getElementById('tgLinkInfo');
   if(info){info.textContent='📱 Откройте ссылку в Telegram и нажмите «Старт» — страница обновится автоматически';info.style.color='var(--accent2)';}
   clearInterval(_tgLinkPoll);
@@ -2324,16 +2300,21 @@ async function linkTelegram(){
     const me=await apiFetch('/auth/me',{},true);
     if(me&&me.telegram_chat){
       clearInterval(_tgLinkPoll);
+      _userTgLinked=true;
       renderTgStatus(me);
       if(info){info.textContent='✅ Telegram успешно подключён!';info.style.color='#10B981';setTimeout(()=>{if(info)info.textContent='';},4000);}
     }
-  },3000);
+  },5000);
 }
 
 async function unlinkTelegram(){
   if(!confirm('Отвязать Telegram? Тревоги перестанут приходить.'))return;
   const d=await apiFetch('/auth/tg-unlink',{method:'POST',body:'{}'});
-  if(d)loadUserInfo();
+  if(d){
+    _userTgLinked=false;
+    showErr('Telegram отвязан');
+    loadUserInfo();
+  }
 }
 
 /* ── INIT ── */

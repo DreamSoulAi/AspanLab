@@ -46,8 +46,6 @@ from telegram import (
 )
 from telegram.constants import ParseMode
 
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-
 from backend.config import settings
 from backend.database import AsyncSessionLocal
 from backend.models.incident import Incident
@@ -366,9 +364,11 @@ async def _cmd_start(chat_id: str):
                 "Для получения уведомлений привяжите этот Telegram к вашему аккаунту:\n\n"
                 "1. Войдите в *личный кабинет*\n"
                 "2. Перейдите в *Настройки*\n"
-                "3. Нажмите *Привязать Telegram*\n\n"
-                "🌐 https://aspanlab-1.onrender.com"
+                "3. Нажмите *Привязать Telegram*"
             ),
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🌐 Открыть личный кабинет", url="https://aspanlab-1.onrender.com"),
+            ]]),
         )
         return
 
