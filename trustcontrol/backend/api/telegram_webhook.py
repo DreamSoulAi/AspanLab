@@ -23,6 +23,9 @@ from datetime import datetime
 from fastapi import APIRouter, Request, Response
 from sqlalchemy import select
 
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+
+from backend.config import settings
 from backend.database import AsyncSessionLocal
 from backend.models.incident import Incident
 from backend.models.location import Location
@@ -52,14 +55,17 @@ async def telegram_webhook(request: Request):
     except Exception:
         return {"ok": True}
 
-    # Handle /start link_TOKEN for Telegram account linking
+    # Handle text messages (/start, /help, /start link_TOKEN)
     message = update.get("message", {})
     if message:
         text    = (message.get("text") or "").strip()
         chat_id = str(message.get("chat", {}).get("id", ""))
-        if text.startswith("/start link_") and chat_id:
-            token = text[len("/start link_"):]
-            await _handle_tg_link(token, chat_id, message)
+        if chat_id:
+            if text.startswith("/start link_"):
+                token = text[len("/start link_"):]
+                await _handle_tg_link(token, chat_id, message)
+            elif text in ("/start", "/help", "start", "помощь"):
+                await _handle_start(chat_id)
             return {"ok": True}
 
     callback = update.get("callback_query")
@@ -144,6 +150,36 @@ async def _handle_false_positive(incident_id: int) -> str:
         await db.commit()
 
     return f"❌ Помечено как ошибка системы.{whitelisted}"
+
+
+async def _handle_start(chat_id: str):
+    """Welcome message for /start command."""
+    text = (
+        "👋 *Добро пожаловать в TrustControl!*\n\n"
+        "Этот бот отправляет вам:\n"
+        "• 🚨 Мгновенные тревоги — грубость, мошенничество\n"
+        "• 📊 Итог каждой смены\n"
+        "• 📈 Ежедневный отчёт в 22:00\n\n"
+        "Чтобы подключить бот к вашему аккаунту:\n"
+        "1️⃣ Войдите в личный кабинет\n"
+        "2️⃣ Настройки → кнопка *«Подключить через Telegram»*\n\n"
+        "Всё — тревоги начнут приходить сюда автоматически."
+    )
+    buttons = []
+    if settings.APP_URL:
+        buttons.append([InlineKeyboardButton("🖥 Открыть личный кабинет", url=settings.APP_URL)])
+    markup = InlineKeyboardMarkup(buttons) if buttons else None
+    try:
+        bot = get_bot()
+        await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode="Markdown",
+            reply_markup=markup,
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        log.error(f"_handle_start error: {e}")
 
 
 async def _handle_tg_link(token: str, chat_id: str, message: dict):
