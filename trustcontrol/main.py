@@ -377,6 +377,19 @@ async def _fix_schema():
                 await db.commit()
                 log.info("✅ schema fix: locations.ignore_background_media added")
 
+            # ── otp_codes.code — enlarge to 64 chars for SHA-256 hash ──────
+            if is_pg:
+                r_otp = await db.execute(sa.text(
+                    "SELECT character_maximum_length FROM information_schema.columns "
+                    "WHERE table_name='otp_codes' AND column_name='code'"
+                ))
+                row_otp = r_otp.fetchone()
+                if row_otp and row_otp[0] is not None and row_otp[0] < 64:
+                    await db.execute(sa.text(
+                        "ALTER TABLE otp_codes ALTER COLUMN code TYPE VARCHAR(64)"
+                    ))
+                    await db.commit()
+                    log.info("✅ schema fix: otp_codes.code enlarged to VARCHAR(64)")
         except Exception as e:
             log.warning(f"_fix_schema warning (non-fatal): {e}")
 

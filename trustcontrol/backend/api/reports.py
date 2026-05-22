@@ -57,12 +57,17 @@ _AUDIO_MAGIC = [b"RIFF", b"ID3", b"OggS", b"fLaC", b"\xff\xfb", b"\xff\xf3", b"\
 
 def _check_submit_rate(api_key: str):
     now = time.time()
-    _submit_attempts[api_key] = [t for t in _submit_attempts[api_key] if now - t < 60]
-    if len(_submit_attempts[api_key]) >= MAX_SUBMITS_PER_MIN:
-        if not _submit_attempts[api_key]:
-            del _submit_attempts[api_key]
+    window_start = now - 60
+    # Prune all stale keys from the dict to prevent memory growth
+    stale = [k for k, v in _submit_attempts.items() if not v or max(v) < window_start]
+    for k in stale:
+        del _submit_attempts[k]
+
+    recent = [t for t in _submit_attempts[api_key] if t > window_start]
+    if len(recent) >= MAX_SUBMITS_PER_MIN:
         raise HTTPException(status_code=429, detail="Слишком много запросов от этой точки")
-    _submit_attempts[api_key].append(now)
+    recent.append(now)
+    _submit_attempts[api_key] = recent
 RETRY_DIR = Path("uploads/retry")
 RETRY_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -8,7 +8,7 @@ class OtpCode(Base):
 
     id         = Column(Integer, primary_key=True)
     phone      = Column(String(30), index=True, nullable=False)
-    code       = Column(String(6),  nullable=False)
+    code       = Column(String(64), nullable=False)  # SHA-256 hex digest
     expires_at = Column(DateTime,   nullable=False)
     used       = Column(Boolean,    default=False)
     created_at = Column(DateTime,   default=datetime.utcnow)

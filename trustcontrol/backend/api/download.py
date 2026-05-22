@@ -1,38 +1,148 @@
 import io
+import re
 import zipfile
 from pathlib import Path
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from backend.api.auth import get_current_user
+from backend.models.user import User
+from backend.database import get_db
 
 router = APIRouter()
 
 BASE = Path(__file__).parent.parent.parent   # trustcontrol/
 
 
-@router.get("/installer")
-async def download_installer():
-    """Возвращает ZIP с файлами для установки на кассовый ПК."""
+def _build_zip(files: dict, config_ini: str, readme_txt: str, folder: str) -> io.BytesIO:
     buf = io.BytesIO()
-
-    files = {
-        "monitor.py":               BASE / "backend/worker/monitor.py",
-        "requirements-monitor.txt": BASE / "requirements-monitor.txt",
-        "1_SETUP.bat":              BASE / "scripts/windows/1_SETUP.bat",
-        "2_CONFIG.bat":             BASE / "scripts/windows/2_CONFIG.bat",
-        "3_RUN.bat":                BASE / "scripts/windows/3_RUN.bat",
-        "АВТОЗАПУСК.bat":           BASE / "scripts/windows/АВТОЗАПУСК.bat",
-        "config.ini":               BASE / "scripts/windows/config.ini",
-        "README.txt":               BASE / "scripts/windows/README.txt",
-    }
-
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(f"{folder}/config.ini", config_ini)
+        zf.writestr(f"{folder}/README.txt", readme_txt)
         for name, path in files.items():
             if path.exists():
-                zf.write(path, f"TrustControl/{name}")
-
+                zf.write(path, f"{folder}/{name}")
     buf.seek(0)
+    return buf
+
+
+def _config_ini(api_url: str, api_key: str) -> str:
+    return f"""[settings]
+; Адрес сервера TrustControl
+API_URL={api_url}
+
+; API-ключ этой кассы — уже настроен автоматически
+API_KEY={api_key}
+
+; Язык: ru = русский, kk = казахский, auto = автоопределение
+LANGUAGE=ru
+
+; Секунд тишины = конец разговора (2.5 по умолчанию)
+SILENCE=2.5
+
+; Чувствительность микрофона 0-3 (2 по умолчанию)
+VAD_LEVEL=2
+"""
+
+
+def _readme(location_name: str, prefilled: bool) -> str:
+    if prefilled:
+        return f"""╔══════════════════════════════════════════════════╗
+  TrustControl — Касса: {location_name}
+  Ключ уже вписан, настраивать ничего не нужно!
+╚══════════════════════════════════════════════════╝
+
+ШАГ 1.  Дважды кликните на  1_SETUP.bat
+        Ждите надпись "Установка завершена!" (~3 мин)
+
+ШАГ 2.  Дважды кликните на  3_RUN.bat
+        Мониторинг запущен. Окно не закрывайте.
+
+Если окно случайно закрылось — запустите 3_RUN.bat снова.
+
+──────────────────────────────────────────────────
+АВТОЗАПУСК при включении ПК:
+  → Дважды кликните на  АВТОЗАПУСК.bat  (один раз)
+"""
+    else:
+        return """╔══════════════════════════════════════════════════╗
+  TrustControl — Установка на кассовый ПК
+╚══════════════════════════════════════════════════╝
+
+ШАГ 1.  Дважды кликните на  1_SETUP.bat
+        Ждите надпись "Установка завершена!" (~3 мин)
+
+ШАГ 2.  Откройте файл config.ini в Блокноте.
+        Замените  ВСТАВЬ_СЮДА_API_КЛЮЧ  на ключ из
+        личного кабинета (Точки → кнопка ⧉).
+        Файл → Сохранить → закрыть.
+
+ШАГ 3.  Дважды кликните на  3_RUN.bat
+        Мониторинг запущен. Окно не закрывайте.
+
+──────────────────────────────────────────────────
+АВТОЗАПУСК при включении ПК:
+  → Дважды кликните на  АВТОЗАПУСК.bat  (один раз)
+"""
+
+
+_WORKER_FILES = {
+    "monitor.py":               BASE / "backend/worker/monitor.py",
+    "requirements-monitor.txt": BASE / "requirements-monitor.txt",
+    "1_SETUP.bat":              BASE / "scripts/windows/1_SETUP.bat",
+    "3_RUN.bat":                BASE / "scripts/windows/3_RUN.bat",
+    "АВТОЗАПУСК.bat":           BASE / "scripts/windows/АВТОЗАПУСК.bat",
+}
+
+
+@router.get("/installer")
+async def download_installer(
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    """Generic installer — API key left as placeholder."""
+    api_url = str(request.base_url).rstrip("/")
+    buf = _build_zip(
+        _WORKER_FILES,
+        _config_ini(api_url, "ВСТАВЬ_СЮДА_API_КЛЮЧ"),
+        _readme("", prefilled=False),
+        "TrustControl",
+    )
     return StreamingResponse(
         buf,
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=TrustControl_installer.zip"},
+    )
+
+
+@router.get("/installer/{location_id}")
+async def download_installer_for_location(
+    location_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Personalized installer with API key pre-filled for a specific location."""
+    from backend.models.location import Location
+    result = await db.execute(
+        select(Location).where(Location.id == location_id, Location.owner_id == user.id)
+    )
+    loc = result.scalar()
+    if not loc:
+        raise HTTPException(status_code=404, detail="Точка не найдена")
+
+    api_url = str(request.base_url).rstrip("/")
+    safe = re.sub(r"[^\w\-]", "_", loc.name)[:30]
+    buf = _build_zip(
+        _WORKER_FILES,
+        _config_ini(api_url, loc.api_key),
+        _readme(loc.name, prefilled=True),
+        f"TrustControl_{safe}",
+    )
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=TrustControl_{safe}.zip"},
     )

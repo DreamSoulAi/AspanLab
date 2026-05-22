@@ -46,6 +46,9 @@ from telegram import (
 )
 from telegram.constants import ParseMode
 
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+
+from backend.config import settings
 from backend.database import AsyncSessionLocal
 from backend.models.incident import Incident
 from backend.models.location import Location
@@ -92,6 +95,19 @@ async def telegram_webhook(request: Request):
         update = await request.json()
     except Exception:
         return {"ok": True}
+
+    # Handle text messages (/start, /help, /start link_TOKEN)
+    message = update.get("message", {})
+    if message:
+        text    = (message.get("text") or "").strip()
+        chat_id = str(message.get("chat", {}).get("id", ""))
+        if chat_id:
+            if text.startswith("/start link_"):
+                token = text[len("/start link_"):]
+                await _handle_tg_link(token, chat_id, message)
+            elif text in ("/start", "/help", "start", "помощь"):
+                await _handle_start(chat_id)
+            return {"ok": True}
 
     callback = update.get("callback_query")
     if callback:

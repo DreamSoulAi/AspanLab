@@ -89,6 +89,15 @@ class Settings:
     # Секрет для проверки подписи Telegram webhook (setWebhook secret_token)
     TELEGRAM_WEBHOOK_SECRET: str = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
 
+    # ── Публичный URL приложения ─────────────────────────────
+    # Используется в Telegram-сообщениях (кнопка «Открыть дашборд»)
+    # Если не задан — берётся первый домен из ALLOWED_ORIGINS
+    _app_url_raw: str = os.getenv("APP_URL", "")
+    if not _app_url_raw:
+        _origins = os.getenv("ALLOWED_ORIGINS", "")
+        _app_url_raw = _origins.split(",")[0].strip() if _origins else ""
+    APP_URL: str = _app_url_raw.rstrip("/")
+
     def validate(self):
         """Log warnings for missing optional env vars — never crash on startup."""
         if not self.OPENAI_API_KEY:
