@@ -276,16 +276,19 @@ async def _handle_link_user(chat_id: str, token_data: dict):
         result = await db.execute(select(User).where(User.id == user_id))
         user   = result.scalar()
         if not user:
-            log.warning(f"_handle_link_user: user_id={user_id} not found in DB")
+            from sqlalchemy import func
+            cnt = await db.execute(select(func.count()).select_from(User))
+            total = cnt.scalar()
+            log.warning(f"_handle_link_user: user_id={user_id} not found, total_users={total}")
             await bot.send_message(
                 chat_id=chat_id,
                 text=(
-                    "❌ *Аккаунт не найден.*\n\n"
-                    "Возможно, сервер обновился и сессия устарела.\n\n"
-                    "Пожалуйста:\n"
-                    "1️⃣ Выйдите из личного кабинета\n"
-                    "2️⃣ Войдите снова\n"
-                    "3️⃣ Нажмите *Привязать Telegram* заново"
+                    f"❌ *Аккаунт не найден*\n\n"
+                    f"_debug: ищем user\\_id={user_id}, всего юзеров в БД: {total}_\n\n"
+                    f"Пожалуйста:\n"
+                    f"1️⃣ Выйдите из личного кабинета\n"
+                    f"2️⃣ Войдите снова\n"
+                    f"3️⃣ Нажмите *Привязать Telegram* заново"
                 ),
                 parse_mode=ParseMode.MARKDOWN,
             )
