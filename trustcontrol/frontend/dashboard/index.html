@@ -82,6 +82,22 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer}
 .lp-step-arr{font-size:24px;color:var(--bdr2);padding-top:80px;flex-shrink:0}
 @media(max-width:700px){.lp-step-arr{display:none}.lp-step{max-width:100%}}
 
+/* MOBILE LANDING */
+@media(max-width:560px){
+  .lp-hero{padding:48px 16px 36px}
+  .lp-hero h1{font-size:clamp(26px,9vw,38px);letter-spacing:-1px;margin-bottom:16px}
+  .lp-hero-sub{font-size:15px;margin-bottom:28px}
+  .lp-hero-btns{flex-direction:column;align-items:stretch;gap:10px;margin-bottom:32px}
+  .lp-btn-hero,.lp-btn-outline{width:100%;box-sizing:border-box;text-align:center;padding:14px 20px}
+  .lp-hero-stats{max-width:100%;border-radius:12px}
+  .lp-stat{min-width:0;flex:1;padding:14px 8px}
+  .lp-stat span{font-size:18px}
+  .lp-stat small{font-size:11px}
+  .lp-feat{padding:48px 16px}
+  .lp-section-title{font-size:clamp(22px,7vw,32px)}
+  .lp-footer{padding:32px 16px}
+}
+
 /* FEATURES */
 .lp-feat{padding:80px 24px}
 .lp-feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;max-width:1120px;margin:0 auto}
@@ -124,6 +140,7 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer}
 .lp-nav-link{background:transparent;border:none;color:var(--muted);padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;border-radius:6px;transition:color .2s;font-family:'DM Sans',sans-serif}
 .lp-nav-link:hover{color:var(--txt)}
 @media(max-width:640px){.lp-nav-links{display:none}}
+@media(max-width:400px){.lp-primary{font-size:12px;padding:8px 14px}}
 
 /* PROOF SECTION */
 .lp-proof{padding:80px 24px;background:var(--bg)}
@@ -573,9 +590,9 @@ textarea.f-input{resize:vertical;line-height:1.6}
   <!-- HERO -->
   <section class="lp-hero">
     <h1>ИИ следит за сервисом,<br>пока вы занимаетесь <em>бизнесом</em></h1>
-    <p class="lp-hero-sub">Каждый разговор на кассе — анализ через 15 секунд.<br>Грубость, мошенничество, упущенные продажи — всё в Telegram.</p>
+    <p class="lp-hero-sub">Каждый разговор на кассе — анализ через 15 секунд. Грубость, мошенничество, упущенные продажи — всё в Telegram.</p>
     <div class="lp-hero-btns">
-      <button class="lp-btn-hero" onclick="goToAuth(true)">Попробовать бесплатно — 14 дней →</button>
+      <button class="lp-btn-hero" onclick="goToAuth(true)">Попробовать бесплатно →</button>
       <button class="lp-btn-outline" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Посмотреть тарифы</button>
     </div>
     <div class="lp-anchor-hero">
