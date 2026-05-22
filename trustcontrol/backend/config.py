@@ -85,7 +85,7 @@ class Settings:
 
     # ── Telegram бот ─────────────────────────────────────────
     # Имя бота без @ — показывается кнопкой "Получить код в Telegram"
-    TELEGRAM_BOT_USERNAME: str = os.getenv("TELEGRAM_BOT_USERNAME", "")
+    TELEGRAM_BOT_USERNAME: str = os.getenv("TELEGRAM_BOT_USERNAME", "trustcontrol_kzbot")
     # Секрет для проверки подписи Telegram webhook (setWebhook secret_token)
     TELEGRAM_WEBHOOK_SECRET: str = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
 

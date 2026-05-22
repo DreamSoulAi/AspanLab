@@ -1,4 +1,5 @@
 import io
+import logging
 import re
 import zipfile
 from pathlib import Path
@@ -6,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+
+_log = logging.getLogger("download")
 
 from backend.api.auth import get_current_user
 from backend.models.user import User
@@ -23,7 +26,7 @@ def _build_zip(files: dict, config_ini: str, readme_txt: str, folder: str) -> io
         zf.writestr(f"{folder}/README.txt", readme_txt)
         for name, path in files.items():
             if path.exists():
-                zf.write(path, f"{folder}/{name}")
+                zf.writestr(f"{folder}/{name}", path.read_bytes())
     buf.seek(0)
     return buf
 
@@ -89,11 +92,12 @@ def _readme(location_name: str, prefilled: bool) -> str:
 
 
 _WORKER_FILES = {
-    "monitor.py":               BASE / "backend/worker/monitor.py",
-    "requirements-monitor.txt": BASE / "requirements-monitor.txt",
-    "1_SETUP.bat":              BASE / "scripts/windows/1_SETUP.bat",
-    "3_RUN.bat":                BASE / "scripts/windows/3_RUN.bat",
-    "АВТОЗАПУСК.bat":           BASE / "scripts/windows/АВТОЗАПУСК.bat",
+    "monitor.py":                    BASE / "backend/worker/monitor.py",
+    "requirements-monitor.txt":      BASE / "requirements-monitor.txt",
+    "requirements-monitor-py38.txt": BASE / "requirements-monitor-py38.txt",
+    "1_SETUP.bat":                   BASE / "scripts/windows/1_SETUP.bat",
+    "3_RUN.bat":                     BASE / "scripts/windows/3_RUN.bat",
+    "АВТОЗАПУСК.bat":                BASE / "scripts/windows/АВТОЗАПУСК.bat",
 }
 
 
@@ -125,24 +129,30 @@ async def download_installer_for_location(
     db: AsyncSession = Depends(get_db),
 ):
     """Personalized installer with API key pre-filled for a specific location."""
-    from backend.models.location import Location
-    result = await db.execute(
-        select(Location).where(Location.id == location_id, Location.owner_id == user.id)
-    )
-    loc = result.scalar()
-    if not loc:
-        raise HTTPException(status_code=404, detail="Точка не найдена")
+    try:
+        from backend.models.location import Location
+        result = await db.execute(
+            select(Location).where(Location.id == location_id, Location.owner_id == user.id)
+        )
+        loc = result.scalar()
+        if not loc:
+            raise HTTPException(status_code=404, detail="Точка не найдена")
 
-    api_url = str(request.base_url).rstrip("/")
-    safe = re.sub(r"[^\w\-]", "_", loc.name)[:30]
-    buf = _build_zip(
-        _WORKER_FILES,
-        _config_ini(api_url, loc.api_key),
-        _readme(loc.name, prefilled=True),
-        f"TrustControl_{safe}",
-    )
-    return StreamingResponse(
-        buf,
-        media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=TrustControl_{safe}.zip"},
-    )
+        api_url = str(request.base_url).rstrip("/")
+        safe = re.sub(r"[^\w\-]", "_", loc.name or "location")[:30] or "location"
+        buf = _build_zip(
+            _WORKER_FILES,
+            _config_ini(api_url, loc.api_key or ""),
+            _readme(loc.name or "", prefilled=bool(loc.api_key)),
+            f"TrustControl_{safe}",
+        )
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename=TrustControl_{safe}.zip"},
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log.exception(f"download_installer_for_location failed loc={location_id}: {exc}")
+        raise HTTPException(status_code=500, detail=f"Ошибка сборки архива: {exc}")
