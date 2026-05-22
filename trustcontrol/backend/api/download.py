@@ -139,7 +139,7 @@ async def download_installer_for_location(
             raise HTTPException(status_code=404, detail="Точка не найдена")
 
         api_url = str(request.base_url).rstrip("/")
-        safe = re.sub(r"[^\w\-]", "_", loc.name or "location")[:30] or "location"
+        safe = re.sub(r"[^\w\-]", "_", loc.name or "location", flags=re.ASCII).strip("_")[:30] or "location"
         buf = _build_zip(
             _WORKER_FILES,
             _config_ini(api_url, loc.api_key or ""),
