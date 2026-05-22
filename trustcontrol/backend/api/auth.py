@@ -413,6 +413,7 @@ async def tg_link(user: User = Depends(get_current_user)):
     """Generate one-time Telegram deep link for account linking."""
     from backend.api.telegram_webhook import generate_link_token
 
+    _log.info(f"tg-link: user.id={user.id} phone={user.phone} db={settings.DATABASE_URL.split('@')[-1] if '@' in settings.DATABASE_URL else 'local'}")
     token    = generate_link_token({"type": "user", "user_id": user.id})
     bot_name = settings.TELEGRAM_BOT_USERNAME.strip()
 
