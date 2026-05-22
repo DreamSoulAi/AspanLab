@@ -28,10 +28,10 @@
 #  SECURITY: Webhook защищён HMAC-подписью.
 # ════════════════════════════════════════════════════════════
 
+import hashlib
 import hmac
 import logging
 import os
-import secrets
 import time
 from datetime import datetime
 
@@ -59,23 +59,41 @@ router = APIRouter()
 
 _WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
 
-# ── Account-linking token store (in-memory, 10-min TTL) ──────────────────────
-# token -> {"user_id": int, "expires": float}
-_link_tokens: dict[str, dict] = {}
-
+# ── Account-linking tokens (HMAC-signed, no server-side storage) ──────────────
+# Token format: {user_id}_{timestamp}_{hmac_hex32}
+# All chars are hex digits + underscore → valid Telegram start parameter.
+# TTL is 10 minutes, verified via timestamp in the token itself.
 
 def generate_link_token(payload: dict) -> str:
     """
-    Create a one-time token used in the /start deep-link.
-    payload must contain 'type': 'user' | 'location', plus 'user_id' or 'location_id'.
+    Create a signed link token for Telegram deep-link (/start TOKEN).
+    Survives server restarts — no in-memory or DB storage needed.
+    payload must contain 'user_id' (int).
     """
-    now = time.time()
-    for t in list(_link_tokens):
-        if _link_tokens[t]["expires"] < now:
-            del _link_tokens[t]
-    token = secrets.token_urlsafe(16)
-    _link_tokens[token] = {**payload, "expires": now + 600}
-    return token
+    user_id = int(payload.get("user_id", 0))
+    ts  = int(time.time())
+    msg = f"{user_id}:{ts}"
+    sig = hmac.new(settings.SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()[:32]
+    return f"{user_id}_{ts}_{sig}"
+
+
+def _verify_link_token(token: str) -> dict | None:
+    """Verify a link token. Returns {'user_id': int} or None if invalid/expired."""
+    try:
+        parts = token.split("_", 2)
+        if len(parts) != 3:
+            return None
+        user_id_s, ts_s, sig = parts
+        ts = int(ts_s)
+        if time.time() - ts > 600:   # 10-min TTL
+            return None
+        msg      = f"{user_id_s}:{ts_s}"
+        expected = hmac.new(settings.SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()[:32]
+        if not hmac.compare_digest(sig, expected):
+            return None
+        return {"type": "user", "user_id": int(user_id_s)}
+    except Exception:
+        return None
 
 
 # ── Main webhook entry point ──────────────────────────────────────────────────
@@ -234,9 +252,9 @@ async def _handle_false_positive(incident_id: int) -> str:
 
 async def _handle_link(chat_id: str, token: str):
     bot        = get_bot()
-    token_data = _link_tokens.get(token)
+    token_data = _verify_link_token(token)
 
-    if not token_data or token_data["expires"] < time.time():
+    if not token_data:
         await bot.send_message(
             chat_id=chat_id,
             text="❌ Ссылка устарела или недействительна.\n\nПолучите новую в личном кабинете.",
@@ -244,10 +262,7 @@ async def _handle_link(chat_id: str, token: str):
         )
         return
 
-    del _link_tokens[token]
-    link_type = token_data.get("type", "user")
-
-    if link_type == "location":
+    if token_data.get("type") == "location":
         await _handle_link_location(chat_id, token_data)
     else:
         await _handle_link_user(chat_id, token_data)
@@ -367,7 +382,7 @@ async def _cmd_start(chat_id: str):
                 "3. Нажмите *Привязать Telegram*"
             ),
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🌐 Открыть личный кабинет", url="https://aspanlab-1.onrender.com"),
+                InlineKeyboardButton("🌐 Открыть личный кабинет", url=settings.APP_URL or "https://aspanlab.onrender.com"),
             ]]),
         )
         return
@@ -550,7 +565,7 @@ async def _cmd_help(chat_id: str):
             "  • Обнаружена грубость на кассе\n"
             "  • Подозрение на мошенничество\n"
             "  • Ежедневный итог в 22:00\n\n"
-            "🌐 Личный кабинет:\n"
-            "https://aspanlab-1.onrender.com"
+            f"🌐 Личный кабинет:\n"
+            f"{settings.APP_URL or 'https://aspanlab.onrender.com'}"
         ),
     )
