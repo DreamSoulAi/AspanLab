@@ -1691,6 +1691,11 @@ async function doRegister(){
     const banner=document.getElementById('otpBypassBanner');
     if(banner&&d.otp_code){banner.style.display='block';}
     showOtp();
+    if(d.otp_code){
+      const inp=document.getElementById('otpCode');
+      if(inp)inp.value=d.otp_code;
+      setTimeout(doVerifyOtp,400);
+    }
   }
 }
 
