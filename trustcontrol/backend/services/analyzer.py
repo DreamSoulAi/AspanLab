@@ -180,6 +180,10 @@ def calculate_score(
         score = float(gpt_score)
         if has_bad or events.get("rudeness"):
             score = max(0.0, score - 10)
+        # База 50 для любого нормального разговора без нарушений
+        if score < 50 and not has_bad and not has_fraud \
+                and not events.get("rudeness") and not events.get("fraud_attempt"):
+            score = 50.0
         return max(0.0, min(100.0, score))
 
     # Fallback: GPT не ответил, считаем по флагам
