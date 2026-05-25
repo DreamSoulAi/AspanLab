@@ -29,7 +29,7 @@ from backend.models.report import Report
 from backend.models.alert import Alert
 from backend.models.user import User
 from backend.models.failed_job import FailedJob
-from backend.services.analyzer import analyze
+from backend.services.analyzer import analyze, get_tone, calculate_score
 from backend.services.audio_analyzer import analyze_audio_with_fallback
 from backend.services.storage import upload_evidence
 from backend.services.pos_matcher import match_report_with_pos
@@ -192,7 +192,7 @@ async def _process_submission(
             audio_sha256   = storage_result.get("sha256")
             s3_url         = storage_result.get("s3_url")
 
-        # ── Regex-анализ фраз ─────────────────────────────────────
+        # ── Анализ фраз (regex резерв) + GPT events ──────────────
         found = analyze(transcript, business_type=business_type, custom_phrases=custom_phrases or [])
 
         has_greeting = ("✅ Приветствие"   in found) or events.get("greeting", False)
@@ -204,19 +204,20 @@ async def _process_submission(
 
         is_priority_flag = bool(priority == 1 or has_fraud or has_bad)
 
-        # ── Contextual Severity: понижаем приоритет для внутренних разговоров ──
-        #
-        # Если детектор определил что рядом НЕТ клиента (internal_talk)
-        # И тумблер ignore_internal_profanity включён владельцем:
-        #   → мат/конфликт пишем в БД с тегом internal_talk
-        #   → но NOT отправляем Telegram-алерт (только тихий лог)
-        #
-        # Это принципиальная позиция продукта:
-        # «Ребята матерятся между собой когда зал пуст — не наше дело.
-        #  Но если клиент слышит мат — вы узнаете через секунду.»
-
-        effective_tone = gpt_tone if gpt_tone in ("positive", "negative", "neutral") else "neutral"
+        # ── Тон и оценка через восстановленные функции ───────────
+        effective_tone = get_tone(gpt_tone, events)
         tone_score_val = 1.0 if effective_tone == "positive" else 0.0 if effective_tone == "negative" else 0.5
+
+        final_score = calculate_score(
+            gpt_score=gpt_score,
+            events=events,
+            has_greeting=has_greeting,
+            has_goodbye=has_goodbye,
+            has_bonus=has_bonus,
+            has_bad=has_bad,
+            has_fraud=has_fraud,
+            tone=effective_tone,
+        )
 
         is_internal_talk = (conversation_context == "internal_talk")
         suppress_alert   = is_internal_talk and ignore_internal_profanity
@@ -355,7 +356,7 @@ async def _process_submission(
             await notifier.send_report(
                 chat_id=telegram_chat, location_name=location_name,
                 transcript=transcript, found=found,
-                tone=effective_tone, score=gpt_score or 50,
+                tone=effective_tone, score=final_score,
                 audio_url=s3_url,
             )
         elif telegram_chat and not suppress_alert and notify_ok_conversations:
@@ -364,7 +365,7 @@ async def _process_submission(
                 location_name=location_name,
                 transcript=transcript,
                 tone=effective_tone,
-                score=gpt_score or 50,
+                score=final_score,
                 upsell=upsell_attempt,
                 greeting=has_greeting,
             )
