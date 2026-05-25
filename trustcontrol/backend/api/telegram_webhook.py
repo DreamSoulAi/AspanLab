@@ -145,6 +145,10 @@ async def _handle_message(message: dict):
             await _handle_link(chat_id, token)
         else:
             await _cmd_start(chat_id)
+    elif text.startswith("/link"):
+        parts = text.split(maxsplit=1)
+        code  = parts[1].strip() if len(parts) > 1 else ""
+        await _handle_link_by_code(chat_id, code)
     elif text in ("/profile", "👤 Профиль"):
         await _cmd_profile(chat_id)
     elif text in ("/today", "📊 Отчёт за сегодня"):
@@ -338,6 +342,68 @@ async def _handle_link_location(chat_id: str, token_data: dict):
             f"Чтобы проверить — скажите что-нибудь на кассе."
         ),
         parse_mode=ParseMode.MARKDOWN,
+    )
+
+
+async def _handle_link_by_code(chat_id: str, code: str):
+    """Link account via 6-digit manual code (fallback for when deep link fails)."""
+    bot = get_bot()
+    if not code.isdigit() or len(code) != 6:
+        await bot.send_message(
+            chat_id=chat_id,
+            text="❌ Неверный формат кода. Введите 6-значный код из личного кабинета.\n\nПример: `/link 123456`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(User).where(User.telegram_id.like(f"{code}:%"))
+        )
+        user = result.scalar()
+
+        if not user:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ Код не найден. Получите новый код в личном кабинете → Настройки → Привязать Telegram.",
+            )
+            return
+
+        try:
+            _, ts_s = user.telegram_id.rsplit(":", 1)
+            if time.time() - int(ts_s) > 600:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Код устарел (действует 10 минут). Получите новый код в личном кабинете.",
+                )
+                return
+        except Exception:
+            await bot.send_message(chat_id=chat_id, text="❌ Неверный код.")
+            return
+
+        # Remove this chat_id from any other user
+        await db.execute(
+            sa_update(User)
+            .where(User.telegram_chat == chat_id, User.id != user.id)
+            .values(telegram_chat=None)
+        )
+        user.telegram_chat = chat_id
+        user.telegram_id   = None
+        await db.commit()
+        name = user.name
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            f"✅ *Telegram привязан к профилю!*\n\n"
+            f"Привет, *{name}*! Теперь сюда будут приходить:\n"
+            f"• Уведомления о нарушениях\n"
+            f"• Ежедневный итог в 22:00\n"
+            f"• Тревоги с кнопками\n\n"
+            f"Используйте кнопки ниже:"
+        ),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_main_keyboard(),
     )
 
 

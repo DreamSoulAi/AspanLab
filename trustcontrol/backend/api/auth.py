@@ -409,9 +409,16 @@ async def update_me(
 
 
 @router.post("/tg-link")
-async def tg_link(user: User = Depends(get_current_user)):
-    """Generate one-time Telegram deep link for account linking."""
+async def tg_link(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate one-time Telegram deep link + manual 6-digit code for account linking."""
     from backend.api.telegram_webhook import generate_link_token
+
+    # 6-digit manual code stored in telegram_id field (format: "CODE:TIMESTAMP")
+    code = str(secrets.randbelow(900000) + 100000)
+    user.telegram_id = f"{code}:{int(time.time())}"
 
     token    = generate_link_token({"type": "user", "user_id": user.id})
     bot_name = settings.TELEGRAM_BOT_USERNAME.strip()
@@ -427,7 +434,11 @@ async def tg_link(user: User = Depends(get_current_user)):
     if not bot_name:
         raise HTTPException(status_code=503, detail="Бот не настроен — обратитесь в поддержку")
 
-    return {"url": f"https://t.me/{bot_name}?start={token}", "token": token}
+    return {
+        "url":   f"https://t.me/{bot_name}?start={token}",
+        "token": token,
+        "code":  code,
+    }
 
 
 @router.post("/tg-unlink")

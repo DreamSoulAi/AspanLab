@@ -2321,17 +2321,26 @@ async function linkTelegram(){
   if(!d.url){showErr('Бот не настроен — обратитесь в поддержку',true);return;}
   window.open(d.url,'_blank');
   const info=document.getElementById('tgLinkInfo');
-  if(info){info.textContent='📱 Откройте ссылку в Telegram и нажмите «Старт» — страница обновится автоматически';info.style.color='var(--accent2)';}
+  if(info){
+    const codeHtml=d.code
+      ?`<div style="margin-top:8px;padding:10px 12px;background:rgba(34,158,217,.1);border:1px solid rgba(34,158,217,.3);border-radius:8px;font-size:13px">
+          <div style="margin-bottom:4px;color:var(--text2)">Ссылка не сработала? Отправьте боту команду:</div>
+          <div style="font-family:monospace;font-size:16px;font-weight:700;color:#229ED9;letter-spacing:2px">/link ${d.code}</div>
+          <button onclick="navigator.clipboard.writeText('/link ${d.code}').then(()=>{this.textContent='Скопировано ✓';setTimeout(()=>{this.textContent='Копировать'},1500)})" style="margin-top:6px;background:rgba(34,158,217,.15);border:1px solid rgba(34,158,217,.3);color:#229ED9;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer">Копировать</button>
+        </div>`
+      :'';
+    info.innerHTML='<div style="color:var(--accent2)">📱 Откройте ссылку в Telegram и нажмите «Старт»</div>'+codeHtml;
+  }
   clearInterval(_tgLinkPoll);
   let polls=0;
   _tgLinkPoll=setInterval(async()=>{
-    if(++polls>20){clearInterval(_tgLinkPoll);if(info)info.textContent='';return;}
+    if(++polls>20){clearInterval(_tgLinkPoll);if(info)info.innerHTML='';return;}
     const me=await apiFetch('/auth/me',{},true);
     if(me&&me.telegram_chat){
       clearInterval(_tgLinkPoll);
       _userTgLinked=true;
       renderTgStatus(me);
-      if(info){info.textContent='✅ Telegram успешно подключён!';info.style.color='#10B981';setTimeout(()=>{if(info)info.textContent='';},4000);}
+      if(info){info.innerHTML='<span style="color:#10B981">✅ Telegram успешно подключён!</span>';setTimeout(()=>{if(info)info.innerHTML='';},4000);}
     }
   },5000);
 }
