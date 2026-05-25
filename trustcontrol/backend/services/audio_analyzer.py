@@ -191,7 +191,7 @@ async def analyze_audio(wav_bytes: bytes, language: str = None) -> dict:
                     {"type": "text", "text": _PROMPT + lang_hint},
                 ],
             }],
-            max_tokens=800,
+            max_tokens=2000,
             temperature=0.1,
         )
 

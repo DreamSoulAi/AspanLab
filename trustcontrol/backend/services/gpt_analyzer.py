@@ -71,7 +71,7 @@ async def gpt_analyze(transcript: str) -> dict:
                 {"role": "user",   "content": f"Транскрипт разговора:\n\n{transcript}"},
             ],
             response_format={"type": "json_object"},
-            max_tokens=300,
+            max_tokens=800,
             temperature=0.2,
         )
 
