@@ -66,8 +66,15 @@ async def dashboard(
     today_reports = today_result.scalars().all()
     total = len(today_reports)
 
+    # Только реальные диалоги с клиентами (не тесты, не фоновые звуки)
+    qualified_reports = [
+        r for r in today_reports
+        if r.conversation_context == 'customer_service'
+    ]
+    qualified = len(qualified_reports)
+
     if total == 0:
-        return {"today": {"total": 0, "score": 0, "greetings_pct": 0, "bonus_pct": 0,
+        return {"today": {"total": 0, "qualified": 0, "score": 0, "greetings_pct": 0, "bonus_pct": 0,
                           "bad_count": 0, "fraud_count": 0, "positive_tone": 0, "negative_tone": 0},
                 "week": [], "alerts_today": 0}
 
@@ -76,12 +83,12 @@ async def dashboard(
 
     # ── Оценка за день ───────────────────────────────────────
     score = (
-        pct(today_reports, "has_greeting") * 0.25 +
-        pct(today_reports, "has_thanks")   * 0.20 +
-        pct(today_reports, "has_goodbye")  * 0.15 +
-        pct(today_reports, "has_bonus")    * 0.25 +
-        sum(1 for r in today_reports if r.tone == "positive") / total * 100 * 0.15 -
-        sum(1 for r in today_reports if r.has_bad or r.has_fraud) * 10
+        pct(qualified_reports, "has_greeting") * 0.25 +
+        pct(qualified_reports, "has_thanks")   * 0.20 +
+        pct(qualified_reports, "has_goodbye")  * 0.15 +
+        pct(qualified_reports, "has_bonus")    * 0.25 +
+        (sum(1 for r in qualified_reports if r.tone == "positive") / qualified * 100 * 0.15 if qualified else 0) -
+        sum(1 for r in qualified_reports if r.has_bad or r.has_fraud) * 10
     )
 
     # ── Тревоги за сегодня ───────────────────────────────────
@@ -105,25 +112,28 @@ async def dashboard(
             )
         )
         day_reports = day_result.scalars().all()
+        day_qualified = [r for r in day_reports if r.conversation_context == 'customer_service']
         week_data.append({
             "date":          str(d),
             "total":         len(day_reports),
-            "greetings_pct": pct(day_reports, "has_greeting"),
-            "bonus_pct":     pct(day_reports, "has_bonus"),
-            "fraud_count":   sum(1 for r in day_reports if r.has_fraud),
+            "qualified":     len(day_qualified),
+            "greetings_pct": pct(day_qualified, "has_greeting"),
+            "bonus_pct":     pct(day_qualified, "has_bonus"),
+            "fraud_count":   sum(1 for r in day_qualified if r.has_fraud),
         })
 
     return {
         "today": {
             "total":         total,
-            "greetings_pct": pct(today_reports, "has_greeting"),
-            "thanks_pct":    pct(today_reports, "has_thanks"),
-            "goodbye_pct":   pct(today_reports, "has_goodbye"),
-            "bonus_pct":     pct(today_reports, "has_bonus"),
-            "bad_count":     sum(1 for r in today_reports if r.has_bad),
-            "fraud_count":   sum(1 for r in today_reports if r.has_fraud),
-            "positive_tone": sum(1 for r in today_reports if r.tone == "positive"),
-            "negative_tone": sum(1 for r in today_reports if r.tone == "negative"),
+            "qualified":     qualified,
+            "greetings_pct": pct(qualified_reports, "has_greeting"),
+            "thanks_pct":    pct(qualified_reports, "has_thanks"),
+            "goodbye_pct":   pct(qualified_reports, "has_goodbye"),
+            "bonus_pct":     pct(qualified_reports, "has_bonus"),
+            "bad_count":     sum(1 for r in qualified_reports if r.has_bad),
+            "fraud_count":   sum(1 for r in qualified_reports if r.has_fraud),
+            "positive_tone": sum(1 for r in qualified_reports if r.tone == "positive"),
+            "negative_tone": sum(1 for r in qualified_reports if r.tone == "negative"),
             "score":         max(0, min(100, round(score))),
         },
         "week":         week_data,

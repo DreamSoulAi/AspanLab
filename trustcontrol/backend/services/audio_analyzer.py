@@ -45,6 +45,9 @@ _PROMPT = """Ты AI-аудитор качества обслуживания и
   • Личный звонок не связанный с работой — верни is_personal_talk: true
   • Обрывки фраз без реального диалога (<2 реплик)
   • Фоновый шум, тишина, ремонт, транспорт
+  • Проверка микрофона: повторяющиеся «раз», «алло», «тест», «один два три», счёт до 10
+  • Запись без ЕДИНОГО признака обслуживания: нет товара, цены, заказа, оплаты, имени услуги
+  • Бессмысленный набор слов без коммерческого контекста (нет покупки, нет вопроса клиента)
 
 → Если это НЕ разговор на точке: {"status":"IGNORE","is_business":false,"is_personal_talk":false,"priority":0,"transcript":"","summary":"Нерелевантная запись"}
 → Если ЛИЧНЫЙ разговор сотрудника: {"status":"PERSONAL","is_business":false,"is_personal_talk":true,"priority":0,"transcript":"","summary":"Личный разговор сотрудника"}
@@ -226,6 +229,8 @@ async def analyze_audio_with_fallback(
     """
     if transcript_text and transcript_text.strip():
         gpt = await gpt_analyze(transcript_text)
+        if not gpt.get("is_business", True):
+            return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
         return {
             "status":               "OK",
             "is_business":          True,
@@ -270,6 +275,8 @@ async def analyze_audio_with_fallback(
             return {}
 
         gpt = await gpt_analyze(text)
+        if not gpt.get("is_business", True):
+            return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
         return {
             "status":               "OK",
             "is_business":          True,
