@@ -36,7 +36,7 @@ import time
 from datetime import datetime
 
 from fastapi import APIRouter, Request, Response
-from sqlalchemy import select
+from sqlalchemy import select, update as sa_update
 from telegram import (
     Bot,
     InlineKeyboardButton,
@@ -294,6 +294,12 @@ async def _handle_link_user(chat_id: str, token_data: dict):
                 ),
             )
             return
+        # Remove this chat_id from any other user first (prevent duplicate lookups)
+        await db.execute(
+            sa_update(User)
+            .where(User.telegram_chat == chat_id, User.id != user_id)
+            .values(telegram_chat=None)
+        )
         user.telegram_chat = chat_id
         await db.commit()
         name = user.name
