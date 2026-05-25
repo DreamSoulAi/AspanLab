@@ -470,19 +470,32 @@ _BIZ_ICONS  = {"coffee": "☕", "gas": "⛽", "fastfood": "🍔", "cafe": "🍽"
 
 async def _cmd_setpassword(chat_id: str, new_pw: str):
     """Reset password for the linked account via Telegram."""
-    from backend.api.auth import hash_password
+    from backend.api.auth import hash_password, verify_password
     if len(new_pw) < 8:
         await _send(chat_id, "❌ Пароль должен быть минимум 8 символов.\n\nПример: `/setpassword МойПароль123`")
         return
+    new_hash = hash_password(new_pw)
     async with AsyncSessionLocal() as db:
         user_r = await db.execute(select(User).where(User.telegram_chat == chat_id))
         user   = user_r.scalar()
         if not user:
             await _send(chat_id, "❌ Telegram не привязан к аккаунту.")
             return
-        user.hashed_password = hash_password(new_pw)
+        user_id = user.id
+        await db.execute(
+            sa_update(User)
+            .where(User.id == user_id)
+            .values(hashed_password=new_hash)
+        )
         await db.commit()
-    await _send(chat_id, "✅ *Пароль обновлён!*\n\nТеперь войдите на сайте с новым паролем.")
+        # Re-fetch to verify the update persisted
+        check_r = await db.execute(select(User.hashed_password).where(User.id == user_id))
+        stored  = check_r.scalar()
+    ok = verify_password(new_pw, stored) if stored else False
+    if ok:
+        await _send(chat_id, "✅ *Пароль обновлён и проверен!*\n\nТеперь войдите на сайте с новым паролем.")
+    else:
+        await _send(chat_id, f"⚠️ Пароль записан, но проверка не прошла.\nhash\\[0:20\\]: `{(stored or '')[:20]}`")
 
 
 async def _cmd_verify(chat_id: str):
