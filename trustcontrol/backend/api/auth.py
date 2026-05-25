@@ -419,6 +419,7 @@ async def tg_link(
     # 6-digit manual code stored in telegram_id field (format: "CODE:TIMESTAMP")
     code = str(secrets.randbelow(900000) + 100000)
     user.telegram_id = f"{code}:{int(time.time())}"
+    await db.flush()   # ensure UPDATE is sent before response
 
     token    = generate_link_token({"type": "user", "user_id": user.id})
     bot_name = settings.TELEGRAM_BOT_USERNAME.strip()
