@@ -761,7 +761,12 @@ async def _cmd_locations(chat_id: str):
     for loc in locations:
         icon   = _BIZ_ICONS.get(loc.business_type or "", "🏪")
         status = "🟢 Активна" if loc.is_active else "🔴 Неактивна"
-        tg     = "✅" if loc.telegram_chat else "⚠️ Telegram не настроен"
+        if loc.telegram_chat:
+            tg = "✅ Группа"
+        elif user.telegram_chat:
+            tg = "✅ Личный чат"
+        else:
+            tg = "⚠️ Telegram не настроен"
         lines.append(
             f"{icon} *{loc.name}*\n"
             f"  {status}  |  📨 {tg}\n"
