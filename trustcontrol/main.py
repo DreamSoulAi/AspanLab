@@ -286,10 +286,10 @@ async def _fix_schema():
         try:
             await db.execute(sa.text(sql))
             await db.commit()
-            log.info(f"✅ schema fix: {msg}")
+            print(f"✅ schema fix: {msg}", flush=True)
         except Exception as e:
             await db.rollback()
-            log.warning(f"_fix_schema [{msg}]: {e}")
+            print(f"⚠️ schema fix [{msg}]: {e}", flush=True)
 
     async def _check_col(db, table: str, col: str) -> bool:
         r = await db.execute(sa.text(
@@ -311,7 +311,7 @@ async def _fix_schema():
                     await _run(db, "ALTER TABLE users ALTER COLUMN email DROP NOT NULL",
                                "users.email → nullable")
             except Exception as e:
-                log.warning(f"_fix_schema users.email: {e}")
+                print(f"⚠️ schema fix users.email: {e}", flush=True)
 
         # ── users.phone → unique index ──────────────────────────────────────
         if is_pg:
@@ -329,10 +329,10 @@ async def _fix_schema():
                         "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_phone ON users(phone)"
                     ))
                     await db.commit()
-                    log.info("✅ schema fix: users.phone unique index added")
+                    print("✅ schema fix: users.phone unique index added", flush=True)
             except Exception as e:
                 await db.rollback()
-                log.warning(f"_fix_schema users.phone index: {e}")
+                print(f"⚠️ schema fix users.phone index: {e}", flush=True)
 
         # ── otp_codes.phone ─────────────────────────────────────────────────
         try:
@@ -344,10 +344,10 @@ async def _fix_schema():
                 if is_pg:
                     await db.execute(sa.text("ALTER TABLE otp_codes ALTER COLUMN phone SET NOT NULL"))
                 await db.commit()
-                log.info("✅ schema fix: otp_codes.phone added")
+                print("✅ schema fix: otp_codes.phone added", flush=True)
         except Exception as e:
             await db.rollback()
-            log.warning(f"_fix_schema otp_codes.phone: {e}")
+            print(f"⚠️ schema fix otp_codes.phone: {e}", flush=True)
 
         # ── otp_codes.email → nullable ──────────────────────────────────────
         if is_pg:
@@ -361,7 +361,7 @@ async def _fix_schema():
                     await _run(db, "ALTER TABLE otp_codes ALTER COLUMN email DROP NOT NULL",
                                "otp_codes.email → nullable")
             except Exception as e:
-                log.warning(f"_fix_schema otp_codes.email: {e}")
+                print(f"⚠️ schema fix otp_codes.email: {e}", flush=True)
 
         # ── users.company_name ──────────────────────────────────────────────
         try:
@@ -369,7 +369,7 @@ async def _fix_schema():
                 await _run(db, "ALTER TABLE users ADD COLUMN company_name VARCHAR(150)",
                            "users.company_name added")
         except Exception as e:
-            log.warning(f"_fix_schema users.company_name: {e}")
+            print(f"⚠️ schema fix users.company_name: {e}", flush=True)
 
         # ── locations: все новые колонки через IF NOT EXISTS ────────────────
         _loc_cols = [
@@ -400,7 +400,7 @@ async def _fix_schema():
                     await _run(db, "ALTER TABLE otp_codes ALTER COLUMN code TYPE VARCHAR(64)",
                                "otp_codes.code → VARCHAR(64)")
             except Exception as e:
-                log.warning(f"_fix_schema otp_codes.code: {e}")
+                print(f"⚠️ schema fix otp_codes.code: {e}", flush=True)
 
 
 @app.on_event("startup")
@@ -439,10 +439,10 @@ async def startup():
     except Exception as e:
         log.error(f"health_monitor error (non-fatal): {e}")
 
-    print("✅ TrustControl API v3.0 запущен!")
-    print(f"📡 http://localhost:{settings.PORT}")
+    print("✅ TrustControl API v3.0 запущен!", flush=True)
+    print(f"📡 http://localhost:{settings.PORT}", flush=True)
     if settings.DEBUG:
-        print(f"📖 Документация: http://localhost:{settings.PORT}/docs")
+        print(f"📖 Документация: http://localhost:{settings.PORT}/docs", flush=True)
 
 
 @app.on_event("shutdown")
