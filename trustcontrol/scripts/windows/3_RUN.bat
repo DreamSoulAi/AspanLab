@@ -64,7 +64,7 @@ echo  Key:      %API_KEY:~0,8%...
 echo  Language: %LANGUAGE%
 echo.
 
-%PY% monitor.py ^
+%PY% "%~dp0monitor.py" ^
     --api-url "%API_URL%" ^
     --api-key "%API_KEY%" ^
     --language "%LANGUAGE%" ^
