@@ -379,6 +379,27 @@ async def _fix_schema():
                 await db.commit()
                 log.info("✅ schema fix: locations.ignore_background_media added")
 
+            # ── locations: business scripts + tracking toggles ─────────────
+            _loc_cols = [
+                ("business_description", "TEXT"),
+                ("greeting_script",      "TEXT"),
+                ("upsell_script",        "TEXT"),
+                ("track_upsell",         "BOOLEAN DEFAULT TRUE"),
+                ("track_greeting",       "BOOLEAN DEFAULT TRUE"),
+                ("track_goodbye",        "BOOLEAN DEFAULT TRUE"),
+            ]
+            for col_name, col_type in _loc_cols:
+                r_col = await db.execute(sa.text(
+                    "SELECT 1 FROM information_schema.columns "
+                    f"WHERE table_name='locations' AND column_name='{col_name}'"
+                ))
+                if not r_col.fetchone():
+                    await db.execute(sa.text(
+                        f"ALTER TABLE locations ADD COLUMN {col_name} {col_type}"
+                    ))
+                    await db.commit()
+                    log.info(f"✅ schema fix: locations.{col_name} added")
+
             # ── otp_codes.code — enlarge to 64 chars for SHA-256 hash ──────
             if is_pg:
                 r_otp = await db.execute(sa.text(
