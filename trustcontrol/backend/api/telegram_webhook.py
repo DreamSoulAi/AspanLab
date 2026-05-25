@@ -172,6 +172,8 @@ async def _handle_message(message: dict):
         parts = text.split(maxsplit=1)
         pw = parts[1].strip() if len(parts) > 1 else ""
         await _cmd_simlogin(chat_id, pw)
+    elif text == "/gettoken":
+        await _cmd_gettoken(chat_id)
     else:
         await _cmd_start(chat_id)
 
@@ -469,6 +471,24 @@ async def _send(chat_id: str, text: str, **kwargs):
 # ── Command implementations ────────────────────────────────────────────────────
 
 _PLAN_NAMES = {"trial": "Пробный", "start": "Старт", "business": "Бизнес", "network": "Сеть"}
+
+
+async def _cmd_gettoken(chat_id: str):
+    """Generate a one-time login URL for the linked account."""
+    user = await _get_user_by_chat(chat_id)
+    if not user:
+        await _send(chat_id, "❌ Нет привязанного аккаунта.")
+        return
+    token   = generate_link_token({"type": "user", "user_id": user.id})
+    app_url = (settings.APP_URL or "https://aspanlab.onrender.com").rstrip("/")
+    url     = f"{app_url}/?login_token={token}"
+    await _send(
+        chat_id,
+        f"🔑 *Войти без пароля*\n\n[Нажми сюда чтобы войти]({url})\n\n_Ссылка действует 10 минут_",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🚀 Открыть личный кабинет", url=url),
+        ]]),
+    )
 _BIZ_ICONS  = {"coffee": "☕", "gas": "⛽", "fastfood": "🍔", "cafe": "🍽", "beauty": "💅", "shop": "🛍", "fitness": "💪", "hotel": "🏨"}
 
 
