@@ -481,8 +481,11 @@ async def _cmd_debug(chat_id: str):
         all_users_r = await db.execute(select(User.id, User.phone, User.is_verified))
         all_users   = all_users_r.all()
 
+    db_type = "PostgreSQL" if "postgresql" in settings.DATABASE_URL else f"SQLite ({settings.DATABASE_URL})"
+
     lines = [
         f"🔍 *DEBUG*\n",
+        f"DB: `{db_type}`",
         f"chat\\_id: `{chat_id}`",
         f"user: id=`{user.id}` phone=`{user.phone}` verified=`{user.is_verified}`",
         f"locations for this user: `{len(locs)}`",
