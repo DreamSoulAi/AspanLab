@@ -416,13 +416,18 @@ async def tg_link(
     """Generate one-time Telegram deep link + manual 6-digit code for account linking."""
     from backend.api.telegram_webhook import generate_link_token
 
-    # 6-digit manual code stored in telegram_id field (format: "CODE:TIMESTAMP")
+    # 6-digit manual code stored in otp_codes table (phone="tg:{user_id}")
     code = str(secrets.randbelow(900000) + 100000)
     await db.execute(
-        sa_update(User)
-        .where(User.id == user.id)
-        .values(telegram_id=f"{code}:{int(time.time())}")
+        sa_update(OtpCode)
+        .where(OtpCode.phone == f"tg:{user.id}", OtpCode.used == False)  # noqa: E712
+        .values(used=True)
     )
+    db.add(OtpCode(
+        phone=f"tg:{user.id}",
+        code=code,
+        expires_at=datetime.utcnow() + timedelta(minutes=10),
+    ))
     await db.commit()
 
     token    = generate_link_token({"type": "user", "user_id": user.id})

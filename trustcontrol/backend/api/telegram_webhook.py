@@ -50,6 +50,7 @@ from backend.config import settings
 from backend.database import AsyncSessionLocal
 from backend.models.incident import Incident
 from backend.models.location import Location
+from backend.models.otp_code import OtpCode
 from backend.models.report   import Report
 from backend.models.user     import User
 from backend.services.notifier import get_bot
@@ -357,38 +358,38 @@ async def _handle_link_by_code(chat_id: str, code: str):
         return
 
     async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(User).where(User.telegram_id.like(f"{code}:%"))
+        otp_result = await db.execute(
+            select(OtpCode).where(
+                OtpCode.code == code,
+                OtpCode.phone.like("tg:%"),
+                OtpCode.used == False,  # noqa: E712
+                OtpCode.expires_at > datetime.utcnow(),
+            )
         )
-        user = result.scalar()
+        otp = otp_result.scalar()
 
-        if not user:
+        if not otp:
             await bot.send_message(
                 chat_id=chat_id,
-                text="❌ Код не найден. Получите новый код в личном кабинете → Настройки → Привязать Telegram.",
+                text="❌ Код не найден или устарел. Получите новый код в личном кабинете → Настройки → Привязать Telegram.",
             )
             return
 
-        try:
-            _, ts_s = user.telegram_id.rsplit(":", 1)
-            if time.time() - int(ts_s) > 600:
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Код устарел (действует 10 минут). Получите новый код в личном кабинете.",
-                )
-                return
-        except Exception:
-            await bot.send_message(chat_id=chat_id, text="❌ Неверный код.")
+        user_id = int(otp.phone.split(":")[1])
+        user = await db.get(User, user_id)
+        if not user:
+            await bot.send_message(chat_id=chat_id, text="❌ Аккаунт не найден.")
             return
+
+        otp.used = True
 
         # Remove this chat_id from any other user
         await db.execute(
             sa_update(User)
-            .where(User.telegram_chat == chat_id, User.id != user.id)
+            .where(User.telegram_chat == chat_id, User.id != user_id)
             .values(telegram_chat=None)
         )
         user.telegram_chat = chat_id
-        user.telegram_id   = None
         await db.commit()
         name = user.name
 
