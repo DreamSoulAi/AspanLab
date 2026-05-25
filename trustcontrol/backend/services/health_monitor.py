@@ -17,13 +17,13 @@ from backend.models.user import User
 
 log = logging.getLogger("health_monitor")
 
-CHECK_INTERVAL_SEC      = 30     # проверяем каждые 30 секунд (пинг тоже 30с)
-OFFLINE_THRESHOLD_MIN   = 1     # оффлайн если нет пинга > 60 секунд
-ALERT_COOLDOWN_MIN      = 10    # не спамим: повторный алерт через 10 мин
+CHECK_INTERVAL_SEC      = 60     # проверяем каждую минуту
+OFFLINE_THRESHOLD_MIN   = 10    # нет связи если нет пинга > 10 мин
+ALERT_COOLDOWN_MIN      = 60    # повторное уведомление не чаще раза в час
 
 
 async def _send_offline_alert(location: Location, owner: User, minutes_offline: int):
-    """Отправляет Telegram-сообщение о пропаже воркера."""
+    """Отправляет Telegram-сообщение об отсутствии связи с точкой."""
     try:
         from backend.services.notifier import get_bot
         from telegram.constants import ParseMode
@@ -32,15 +32,19 @@ async def _send_offline_alert(location: Location, owner: User, minutes_offline: 
         if not chat_id:
             return
 
+        hours = minutes_offline // 60
+        mins  = minutes_offline % 60
+        duration = f"{hours} ч {mins} мин" if hours else f"{mins} мин"
+
         text = (
-            f"📵 *ВОРКЕР УШЁЛ В ОФФЛАЙН*\n\n"
-            f"🏪 *{location.name}*\n"
-            f"⏱ Нет связи уже *{minutes_offline} мин*\n\n"
-            f"Возможные причины:\n"
-            f"  • Пропал интернет в точке\n"
-            f"  • Выключился компьютер или блок питания\n"
-            f"  • Скрипт monitor.py завис\n\n"
-            f"_Алерт повторится если проблема не устранится_"
+            f"⚠️ *Нет связи с точкой*\n\n"
+            f"📍 *{location.name}*\n"
+            f"🕐 Нет данных уже *{duration}*\n\n"
+            f"Что проверить:\n"
+            f"• Интернет на кассовом компьютере\n"
+            f"• Питание компьютера\n"
+            f"• Программа мониторинга запущена\n\n"
+            f"_Следующее уведомление — через 1 час, если связь не восстановится_"
         )
         bot = get_bot()
         await bot.send_message(chat_id=chat_id, text=text, parse_mode=ParseMode.MARKDOWN)
