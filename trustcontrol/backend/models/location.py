@@ -2,7 +2,7 @@
 #  Модель: Торговая точка
 # ════════════════════════════════════════════════════════════
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from backend.database import Base
@@ -31,6 +31,24 @@ class Location(Base):
     # Антифрод: настройки владельца
     allowed_phones   = Column(JSON, default=list)           # белый список Каспи-номеров
     required_upsells = Column(JSON, default=list)           # обязательные фразы допродажи
+
+    # ── Бизнес-контекст для GPT ───────────────────────────────
+    # GPT использует это для понимания специфики точки и оценки разговора
+    business_description = Column(Text, nullable=True)
+    # Пример: "Кофейня специалти-кофе. Наша фишка — эфиопский зерно.
+    #  Гости часто спрашивают про методы заваривания."
+
+    greeting_script = Column(Text, nullable=True)
+    # Пример: "Добрый день! Что вам приготовить сегодня?"
+
+    upsell_script = Column(Text, nullable=True)
+    # Пример: "Предлагать сироп к напитку, выпечку, карту лояльности при каждом заказе"
+
+    # ── Тумблеры отслеживания ─────────────────────────────────
+    # Владелец может отключить любой параметр — он не будет влиять на оценку
+    track_upsell   = Column(Boolean, default=True)   # отслеживать допродажи
+    track_greeting = Column(Boolean, default=True)   # отслеживать приветствие
+    track_goodbye  = Column(Boolean, default=True)   # отслеживать прощание
 
     # Анти-спам: Contextual Severity
     ignore_internal_profanity = Column(Boolean, default=False)

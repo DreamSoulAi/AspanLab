@@ -160,17 +160,15 @@ def calculate_score(
     has_bad: bool = False,
     has_fraud: bool = False,
     tone: str = "neutral",
+    track_upsell: bool = True,
+    track_greeting: bool = True,
+    track_goodbye: bool = True,
 ) -> float:
     """
     Итоговая оценка качества обслуживания 0–100.
 
-    Логика приоритетов:
-      1. Мошенничество → всегда максимальный штраф (≤ 10)
-      2. Если GPT дал score → берём его как основу
-      3. Если GPT не дал score → считаем по флагам (fallback)
-
-    GPT score уже учитывает большинство факторов.
-    Бизнес-правила поверх GPT: фрод = всегда критично.
+    track_* флаги: если владелец отключил отслеживание параметра,
+    он не влияет на оценку (ни плюс ни минус).
     """
     events = events or {}
 
@@ -178,23 +176,21 @@ def calculate_score(
     if has_fraud or events.get("fraud_attempt"):
         return max(0.0, min(10.0, (gpt_score or 50) * 0.1))
 
-    # GPT дал оценку — доверяем ей как основе
     if gpt_score is not None:
         score = float(gpt_score)
-        # Небольшая корректировка за критические события
         if has_bad or events.get("rudeness"):
             score = max(0.0, score - 10)
         return max(0.0, min(100.0, score))
 
     # Fallback: GPT не ответил, считаем по флагам
     score = 50.0
-    if has_greeting:                                score += 15
-    if has_goodbye:                                 score += 10
-    if has_bonus or events.get("upsell"):           score += 15
-    if tone == "positive":                          score += 10
-    if events.get("issue_resolved"):               score += 10
-    if has_bad or events.get("rudeness"):           score -= 25
-    if tone == "negative":                          score -= 10
+    if track_greeting and has_greeting:                     score += 15
+    if track_goodbye and has_goodbye:                       score += 10
+    if track_upsell and (has_bonus or events.get("upsell")): score += 15
+    if tone == "positive":                                  score += 10
+    if events.get("issue_resolved"):                        score += 10
+    if has_bad or events.get("rudeness"):                   score -= 25
+    if tone == "negative":                                  score -= 10
 
     return max(0.0, min(100.0, score))
 

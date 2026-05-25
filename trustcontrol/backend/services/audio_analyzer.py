@@ -165,7 +165,7 @@ def _detect_audio_format(data: bytes) -> str:
     return "wav"
 
 
-async def analyze_audio(wav_bytes: bytes, language: str = None) -> dict:
+async def analyze_audio(wav_bytes: bytes, language: str = None, business_context: str = None) -> dict:
     """
     Отправляет аудио в gpt-4o-mini-audio-preview.
     Возвращает полный словарь аналитики или {} при ошибке.
@@ -177,7 +177,8 @@ async def analyze_audio(wav_bytes: bytes, language: str = None) -> dict:
     try:
         audio_b64    = base64.b64encode(wav_bytes).decode()
         audio_format = _detect_audio_format(wav_bytes)
-        lang_hint    = f"\nЯзык записи: {language}." if language else ""
+        lang_hint = f"\nЯзык записи: {language}." if language else ""
+        biz_hint  = f"\n\n━━━ КОНТЕКСТ ТОЧКИ ━━━\n{business_context}" if business_context else ""
 
         response = await client.chat.completions.create(
             model=_AUDIO_MODEL,
@@ -188,7 +189,7 @@ async def analyze_audio(wav_bytes: bytes, language: str = None) -> dict:
                         "type": "input_audio",
                         "input_audio": {"data": audio_b64, "format": audio_format},
                     },
-                    {"type": "text", "text": _PROMPT + lang_hint},
+                    {"type": "text", "text": _PROMPT + lang_hint + biz_hint},
                 ],
             }],
             max_tokens=2000,
@@ -242,6 +243,7 @@ async def analyze_audio_with_fallback(
     wav_bytes: bytes | None,
     transcript_text: str | None,
     language: str = None,
+    business_context: str = None,
 ) -> dict:
     """
     Универсальная точка входа.
@@ -275,7 +277,7 @@ async def analyze_audio_with_fallback(
         }
 
     if wav_bytes:
-        result = await analyze_audio(wav_bytes, language)
+        result = await analyze_audio(wav_bytes, language, business_context=business_context)
 
         if result.get("status") in ("IGNORE", "PERSONAL"):
             return result

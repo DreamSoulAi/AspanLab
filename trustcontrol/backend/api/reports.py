@@ -90,15 +90,32 @@ async def _process_submission(
     ignore_internal_profanity: bool = False,
     ignore_background_media: bool = True,
     notify_ok_conversations: bool = False,
+    business_description: Optional[str] = None,
+    greeting_script: Optional[str] = None,
+    upsell_script: Optional[str] = None,
+    track_upsell: bool = True,
+    track_greeting: bool = True,
+    track_goodbye: bool = True,
 ) -> None:
     """
     Полный цикл обработки одного аудио-сегмента.
     """
     try:
+        # Собираем контекст бизнеса для GPT
+        business_context_parts = []
+        if business_description:
+            business_context_parts.append(f"О точке: {business_description}")
+        if greeting_script:
+            business_context_parts.append(f"Скрипт приветствия: {greeting_script}")
+        if upsell_script:
+            business_context_parts.append(f"Что предлагать: {upsell_script}")
+        business_context = "\n".join(business_context_parts) or None
+
         result = await analyze_audio_with_fallback(
             wav_bytes=wav_bytes,
             transcript_text=transcript_text,
             language=language,
+            business_context=business_context,
         )
 
         # ── OpenAI не ответил → в очередь повторов ───────────────
@@ -217,6 +234,9 @@ async def _process_submission(
             has_bad=has_bad,
             has_fraud=has_fraud,
             tone=effective_tone,
+            track_upsell=track_upsell,
+            track_greeting=track_greeting,
+            track_goodbye=track_goodbye,
         )
 
         is_internal_talk = (conversation_context == "internal_talk")
@@ -521,6 +541,12 @@ async def submit_audio(
         ignore_internal_profanity=bool(location.ignore_internal_profanity),
         ignore_background_media=bool(getattr(location, "ignore_background_media", True)),
         notify_ok_conversations=bool(getattr(location, "notify_ok_conversations", False)),
+        business_description=location.business_description,
+        greeting_script=location.greeting_script,
+        upsell_script=location.upsell_script,
+        track_upsell=bool(getattr(location, 'track_upsell', True)),
+        track_greeting=bool(getattr(location, 'track_greeting', True)),
+        track_goodbye=bool(getattr(location, 'track_goodbye', True)),
     )
 
     return {"status": "queued", "message": "Принято в обработку"}
