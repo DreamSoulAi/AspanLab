@@ -23,7 +23,7 @@ services:
       - key: TELEGRAM_WEBHOOK_SECRET
         sync: false
       - key: DATABASE_URL
-        value: sqlite+aiosqlite:///trustcontrol.db
+        sync: false
       - key: WHISPER_LANGUAGE
         value: ru
       - key: KASPI_NUMBER
