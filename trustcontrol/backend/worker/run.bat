@@ -60,11 +60,15 @@ echo.
 echo Сервер : %API_URL%
 echo API KEY: %API_KEY:~0,8%...
 echo.
-echo Для остановки нажмите Ctrl+C
+echo Для остановки нажмите Ctrl+C или закройте окно
 echo.
 
+REM ── Бесконечный перезапуск при падении ───────────────────────
+:loop
 %PY% "%WORKER_DIR%monitor.py" --api-url "%API_URL%" --api-key "%API_KEY%"
-
 echo.
-echo Воркер остановлен.
-pause
+echo [!] Монитор остановлен. Перезапуск через 10 секунд...
+echo     Закройте это окно чтобы остановить полностью.
+echo.
+timeout /t 10 /nobreak >nul
+goto :loop
