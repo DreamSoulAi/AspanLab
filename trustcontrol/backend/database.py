@@ -54,7 +54,7 @@ async def init_db():
             try:
                 await conn.execute(
                     __import__("sqlalchemy").text(
-                        "SELECT notify_ok_conversations FROM locations LIMIT 0"
+                        "SELECT track_upsell FROM locations LIMIT 0"
                     )
                 )
             except Exception:
