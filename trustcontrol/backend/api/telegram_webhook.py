@@ -518,11 +518,13 @@ async def _cmd_locations(chat_id: str):
     async with AsyncSessionLocal() as db:
         locs_r = await db.execute(select(Location).where(Location.owner_id == user.id))
         locations = locs_r.scalars().all()
-        all_locs = await db.execute(select(Location))
-        total_locs = len(all_locs.scalars().all())
+        all_locs_r = await db.execute(select(Location.id, Location.name, Location.owner_id))
+        all_loc_rows = all_locs_r.all()
 
+    db_type = "pg" if "postgresql" in settings.DATABASE_URL else "sqlite"
     if not locations:
-        await _send(chat_id, f"📍 У вас нет точек. Добавьте их в личном кабинете.\n\n`debug: user_id={user.id} all_locations_in_db={total_locs}`")
+        loc_info = ", ".join(f"id={r[0]} owner={r[2]}" for r in all_loc_rows) or "none"
+        await _send(chat_id, f"📍 У вас нет точек. Добавьте их в личном кабинете.\n\n`debug: user_id={user.id} db={db_type} locs=[{loc_info}]`")
         return
 
     lines = ["📍 *МОИ ТОЧКИ*\n"]
