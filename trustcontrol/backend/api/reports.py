@@ -164,8 +164,8 @@ async def _process_submission(
             return
 
         transcript = result["transcript"].strip()
-        if len(transcript.split()) < 8:
-            log.info(f"[loc={location_id}] Транскрипт < 8 слов — пропущен")
+        if len(transcript.split()) < 4:
+            log.info(f"[loc={location_id}] Транскрипт < 4 слов — пропущен")
             _mark_job_done(failed_job_id)
             return
 
