@@ -40,13 +40,13 @@ API_URL={api_url}
 API_KEY={api_key}
 
 ; Язык: ru = русский, kk = казахский, auto = автоопределение
-LANGUAGE=ru
+LANGUAGE=auto
 
 ; Секунд тишины = конец разговора (2.5 по умолчанию)
 SILENCE=2.5
 
 ; Чувствительность микрофона 0-3 (2 по умолчанию)
-VAD_LEVEL=2
+VAD_LEVEL=3
 """
 
 
