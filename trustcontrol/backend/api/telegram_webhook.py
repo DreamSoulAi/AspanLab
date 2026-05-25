@@ -518,9 +518,11 @@ async def _cmd_locations(chat_id: str):
     async with AsyncSessionLocal() as db:
         locs_r = await db.execute(select(Location).where(Location.owner_id == user.id))
         locations = locs_r.scalars().all()
+        all_locs = await db.execute(select(Location))
+        total_locs = len(all_locs.scalars().all())
 
     if not locations:
-        await _send(chat_id, "📍 У вас нет точек. Добавьте их в личном кабинете.")
+        await _send(chat_id, f"📍 У вас нет точек. Добавьте их в личном кабинете.\n\n`debug: user_id={user.id} all_locations_in_db={total_locs}`")
         return
 
     lines = ["📍 *МОИ ТОЧКИ*\n"]
