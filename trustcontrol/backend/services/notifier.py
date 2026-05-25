@@ -1,13 +1,3 @@
-# ════════════════════════════════════════════════════════════
-#  Сервис: Telegram уведомления (v3.0)
-#
-#  Функции:
-#  • send_report()         — обычный алерт при нарушении
-#  • send_critical_alert() — priority=1 / fraud_risk + кнопка «Слушать»
-#  • send_daily_summary()  — вечерний отчёт (22:00)
-#  • send_shift_summary()  — итог смены
-# ════════════════════════════════════════════════════════════
-
 import logging
 import asyncio
 from datetime import datetime
@@ -28,8 +18,6 @@ def get_bot() -> Bot:
     return _bot
 
 
-# ── Внутренние хелперы ────────────────────────────────────────────────────────
-
 async def _send(chat_id: str, text: str, reply_markup=None):
     try:
         await get_bot().send_message(
@@ -44,15 +32,12 @@ async def _send(chat_id: str, text: str, reply_markup=None):
 
 
 def _listen_button(audio_url: str | None) -> InlineKeyboardMarkup | None:
-    """Кнопка «🎧 Слушать оригинал» — ссылка на S3-файл."""
     if not audio_url:
         return None
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🎧 Слушать оригинал", url=audio_url)
+        InlineKeyboardButton("Слушать запись", url=audio_url)
     ]])
 
-
-# ── Публичные функции ─────────────────────────────────────────────────────────
 
 async def send_report(
     chat_id: str,
@@ -63,35 +48,30 @@ async def send_report(
     score: float,
     audio_url: str | None = None,
 ):
-    """Отчёт при нарушении (грубость / мошенничество)."""
     ts = datetime.now().strftime("%d.%m, %H:%M")
 
     if "🚨 МОШЕННИЧЕСТВО" in found:
-        header = f"🚨 *{location_name} — подозрение на кражу*"
+        header = f"🚨 *Подозрение на кражу — {location_name}*"
+        hits   = found["🚨 МОШЕННИЧЕСТВО"]
+        detail = f"_{', '.join(hits[:2])}_"
     elif "⚠️ Грубость" in found:
-        header = f"🔴 *{location_name} — грубость с клиентом*"
+        header = f"⚠️ *Грубость с клиентом — {location_name}*"
+        hits   = found["⚠️ Грубость"]
+        detail = f"_{', '.join(hits[:2])}_"
     else:
-        header = f"⚠️ *{location_name} — нарушение*"
+        header = f"⚠️ *Нарушение — {location_name}*"
+        detail = ""
 
-    lines = [header, f"_{ts}_", ""]
+    lines = [header, f"_{ts}_"]
+    if detail:
+        lines += ["", detail]
 
-    # Показываем только найденные нарушения, без технических деталей
-    if "🚨 МОШЕННИЧЕСТВО" in found:
-        hits = found["🚨 МОШЕННИЧЕСТВО"]
-        lines.append(f"Зафиксировано: _{', '.join(hits[:2])}_")
-    elif "⚠️ Грубость" in found:
-        hits = found["⚠️ Грубость"]
-        lines.append(f"Зафиксировано: _{', '.join(hits[:2])}_")
-
-    markup = _listen_button(audio_url)
-    await _send(chat_id, "\n".join(lines), reply_markup=markup)
+    await _send(chat_id, "\n".join(lines), reply_markup=_listen_button(audio_url))
 
 
 async def send_critical_alert(data: dict):
-    """Срочный алерт при конфликте / подозрении на мошенничество."""
     chat_id = data.get("telegram_chat")
     if not chat_id:
-        log.warning("send_critical_alert: telegram_chat не задан")
         return
 
     summary       = data.get("summary", "—")
@@ -100,13 +80,11 @@ async def send_critical_alert(data: dict):
     ts = datetime.now().strftime("%d.%m, %H:%M")
 
     text = (
-        f"⚠️ *{location_name} — проверьте запись*\n"
+        f"⚠️ *{location_name} — требует внимания*\n"
         f"_{ts}_\n\n"
         f"{summary}"
     )
-
-    markup = _listen_button(audio_url) if audio_url else None
-    await _send(chat_id, text, reply_markup=markup)
+    await _send(chat_id, text, reply_markup=_listen_button(audio_url) if audio_url else None)
 
 
 async def send_incident_alert(
@@ -121,67 +99,45 @@ async def send_incident_alert(
     tx_receipt_id: str | None = None,
     tx_items: list | None = None,
 ):
-    """
-    Интерактивный Telegram-алерт об инциденте.
-
-    Формат:
-      🔴 ТРЕВОГА: Подозрение на кражу
-      Точка: "Кофейня на Абая"
-      Продавец продиктовал номер 8707... которого нет в белом списке.
-
-      Кнопки:
-        [🎧 Прослушать запись]   — если есть proof_s3_url
-        [📊 Данные чека]         — если есть tx_amount
-    """
     if not chat_id:
         return
 
     _TYPE_LABELS = {
-        "KASPI_FRAUD": "🔴 ТРЕВОГА: Подозрение на кражу",
-        "FRAUD":       "🚨 КРИТИЧНО: Кассовый разрыв",
-        "AGGRESSION":  "⚠️ НАРУШЕНИЕ: Грубость / конфликт",
-        "UPSELL_GAP":  "📉 Допродажа не пробита",
+        "KASPI_FRAUD": "🚨 Подозрение на кражу",
+        "FRAUD":       "🚨 Кассовый разрыв",
+        "AGGRESSION":  "⚠️ Грубость / конфликт",
+        "UPSELL_GAP":  "Допродажа не предложена",
     }
     title = _TYPE_LABELS.get(incident_type, f"⚠️ Инцидент: {incident_type}")
     ts    = datetime.now().strftime("%d.%m.%Y %H:%M")
 
     lines = [
         f"*{title}*",
+        f"*{location_name}* · {ts}",
         f"",
-        f"🏪 Точка: *{location_name}*",
-        f"🕐 {ts}",
-        f"",
-        f"📋 {description}",
+        f"{description}",
     ]
 
     if detected_phone:
-        lines.append(f"\n📱 Продиктованный номер: `{detected_phone}`")
-        lines.append("_Этого номера нет в белом списке владельца_")
+        lines += [f"", f"Номер: `{detected_phone}`", "_Не числится в белом списке_"]
 
-    # Строка 1: аудио (url-кнопка)
-    row1 = []
-    if proof_s3_url:
-        row1.append(InlineKeyboardButton("🎧 Прослушать запись", url=proof_s3_url))
-
-    # Строка 2: подтверждение / ошибка (callback-кнопки)
-    row2 = []
-    if incident_id:
-        row2.append(InlineKeyboardButton("✅ Подтвердить", callback_data=f"tc_confirm:{incident_id}"))
-        row2.append(InlineKeyboardButton("❌ Ошибка",      callback_data=f"tc_fp:{incident_id}"))
-
-    # Данные чека — вставляем текстом (нельзя открыть как URL)
     if tx_amount is not None:
-        lines.append(f"\n📊 *Данные чека:*")
-        lines.append(f"  Сумма: `{tx_amount:,.0f} ₸`")
+        lines += [f"", f"*Данные чека:*", f"Сумма: `{tx_amount:,.0f} ₸`"]
         if tx_receipt_id:
-            lines.append(f"  Чек №: `{tx_receipt_id}`")
+            lines.append(f"Чек №: `{tx_receipt_id}`")
         if tx_items:
-            lines.append("  Позиции:")
+            lines.append("Позиции:")
             for item in (tx_items or [])[:5]:
                 name  = item.get("name", "?")
                 qty   = item.get("qty") or item.get("quantity") or 1
                 price = item.get("price") or item.get("sum") or "—"
-                lines.append(f"    • {name} × {qty} = {price} ₸")
+                lines.append(f"  {name} × {qty} = {price} ₸")
+
+    row1 = [InlineKeyboardButton("Прослушать запись", url=proof_s3_url)] if proof_s3_url else []
+    row2 = []
+    if incident_id:
+        row2.append(InlineKeyboardButton("✅ Подтвердить", callback_data=f"tc_confirm:{incident_id}"))
+        row2.append(InlineKeyboardButton("❌ Ошибка",      callback_data=f"tc_fp:{incident_id}"))
 
     all_rows = [r for r in [row1, row2] if r]
     markup = InlineKeyboardMarkup(all_rows) if all_rows else None
@@ -189,16 +145,7 @@ async def send_incident_alert(
 
 
 async def send_daily_summary(chat_id: str, location_name: str, stats: dict):
-    """
-    Вечерний отчёт (отправляется в ~22:00 автоматически).
-
-    stats: {
-      total, upsell_count, upsell_pct,
-      avg_satisfaction, fraud_risks,
-      negative_count, greeting_pct
-    }
-    """
-    total     = stats.get("total", 0)
+    total = stats.get("total", 0)
     if total == 0:
         return
 
@@ -208,24 +155,27 @@ async def send_daily_summary(chat_id: str, location_name: str, stats: dict):
     negative     = stats.get("negative_count", 0)
     greeting_pct = stats.get("greeting_pct", 0)
 
-    sat_stars = "⭐" * round(avg_sat) if avg_sat else "—"
-    fraud_line = f"\n🚨 Подозрений на фрод: *{fraud_risks}*" if fraud_risks else ""
-    neg_line   = f"\n😤 Негативных разговоров: *{negative}*" if negative else ""
+    score_icon = "🟢" if avg_sat >= 4 else "🟡" if avg_sat >= 3 else "🔴"
 
-    score_emoji = "🟢" if avg_sat >= 4 else "🟡" if avg_sat >= 3 else "🔴"
+    lines = [
+        f"*Итог дня — {location_name}*",
+        f"_{datetime.now().strftime('%d.%m.%Y')}_",
+        f"",
+        f"Разговоров: *{total}*",
+        f"Приветствия: *{greeting_pct:.0f}%*",
+        f"Допродажи: *{upsell_pct:.0f}%*",
+        f"{score_icon} Оценка: *{avg_sat:.1f}/5*",
+    ]
 
-    text = (
-        f"📊 *ИТОГ ДНЯ*\n"
-        f"🏪 {location_name}  |  {datetime.now().strftime('%d.%m.%Y')}\n\n"
-        f"💬 Всего разговоров: *{total}*\n"
-        f"👋 Приветствия: *{greeting_pct:.0f}%*\n"
-        f"🎯 Допродажи предложены: *{upsell_pct:.0f}%*\n"
-        f"{score_emoji} Средняя оценка клиента: *{avg_sat:.1f}/5* {sat_stars}"
-        f"{fraud_line}"
-        f"{neg_line}\n\n"
-        f"_Подробнее — в дашборде_"
-    )
-    await _send(chat_id, text)
+    if fraud_risks:
+        lines.append(f"🚨 Подозрений на кражу: *{fraud_risks}*")
+    if negative:
+        lines.append(f"⚠️ Негативных разговоров: *{negative}*")
+
+    lines.append(f"")
+    lines.append(f"_Подробнее — в дашборде_")
+
+    await _send(chat_id, "\n".join(lines))
 
 
 async def send_ok_report(
@@ -237,25 +187,25 @@ async def send_ok_report(
     upsell: bool,
     greeting: bool,
 ):
-    """Краткое сообщение для обычного разговора без нарушений."""
-    tone_map = {"positive": "😊", "neutral": "😐", "negative": "😤"}
-    tone_emoji = tone_map.get(tone, "😐")
-    score_emoji = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
+    score_icon = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
+    tone_ru = {"positive": "позитивный", "neutral": "нейтральный", "negative": "негативный"}.get(tone, "нейтральный")
 
     flags = []
-    flags.append("👋 Поздоровался" if greeting else "👋 Не поздоровался")
-    flags.append("🎯 Допродажа предложена" if upsell else "🎯 Допродажи не было")
+    if not greeting:
+        flags.append("нет приветствия")
+    if not upsell:
+        flags.append("нет допродажи")
+    flags_line = f"\n_{', '.join(flags)}_" if flags else ""
 
     text = (
-        f"✅ *{location_name}* — разговор в норме\n"
-        f"{score_emoji} {tone_emoji} Оценка: *{score:.0f}/100*\n"
-        f"{chr(10).join(flags)}"
+        f"{score_icon} *{location_name}* — {score:.0f}/100\n"
+        f"Тон: {tone_ru}"
+        f"{flags_line}"
     )
     await _send(chat_id, text)
 
 
 async def send_shift_summary(chat_id: str, location_name: str, shift_data: dict):
-    """Итог смены."""
     s     = shift_data
     total = s.get("total_conversations", 1) or 1
 
@@ -263,23 +213,25 @@ async def send_shift_summary(chat_id: str, location_name: str, shift_data: dict)
         return round((val or 0) / total * 100)
 
     score = s.get("score", 0)
-    emoji = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
+    score_icon = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
 
-    text = (
-        f"📊 *ИТОГ СМЕНЫ*\n"
-        f"🏪 {location_name}\n\n"
-        f"💬 Разговоров: *{total}*\n\n"
-        f"✅ Приветствия:   *{s.get('greetings_count',0)}* ({pct(s.get('greetings_count',0))}%)\n"
-        f"✅ Благодарности: *{s.get('thanks_count',0)}* ({pct(s.get('thanks_count',0))}%)\n"
-        f"✅ Прощания:      *{s.get('goodbye_count',0)}* ({pct(s.get('goodbye_count',0))}%)\n"
-        f"⭐ Допродажи:     *{s.get('bonus_count',0)}* ({pct(s.get('bonus_count',0))}%)\n\n"
-        f"😊 Позитивный тон: *{s.get('positive_tone_count',0)}* раз\n"
-        f"😤 Негативный тон: *{s.get('negative_tone_count',0)}* раз\n"
-    )
+    lines = [
+        f"*Итог смены — {location_name}*",
+        f"",
+        f"Разговоров: *{total}*",
+        f"Приветствия: *{s.get('greetings_count', 0)}* ({pct(s.get('greetings_count', 0))}%)",
+        f"Благодарности: *{s.get('thanks_count', 0)}* ({pct(s.get('thanks_count', 0))}%)",
+        f"Прощания: *{s.get('goodbye_count', 0)}* ({pct(s.get('goodbye_count', 0))}%)",
+        f"Допродажи: *{s.get('bonus_count', 0)}* ({pct(s.get('bonus_count', 0))}%)",
+        f"",
+        f"Позитивный тон: *{s.get('positive_tone_count', 0)}*",
+        f"Негативный тон: *{s.get('negative_tone_count', 0)}*",
+    ]
+
     if s.get("bad_count", 0):
-        text += f"\n⚠️ Грубость: *{s['bad_count']}* раз"
+        lines.append(f"⚠️ Грубость: *{s['bad_count']}* раз")
     if s.get("fraud_count", 0):
-        text += f"\n🚨 Мошенничество: *{s['fraud_count']}* раз"
+        lines.append(f"🚨 Мошенничество: *{s['fraud_count']}* раз")
 
-    text += f"\n\n{emoji} *Оценка смены: {score:.0f}/100*"
-    await _send(chat_id, text)
+    lines += [f"", f"{score_icon} *Оценка смены: {score:.0f}/100*"]
+    await _send(chat_id, "\n".join(lines))
