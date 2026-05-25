@@ -168,6 +168,10 @@ async def _handle_message(message: dict):
         parts = text.split(maxsplit=1)
         new_pw = parts[1].strip() if len(parts) > 1 else ""
         await _cmd_setpassword(chat_id, new_pw)
+    elif text.startswith("/simlogin"):
+        parts = text.split(maxsplit=1)
+        pw = parts[1].strip() if len(parts) > 1 else ""
+        await _cmd_simlogin(chat_id, pw)
     else:
         await _cmd_start(chat_id)
 
@@ -466,6 +470,43 @@ async def _send(chat_id: str, text: str, **kwargs):
 
 _PLAN_NAMES = {"trial": "Пробный", "start": "Старт", "business": "Бизнес", "network": "Сеть"}
 _BIZ_ICONS  = {"coffee": "☕", "gas": "⛽", "fastfood": "🍔", "cafe": "🍽", "beauty": "💅", "shop": "🛍", "fitness": "💪", "hotel": "🏨"}
+
+
+async def _cmd_simlogin(chat_id: str, pw: str):
+    """Simulate exactly what the web /login endpoint does, report result."""
+    from backend.api.auth import normalize_phone, verify_password
+    async with AsyncSessionLocal() as db:
+        # Find user by chat_id to get their phone
+        user_r = await db.execute(select(User).where(User.telegram_chat == chat_id))
+        tg_user = user_r.scalar()
+        if not tg_user:
+            await _send(chat_id, "❌ Нет привязанного аккаунта.")
+            return
+        phone = tg_user.phone
+
+        # Now simulate web login: look up by phone (same as web does)
+        phone_norm = normalize_phone(phone) or phone.strip()
+        web_r = await db.execute(select(User).where(User.phone == phone_norm))
+        web_user = web_r.scalar()
+
+        if not web_user:
+            await _send(chat_id, f"❌ По телефону `{phone_norm}` пользователь не найден")
+            return
+
+        pw_ok      = verify_password(pw, web_user.hashed_password)
+        hash_start = (web_user.hashed_password or "")[:20]
+        same_id    = tg_user.id == web_user.id
+
+        lines = [
+            "🔍 *Симуляция логина*",
+            f"phone: `{phone_norm}`",
+            f"same user id: `{same_id}` (tg={tg_user.id} web={web_user.id})",
+            f"hash\\[0:20\\]: `{hash_start}`",
+            f"verified: `{web_user.is_verified}`",
+            f"is\\_active: `{web_user.is_active}`",
+            f"verify\\_password: `{pw_ok}`",
+        ]
+        await _send(chat_id, "\n".join(lines))
 
 
 async def _cmd_setpassword(chat_id: str, new_pw: str):
