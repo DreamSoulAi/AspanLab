@@ -275,146 +275,132 @@ async def _run_alembic():
 async def _fix_schema():
     """
     Direct SQL safety net — runs EVERY startup after Alembic.
-    Adds any critical missing columns that may have been skipped by
-    a previous stamp-head or failed migration. Fully idempotent.
+    Each step is isolated — one failure never blocks the rest.
     """
     import sqlalchemy as sa
     from backend.database import AsyncSessionLocal
 
     is_pg = "postgresql" in settings.DATABASE_URL or settings.DATABASE_URL.startswith("postgres")
 
-    async with AsyncSessionLocal() as db:
+    async def _run(db, sql: str, msg: str):
         try:
-            # ── users.email → nullable ──────────────────────────────────────────────
-            # Old DBs created before phone-auth have email NOT NULL.
-            # Registration without email now fails with 500 — fix it.
-            if is_pg:
-                r0 = await db.execute(sa.text(
+            await db.execute(sa.text(sql))
+            await db.commit()
+            log.info(f"✅ schema fix: {msg}")
+        except Exception as e:
+            await db.rollback()
+            log.warning(f"_fix_schema [{msg}]: {e}")
+
+    async def _check_col(db, table: str, col: str) -> bool:
+        r = await db.execute(sa.text(
+            "SELECT 1 FROM information_schema.columns "
+            f"WHERE table_name='{table}' AND column_name='{col}'"
+        ))
+        return r.fetchone() is not None
+
+    async with AsyncSessionLocal() as db:
+        # ── users.email → nullable ──────────────────────────────────────────
+        if is_pg:
+            try:
+                r = await db.execute(sa.text(
                     "SELECT is_nullable FROM information_schema.columns "
                     "WHERE table_name='users' AND column_name='email'"
                 ))
-                row0 = r0.fetchone()
-                if row0 and row0[0] == "NO":
-                    await db.execute(sa.text(
-                        "ALTER TABLE users ALTER COLUMN email DROP NOT NULL"
-                    ))
-                    await db.commit()
-                    log.info("✅ schema fix: users.email made nullable")
+                row = r.fetchone()
+                if row and row[0] == "NO":
+                    await _run(db, "ALTER TABLE users ALTER COLUMN email DROP NOT NULL",
+                               "users.email → nullable")
+            except Exception as e:
+                log.warning(f"_fix_schema users.email: {e}")
 
-            # ── users.phone → unique index ──────────────────────────────────
-            if is_pg:
-                r_idx = await db.execute(sa.text(
+        # ── users.phone → unique index ──────────────────────────────────────
+        if is_pg:
+            try:
+                r = await db.execute(sa.text(
                     "SELECT 1 FROM pg_indexes WHERE indexname='ix_users_phone'"
                 ))
-                if not r_idx.fetchone():
-                    # Fill NULL phones first so UNIQUE works
+                if not r.fetchone():
                     await db.execute(sa.text(
                         "UPDATE users SET phone = '+700000' || LPAD(id::text, 7, '0') "
                         "WHERE phone IS NULL OR phone = ''"
                     ))
-                    await db.execute(sa.text(
-                        "ALTER TABLE users ALTER COLUMN phone SET NOT NULL"
-                    ))
+                    await db.execute(sa.text("ALTER TABLE users ALTER COLUMN phone SET NOT NULL"))
                     await db.execute(sa.text(
                         "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_phone ON users(phone)"
                     ))
                     await db.commit()
                     log.info("✅ schema fix: users.phone unique index added")
+            except Exception as e:
+                await db.rollback()
+                log.warning(f"_fix_schema users.phone index: {e}")
 
-            # ── otp_codes.phone (critical: registration crashes without it) ──
-            r = await db.execute(sa.text(
-                "SELECT 1 FROM information_schema.columns "
-                "WHERE table_name='otp_codes' AND column_name='phone'"
-            ))
-            if not r.fetchone():
+        # ── otp_codes.phone ─────────────────────────────────────────────────
+        try:
+            if not await _check_col(db, "otp_codes", "phone"):
+                await db.execute(sa.text("ALTER TABLE otp_codes ADD COLUMN phone VARCHAR(30)"))
                 await db.execute(sa.text(
-                    "ALTER TABLE otp_codes ADD COLUMN phone VARCHAR(30)"
-                ))
-                await db.execute(sa.text(
-                    "UPDATE otp_codes SET phone = COALESCE(email, 'unknown') "
-                    "WHERE phone IS NULL"
+                    "UPDATE otp_codes SET phone = COALESCE(email, 'unknown') WHERE phone IS NULL"
                 ))
                 if is_pg:
-                    await db.execute(sa.text(
-                        "ALTER TABLE otp_codes ALTER COLUMN phone SET NOT NULL"
-                    ))
+                    await db.execute(sa.text("ALTER TABLE otp_codes ALTER COLUMN phone SET NOT NULL"))
                 await db.commit()
                 log.info("✅ schema fix: otp_codes.phone added")
+        except Exception as e:
+            await db.rollback()
+            log.warning(f"_fix_schema otp_codes.phone: {e}")
 
-            # ── otp_codes.email → nullable ──────────────────────────────────
-            if is_pg:
-                r2 = await db.execute(sa.text(
+        # ── otp_codes.email → nullable ──────────────────────────────────────
+        if is_pg:
+            try:
+                r = await db.execute(sa.text(
                     "SELECT is_nullable FROM information_schema.columns "
                     "WHERE table_name='otp_codes' AND column_name='email'"
                 ))
-                row = r2.fetchone()
+                row = r.fetchone()
                 if row and row[0] == "NO":
-                    await db.execute(sa.text(
-                        "ALTER TABLE otp_codes ALTER COLUMN email DROP NOT NULL"
-                    ))
-                    await db.commit()
-                    log.info("✅ schema fix: otp_codes.email made nullable")
+                    await _run(db, "ALTER TABLE otp_codes ALTER COLUMN email DROP NOT NULL",
+                               "otp_codes.email → nullable")
+            except Exception as e:
+                log.warning(f"_fix_schema otp_codes.email: {e}")
 
-            # ── users.company_name ──────────────────────────────────────────
-            r_cn = await db.execute(sa.text(
-                "SELECT 1 FROM information_schema.columns "
-                "WHERE table_name='users' AND column_name='company_name'"
-            ))
-            if not r_cn.fetchone():
-                await db.execute(sa.text(
-                    "ALTER TABLE users ADD COLUMN company_name VARCHAR(150)"
-                ))
-                await db.commit()
-                log.info("✅ schema fix: users.company_name added")
+        # ── users.company_name ──────────────────────────────────────────────
+        try:
+            if not await _check_col(db, "users", "company_name"):
+                await _run(db, "ALTER TABLE users ADD COLUMN company_name VARCHAR(150)",
+                           "users.company_name added")
+        except Exception as e:
+            log.warning(f"_fix_schema users.company_name: {e}")
 
-            # ── locations.ignore_background_media (новый флаг) ─────────────
-            r_ibm = await db.execute(sa.text(
-                "SELECT 1 FROM information_schema.columns "
-                "WHERE table_name='locations' AND column_name='ignore_background_media'"
-            ))
-            if not r_ibm.fetchone():
-                await db.execute(sa.text(
-                    "ALTER TABLE locations ADD COLUMN ignore_background_media BOOLEAN DEFAULT TRUE"
-                ))
-                await db.commit()
-                log.info("✅ schema fix: locations.ignore_background_media added")
+        # ── locations: все новые колонки через IF NOT EXISTS ────────────────
+        _loc_cols = [
+            ("ignore_background_media", "BOOLEAN DEFAULT TRUE"),
+            ("business_description",    "TEXT"),
+            ("greeting_script",         "TEXT"),
+            ("upsell_script",           "TEXT"),
+            ("track_upsell",            "BOOLEAN DEFAULT TRUE"),
+            ("track_greeting",          "BOOLEAN DEFAULT TRUE"),
+            ("track_goodbye",           "BOOLEAN DEFAULT TRUE"),
+        ]
+        for col_name, col_type in _loc_cols:
+            await _run(
+                db,
+                f"ALTER TABLE locations ADD COLUMN IF NOT EXISTS {col_name} {col_type}",
+                f"locations.{col_name} ensured",
+            )
 
-            # ── locations: business scripts + tracking toggles ─────────────
-            _loc_cols = [
-                ("business_description", "TEXT"),
-                ("greeting_script",      "TEXT"),
-                ("upsell_script",        "TEXT"),
-                ("track_upsell",         "BOOLEAN DEFAULT TRUE"),
-                ("track_greeting",       "BOOLEAN DEFAULT TRUE"),
-                ("track_goodbye",        "BOOLEAN DEFAULT TRUE"),
-            ]
-            for col_name, col_type in _loc_cols:
-                r_col = await db.execute(sa.text(
-                    "SELECT 1 FROM information_schema.columns "
-                    f"WHERE table_name='locations' AND column_name='{col_name}'"
-                ))
-                if not r_col.fetchone():
-                    await db.execute(sa.text(
-                        f"ALTER TABLE locations ADD COLUMN {col_name} {col_type}"
-                    ))
-                    await db.commit()
-                    log.info(f"✅ schema fix: locations.{col_name} added")
-
-            # ── otp_codes.code — enlarge to 64 chars for SHA-256 hash ──────
-            if is_pg:
-                r_otp = await db.execute(sa.text(
+        # ── otp_codes.code → VARCHAR(64) ────────────────────────────────────
+        if is_pg:
+            try:
+                r = await db.execute(sa.text(
                     "SELECT character_maximum_length FROM information_schema.columns "
                     "WHERE table_name='otp_codes' AND column_name='code'"
                 ))
-                row_otp = r_otp.fetchone()
-                if row_otp and row_otp[0] is not None and row_otp[0] < 64:
-                    await db.execute(sa.text(
-                        "ALTER TABLE otp_codes ALTER COLUMN code TYPE VARCHAR(64)"
-                    ))
-                    await db.commit()
-                    log.info("✅ schema fix: otp_codes.code enlarged to VARCHAR(64)")
-        except Exception as e:
-            log.warning(f"_fix_schema warning (non-fatal): {e}")
+                row = r.fetchone()
+                if row and row[0] is not None and row[0] < 64:
+                    await _run(db, "ALTER TABLE otp_codes ALTER COLUMN code TYPE VARCHAR(64)",
+                               "otp_codes.code → VARCHAR(64)")
+            except Exception as e:
+                log.warning(f"_fix_schema otp_codes.code: {e}")
 
 
 @app.on_event("startup")
