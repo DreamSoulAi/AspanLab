@@ -29,7 +29,7 @@ from backend.models.report import Report
 from backend.models.alert import Alert
 from backend.models.user import User
 from backend.models.failed_job import FailedJob
-from backend.services.analyzer import analyze, get_tone, calculate_score
+from backend.services.analyzer import analyze
 from backend.services.audio_analyzer import analyze_audio_with_fallback
 from backend.services.storage import upload_evidence
 from backend.services.pos_matcher import match_report_with_pos
@@ -194,15 +194,13 @@ async def _process_submission(
 
         # ── Regex-анализ фраз ─────────────────────────────────────
         found = analyze(transcript, business_type=business_type, custom_phrases=custom_phrases or [])
-        tone  = get_tone(found)
-        score = calculate_score(found)
 
-        has_greeting = ("✅ Приветствие"    in found) or events.get("greeting",      False)
-        has_thanks   = ("✅ Благодарность"  in found)
-        has_goodbye  = ("✅ Прощание"       in found) or events.get("farewell",      False)
-        has_bonus    = ("⭐ Допродажа/бонус" in found) or events.get("upsell",        False) or bool(upsell_attempt)
-        has_bad      = ("⚠️ Грубость"       in found) or events.get("rudeness",      False)
-        has_fraud    = ("🚨 МОШЕННИЧЕСТВО"  in found) or events.get("fraud_attempt", False)
+        has_greeting = ("✅ Приветствие"   in found) or events.get("greeting", False)
+        has_thanks   = ("✅ Благодарность" in found)
+        has_goodbye  = ("✅ Прощание"      in found) or events.get("farewell", False)
+        has_bonus    = events.get("upsell", False) or bool(upsell_attempt)
+        has_bad      = events.get("rudeness", False)
+        has_fraud    = events.get("fraud_attempt", False)
 
         is_priority_flag = bool(priority == 1 or has_fraud or has_bad)
 
@@ -217,7 +215,7 @@ async def _process_submission(
         # «Ребята матерятся между собой когда зал пуст — не наше дело.
         #  Но если клиент слышит мат — вы узнаете через секунду.»
 
-        effective_tone = gpt_tone if gpt_tone in ("positive", "negative", "neutral") else tone
+        effective_tone = gpt_tone if gpt_tone in ("positive", "negative", "neutral") else "neutral"
         tone_score_val = 1.0 if effective_tone == "positive" else 0.0 if effective_tone == "negative" else 0.5
 
         is_internal_talk = (conversation_context == "internal_talk")
@@ -249,7 +247,7 @@ async def _process_submission(
                 tone=effective_tone,       tone_score=tone_score_val,
                 shift_number=shift_number,
                 gpt_score=gpt_score,       gpt_summary=gpt_summary,
-                gpt_details={"positives": [], "issues": [], "events": events},
+                gpt_details={"positives": result.get("positives", []), "issues": result.get("issues", []), "events": events},
                 speakers=speakers,
                 is_priority=is_priority_flag,
                 audio_sha256=audio_sha256,  s3_url=s3_url,
@@ -311,11 +309,11 @@ async def _process_submission(
             if has_fraud:
                 db.add(Alert(location_id=location_id, report_id=report.id,
                              alert_type="fraud", severity="high", transcript=transcript,
-                             trigger_phrase=", ".join(found.get("🚨 МОШЕННИЧЕСТВО", [])[:5])))
+                             trigger_phrase=gpt_summary[:150] if gpt_summary else "Обнаружено GPT-анализом"))
             if has_bad:
                 db.add(Alert(location_id=location_id, report_id=report.id,
                              alert_type="bad_language", severity="high", transcript=transcript,
-                             trigger_phrase=", ".join(found.get("⚠️ Грубость", [])[:5])))
+                             trigger_phrase=gpt_summary[:150] if gpt_summary else "Обнаружено GPT-анализом"))
             if effective_tone == "negative" and not has_bad:
                 db.add(Alert(location_id=location_id, report_id=report.id,
                              alert_type="negative_tone", severity="medium", transcript=transcript))
@@ -353,22 +351,20 @@ async def _process_submission(
                 "audio_url":     s3_url,
                 "sha256":        audio_sha256,
             })
-        elif telegram_chat and (found or has_fraud or has_bad):
-            # Нарушение — подробный отчёт
+        elif telegram_chat and (has_fraud or has_bad):
             await notifier.send_report(
                 chat_id=telegram_chat, location_name=location_name,
                 transcript=transcript, found=found,
-                tone=effective_tone, score=score,
+                tone=effective_tone, score=gpt_score or 50,
                 audio_url=s3_url,
             )
         elif telegram_chat and not suppress_alert and notify_ok_conversations:
-            # Обычный разговор — краткая сводка (только если владелец включил эту опцию)
             await notifier.send_ok_report(
                 chat_id=telegram_chat,
                 location_name=location_name,
                 transcript=transcript,
                 tone=effective_tone,
-                score=score,
+                score=gpt_score or 50,
                 upsell=upsell_attempt,
                 greeting=has_greeting,
             )

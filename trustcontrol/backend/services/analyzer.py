@@ -46,15 +46,6 @@ FRAUD = [
     # отдельно через kaspi_detector.py — там паттерн номера, не слова.
 ]
 
-TONE_POSITIVE = [
-    # Тон определяет GPT через поле "tone" — он слышит интонацию.
-    # Регексы по словам не отражают реальный тон разговора.
-]
-
-TONE_NEGATIVE = [
-    # Аналогично — GPT определяет негативный тон по контексту и интонации.
-]
-
 # ── Бонусные фразы по типам бизнеса ─────────────────────────
 
 BONUS_PHRASES = {
@@ -94,25 +85,16 @@ def analyze(
 ) -> dict:
     """
     Анализируем текст разговора.
-    Возвращает словарь найденных категорий.
+    Возвращает словарь найденных категорий (только GREETINGS, THANKS, GOODBYE).
+    Грубость, мошенничество и тон определяет GPT через events.
     """
     found = {}
 
     checks = [
-        ("✅ Приветствие",    _compile(GREETINGS)),
-        ("✅ Благодарность",  _compile(THANKS)),
-        ("✅ Прощание",       _compile(GOODBYE)),
-        ("⚠️ Грубость",      _compile(BAD_LANGUAGE)),
-        ("🚨 МОШЕННИЧЕСТВО", _compile(FRAUD)),
-        ("😊 Позитивный тон",_compile(TONE_POSITIVE)),
-        ("😤 Негативный тон",_compile(TONE_NEGATIVE)),
+        ("✅ Приветствие",   _compile(GREETINGS)),
+        ("✅ Благодарность", _compile(THANKS)),
+        ("✅ Прощание",      _compile(GOODBYE)),
     ]
-
-    # Бонусные фразы для типа бизнеса
-    bonus = BONUS_PHRASES.get(business_type, BONUS_PHRASES["coffee"])
-    if custom_phrases:
-        bonus = bonus + custom_phrases
-    checks.append(("⭐ Допродажа/бонус", _compile(bonus)))
 
     for category, patterns in checks:
         hits = _search(patterns, text)
@@ -120,33 +102,3 @@ def analyze(
             found[category] = hits
 
     return found
-
-
-def get_tone(found: dict) -> str:
-    """Определяем итоговый тон: positive / negative / neutral."""
-    if "😊 Позитивный тон" in found and "😤 Негативный тон" not in found:
-        return "positive"
-    if "😤 Негативный тон" in found:
-        return "negative"
-    return "neutral"
-
-
-def calculate_score(found: dict, total_conversations: int = 1) -> float:
-    """
-    Оценка качества обслуживания 0–100.
-    Учитывает наличие приветствия, благодарности, прощания,
-    допродаж, тона и штрафует за нарушения.
-    """
-    score = 50.0  # базовая оценка
-
-    if "✅ Приветствие"   in found: score += 15
-    if "✅ Благодарность" in found: score += 10
-    if "✅ Прощание"      in found: score += 10
-    if "⭐ Допродажа/бонус" in found: score += 15
-    if "😊 Позитивный тон" in found: score += 10
-
-    if "⚠️ Грубость"      in found: score -= 25
-    if "🚨 МОШЕННИЧЕСТВО" in found: score -= 50
-    if "😤 Негативный тон" in found: score -= 10
-
-    return max(0.0, min(100.0, score))
