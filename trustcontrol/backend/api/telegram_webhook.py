@@ -164,6 +164,10 @@ async def _handle_message(message: dict):
         await _cmd_debug(chat_id)
     elif text == "/verify":
         await _cmd_verify(chat_id)
+    elif text.startswith("/setpassword"):
+        parts = text.split(maxsplit=1)
+        new_pw = parts[1].strip() if len(parts) > 1 else ""
+        await _cmd_setpassword(chat_id, new_pw)
     else:
         await _cmd_start(chat_id)
 
@@ -462,6 +466,23 @@ async def _send(chat_id: str, text: str, **kwargs):
 
 _PLAN_NAMES = {"trial": "Пробный", "start": "Старт", "business": "Бизнес", "network": "Сеть"}
 _BIZ_ICONS  = {"coffee": "☕", "gas": "⛽", "fastfood": "🍔", "cafe": "🍽", "beauty": "💅", "shop": "🛍", "fitness": "💪", "hotel": "🏨"}
+
+
+async def _cmd_setpassword(chat_id: str, new_pw: str):
+    """Reset password for the linked account via Telegram."""
+    from backend.api.auth import hash_password
+    if len(new_pw) < 8:
+        await _send(chat_id, "❌ Пароль должен быть минимум 8 символов.\n\nПример: `/setpassword МойПароль123`")
+        return
+    async with AsyncSessionLocal() as db:
+        user_r = await db.execute(select(User).where(User.telegram_chat == chat_id))
+        user   = user_r.scalar()
+        if not user:
+            await _send(chat_id, "❌ Telegram не привязан к аккаунту.")
+            return
+        user.hashed_password = hash_password(new_pw)
+        await db.commit()
+    await _send(chat_id, "✅ *Пароль обновлён!*\n\nТеперь войдите на сайте с новым паролем.")
 
 
 async def _cmd_verify(chat_id: str):
