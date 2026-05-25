@@ -31,6 +31,13 @@ class LocationCreate(BaseModel):
     language:      str  = "ru"
     vad_level:     int  = Field(2, ge=0, le=3)
 
+    business_description: Optional[str] = None
+    greeting_script:      Optional[str] = None
+    upsell_script:        Optional[str] = None
+    track_upsell:         bool = True
+    track_greeting:       bool = True
+    track_goodbye:        bool = True
+
     @field_validator("business_type")
     @classmethod
     def validate_business_type(cls, v):
@@ -57,6 +64,13 @@ class LocationUpdate(BaseModel):
     ignore_internal_profanity: Optional[bool] = None
     ignore_background_media:   Optional[bool] = None
     notify_ok_conversations:   Optional[bool] = None
+
+    business_description: Optional[str] = None
+    greeting_script:      Optional[str] = None
+    upsell_script:        Optional[str] = None
+    track_upsell:         Optional[bool] = None
+    track_greeting:       Optional[bool] = None
+    track_goodbye:        Optional[bool] = None
 
     @field_validator("business_type")
     @classmethod
@@ -126,6 +140,12 @@ async def list_locations(
             "ignore_internal_profanity": bool(loc.ignore_internal_profanity),
             "ignore_background_media":   bool(getattr(loc, "ignore_background_media", True)),
             "notify_ok_conversations":   bool(getattr(loc, "notify_ok_conversations", False)),
+            "business_description": loc.business_description,
+            "greeting_script":      loc.greeting_script,
+            "upsell_script":        loc.upsell_script,
+            "track_upsell":         bool(getattr(loc, "track_upsell", True)),
+            "track_greeting":       bool(getattr(loc, "track_greeting", True)),
+            "track_goodbye":        bool(getattr(loc, "track_goodbye", True)),
         }
         for loc in locations
     ]
@@ -154,6 +174,12 @@ async def get_location(
         "ignore_internal_profanity": bool(loc.ignore_internal_profanity),
         "ignore_background_media":   bool(getattr(loc, "ignore_background_media", True)),
         "notify_ok_conversations":   bool(getattr(loc, "notify_ok_conversations", False)),
+        "business_description": loc.business_description,
+        "greeting_script":      loc.greeting_script,
+        "upsell_script":        loc.upsell_script,
+        "track_upsell":         bool(getattr(loc, "track_upsell", True)),
+        "track_greeting":       bool(getattr(loc, "track_greeting", True)),
+        "track_goodbye":        bool(getattr(loc, "track_goodbye", True)),
     }
 
 
@@ -198,6 +224,12 @@ async def create_location(
         language=data.language,
         vad_level=data.vad_level,
         api_key=secrets.token_hex(32),
+        business_description=data.business_description,
+        greeting_script=data.greeting_script,
+        upsell_script=data.upsell_script,
+        track_upsell=data.track_upsell,
+        track_greeting=data.track_greeting,
+        track_goodbye=data.track_goodbye,
     )
     db.add(loc)
     await db.commit()
@@ -232,6 +264,12 @@ async def update_location(
     if data.ignore_internal_profanity is not None: loc.ignore_internal_profanity = data.ignore_internal_profanity
     if data.ignore_background_media   is not None: loc.ignore_background_media   = data.ignore_background_media
     if data.notify_ok_conversations   is not None: loc.notify_ok_conversations   = data.notify_ok_conversations
+    if data.business_description      is not None: loc.business_description      = data.business_description
+    if data.greeting_script           is not None: loc.greeting_script           = data.greeting_script
+    if data.upsell_script             is not None: loc.upsell_script             = data.upsell_script
+    if data.track_upsell              is not None: loc.track_upsell              = data.track_upsell
+    if data.track_greeting            is not None: loc.track_greeting            = data.track_greeting
+    if data.track_goodbye             is not None: loc.track_goodbye             = data.track_goodbye
 
     await db.commit()
     return {"message": "Точка обновлена", "id": loc.id}
