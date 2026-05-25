@@ -63,42 +63,32 @@ async def send_report(
     score: float,
     audio_url: str | None = None,
 ):
-    """Обычный отчёт при нарушении (грубость / негативный тон)."""
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """Отчёт при нарушении (грубость / мошенничество)."""
+    ts = datetime.now().strftime("%d.%m, %H:%M")
 
-    lines = []
     if "🚨 МОШЕННИЧЕСТВО" in found:
-        lines += ["🚨🚨🚨 *СРОЧНО! ЛЕВАК НА КАССЕ!* 🚨🚨🚨", ""]
+        header = f"🚨 *{location_name} — подозрение на кражу*"
     elif "⚠️ Грубость" in found:
-        lines += ["🔴 *НАРУШЕНИЕ: ГРУБОСТЬ НА КАССЕ*", ""]
+        header = f"🔴 *{location_name} — грубость с клиентом*"
+    else:
+        header = f"⚠️ *{location_name} — нарушение*"
 
-    lines += [
-        f"🏪 *{location_name}*  |  `{ts}`",
-        "",
-        f"📝 *Разговор:*",
-        f"_{transcript[:500]}_",
-        "",
-    ]
+    lines = [header, f"_{ts}_", ""]
 
-    if found:
-        lines.append("🔍 *Обнаружено:*")
-        for cat, hits in found.items():
-            lines.append(f"  {cat}: {', '.join(f'`{h}`' for h in hits[:3])}")
-
-    tone_map = {"positive": "😊 Доброжелательный", "negative": "😤 Раздражённый", "neutral": "😐 Нейтральный"}
-    lines.append(f"\n🎭 Тон: {tone_map.get(tone, '😐 Нейтральный')}")
-    lines.append(f"⭐ Оценка: *{score:.0f}/100*")
+    # Показываем только найденные нарушения, без технических деталей
+    if "🚨 МОШЕННИЧЕСТВО" in found:
+        hits = found["🚨 МОШЕННИЧЕСТВО"]
+        lines.append(f"Зафиксировано: _{', '.join(hits[:2])}_")
+    elif "⚠️ Грубость" in found:
+        hits = found["⚠️ Грубость"]
+        lines.append(f"Зафиксировано: _{', '.join(hits[:2])}_")
 
     markup = _listen_button(audio_url)
     await _send(chat_id, "\n".join(lines), reply_markup=markup)
 
 
 async def send_critical_alert(data: dict):
-    """
-    Мгновенный алерт при priority=1 / CRITICAL_FRAUD_RISK.
-
-    data: telegram_chat, location_name, summary, audio_url, sha256, transcript
-    """
+    """Срочный алерт при конфликте / подозрении на мошенничество."""
     chat_id = data.get("telegram_chat")
     if not chat_id:
         log.warning("send_critical_alert: telegram_chat не задан")
@@ -106,18 +96,14 @@ async def send_critical_alert(data: dict):
 
     summary       = data.get("summary", "—")
     audio_url     = data.get("audio_url") or ""
-    sha256        = (data.get("sha256") or "")[:16]
     location_name = data.get("location_name", "—")
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ts = datetime.now().strftime("%d.%m, %H:%M")
 
     text = (
-        f"🚨 *ПРИОРИТЕТ 1 — ТРЕБУЕТСЯ ПРОВЕРКА*\n\n"
-        f"📍 *{location_name}*\n"
-        f"🕐 {ts}\n\n"
-        f"📋 *Суть:* {summary}\n"
+        f"⚠️ *{location_name} — проверьте запись*\n"
+        f"_{ts}_\n\n"
+        f"{summary}"
     )
-    if sha256:
-        text += f"\n🔐 SHA256: `{sha256}...`"
 
     markup = _listen_button(audio_url) if audio_url else None
     await _send(chat_id, text, reply_markup=markup)
@@ -252,14 +238,18 @@ async def send_ok_report(
     greeting: bool,
 ):
     """Краткое сообщение для обычного разговора без нарушений."""
-    tone_map = {"positive": "😊 Доброжелательный", "neutral": "😐 Нейтральный", "negative": "😤 Раздражённый"}
-    upsell_str = "✅ допродажа предложена" if upsell else "—"
-    greet_str  = "✅" if greeting else "❌"
+    tone_map = {"positive": "😊", "neutral": "😐", "negative": "😤"}
+    tone_emoji = tone_map.get(tone, "😐")
+    score_emoji = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
+
+    flags = []
+    flags.append("👋 Поздоровался" if greeting else "👋 Не поздоровался")
+    flags.append("🎯 Допродажа предложена" if upsell else "🎯 Допродажи не было")
+
     text = (
-        f"✅ *{location_name}* — разговор в норме\n\n"
-        f"{tone_map.get(tone, '😐 Нейтральный')} · Оценка: *{score:.0f}/100*\n"
-        f"👋 Приветствие: {greet_str}  |  🎯 {upsell_str}\n\n"
-        f"_{transcript[:200]}_"
+        f"✅ *{location_name}* — разговор в норме\n"
+        f"{score_emoji} {tone_emoji} Оценка: *{score:.0f}/100*\n"
+        f"{chr(10).join(flags)}"
     )
     await _send(chat_id, text)
 
