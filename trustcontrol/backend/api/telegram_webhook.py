@@ -160,6 +160,8 @@ async def _handle_message(message: dict):
         await _cmd_alerts(chat_id)
     elif text in ("/help", "❓ Помощь"):
         await _cmd_help(chat_id)
+    elif text == "/debug":
+        await _cmd_debug(chat_id)
     else:
         await _cmd_start(chat_id)
 
@@ -458,6 +460,42 @@ async def _send(chat_id: str, text: str, **kwargs):
 
 _PLAN_NAMES = {"trial": "Пробный", "start": "Старт", "business": "Бизнес", "network": "Сеть"}
 _BIZ_ICONS  = {"coffee": "☕", "gas": "⛽", "fastfood": "🍔", "cafe": "🍽", "beauty": "💅", "shop": "🛍", "fitness": "💪", "hotel": "🏨"}
+
+
+async def _cmd_debug(chat_id: str):
+    """Diagnostic command to identify account/location mismatch."""
+    async with AsyncSessionLocal() as db:
+        user_r = await db.execute(select(User).where(User.telegram_chat == chat_id))
+        user   = user_r.scalar()
+
+        if not user:
+            await _send(chat_id, f"`debug: chat_id={chat_id} → no user found`")
+            return
+
+        locs_r = await db.execute(select(Location).where(Location.owner_id == user.id))
+        locs   = locs_r.scalars().all()
+
+        all_locs_r = await db.execute(select(Location.id, Location.owner_id, Location.name, Location.is_active))
+        all_locs   = all_locs_r.all()
+
+        all_users_r = await db.execute(select(User.id, User.phone, User.is_verified))
+        all_users   = all_users_r.all()
+
+    lines = [
+        f"🔍 *DEBUG*\n",
+        f"chat\\_id: `{chat_id}`",
+        f"user: id=`{user.id}` phone=`{user.phone}` verified=`{user.is_verified}`",
+        f"locations for this user: `{len(locs)}`",
+        f"\nВсе точки в БД ({len(all_locs)}):",
+    ]
+    for loc in all_locs:
+        lines.append(f"  id={loc[0]} owner={loc[1]} active={loc[3]} `{loc[2]}`")
+
+    lines.append(f"\nВсе пользователи ({len(all_users)}):")
+    for u in all_users:
+        lines.append(f"  id={u[0]} phone=`{u[1]}` verified={u[2]}")
+
+    await _send(chat_id, "\n".join(lines))
 
 
 async def _cmd_start(chat_id: str):
