@@ -24,6 +24,7 @@ from backend.api.summary          import router as summary_router
 from backend.api.incidents        import router as incidents_router
 from backend.api.telegram_webhook import router as tg_router
 from backend.api.download         import router as download_router
+from backend.api.monitor_update   import router as monitor_router
 from backend.database             import init_db, AsyncSessionLocal
 from backend.config               import settings
 
@@ -64,6 +65,7 @@ app.include_router(summary_router,   prefix="/api/v1/summary",   tags=["Summary"
 app.include_router(incidents_router, prefix="/api/v1/incidents", tags=["Incidents"])
 app.include_router(tg_router,        prefix="/telegram",         tags=["Telegram"])
 app.include_router(download_router,  prefix="/api/download",     tags=["Download"])
+app.include_router(monitor_router,   prefix="/api/monitor",      tags=["Monitor"])
 
 # ── Фронтенд ─────────────────────────────────────────
 DASHBOARD_DIR = Path(__file__).parent / "frontend" / "dashboard"

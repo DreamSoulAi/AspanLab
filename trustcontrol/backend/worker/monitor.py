@@ -748,10 +748,80 @@ def run():
 
 
 # ════════════════════════════════════════════════════════════
+#  АВТООБНОВЛЕНИЕ
+# ════════════════════════════════════════════════════════════
+
+def _check_for_updates():
+    """
+    Сравнивает MD5 текущего monitor.py с версией на сервере.
+    Если отличается — скачивает новую версию и перезапускается.
+    """
+    import hashlib
+    import os
+
+    if not SERVER_URL or not API_KEY:
+        return
+
+    try:
+        resp = requests.get(
+            f"{SERVER_URL}/api/monitor/version",
+            headers={"X-API-Key": API_KEY},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return
+
+        remote_hash = resp.json().get("version", "")
+        current_path = Path(__file__).resolve()
+        current_hash = hashlib.md5(current_path.read_bytes()).hexdigest()
+
+        if remote_hash == current_hash:
+            log.info("[UPDATE] Монитор актуален.")
+            return
+
+        log.info("[UPDATE] Доступна новая версия — скачиваю...")
+        dl = requests.get(
+            f"{SERVER_URL}/api/monitor/download",
+            headers={"X-API-Key": API_KEY},
+            timeout=30,
+        )
+        dl.raise_for_status()
+
+        new_path = current_path.parent / "monitor_new.py"
+        new_path.write_bytes(dl.content)
+
+        python_exe = sys.executable
+        args_str   = " ".join(f'"{a}"' for a in sys.argv[1:])
+        bat_path   = current_path.parent / "_autoupdate.bat"
+
+        bat_path.write_text(
+            f"@echo off\n"
+            f"timeout /t 2 /nobreak >nul\n"
+            f'copy /y "{new_path}" "{current_path}"\n'
+            f'del "{new_path}"\n'
+            f'start "" "{python_exe}" "{current_path}" {args_str}\n'
+            f'del "%~f0"\n',
+            encoding="utf-8",
+        )
+
+        log.info("[UPDATE] Перезапускаюсь с новой версией...")
+        subprocess.Popen(
+            ["cmd", "/c", str(bat_path)],
+            creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0,
+            close_fds=True,
+        )
+        sys.exit(0)
+
+    except Exception as e:
+        log.warning(f"[UPDATE] Проверка обновлений не удалась: {e}")
+
+
+# ════════════════════════════════════════════════════════════
 #  ТОЧКА ВХОДА
 # ════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    _check_for_updates()
     _main = (lambda: run_rtsp(RTSP_URL)) if RTSP_URL else run
     while True:
         try:
