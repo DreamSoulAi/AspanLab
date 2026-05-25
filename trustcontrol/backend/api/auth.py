@@ -229,6 +229,7 @@ async def register(data: RegisterRequest, request: Request, db: AsyncSession = D
             existing_user.name            = data.name
             existing_user.email           = data.email
             existing_user.hashed_password = hash_password(data.password)
+            existing_user.plan_expires    = datetime.utcnow() + timedelta(days=14)
             code = await _create_and_send_otp(data.phone, data.name, db)
             await db.commit()
             resp = {"status": "otp_sent", "phone": data.phone}

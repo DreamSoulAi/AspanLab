@@ -162,6 +162,8 @@ async def _handle_message(message: dict):
         await _cmd_help(chat_id)
     elif text == "/debug":
         await _cmd_debug(chat_id)
+    elif text == "/verify":
+        await _cmd_verify(chat_id)
     else:
         await _cmd_start(chat_id)
 
@@ -460,6 +462,22 @@ async def _send(chat_id: str, text: str, **kwargs):
 
 _PLAN_NAMES = {"trial": "Пробный", "start": "Старт", "business": "Бизнес", "network": "Сеть"}
 _BIZ_ICONS  = {"coffee": "☕", "gas": "⛽", "fastfood": "🍔", "cafe": "🍽", "beauty": "💅", "shop": "🛍", "fitness": "💪", "hotel": "🏨"}
+
+
+async def _cmd_verify(chat_id: str):
+    """Verify account directly via Telegram (trust: Telegram already linked = phone confirmed)."""
+    async with AsyncSessionLocal() as db:
+        user_r = await db.execute(select(User).where(User.telegram_chat == chat_id))
+        user   = user_r.scalar()
+        if not user:
+            await _send(chat_id, "❌ Telegram не привязан к аккаунту.\nСначала привяжите через сайт → Настройки → Привязать Telegram.")
+            return
+        if user.is_verified:
+            await _send(chat_id, "✅ Ваш аккаунт уже подтверждён. Войдите на сайте.")
+            return
+        user.is_verified = True
+        await db.commit()
+    await _send(chat_id, "✅ *Аккаунт подтверждён!*\n\nТеперь войдите на сайте с номером и паролем.")
 
 
 async def _cmd_debug(chat_id: str):
