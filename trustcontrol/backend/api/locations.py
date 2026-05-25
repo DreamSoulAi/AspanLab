@@ -200,7 +200,8 @@ async def create_location(
         api_key=secrets.token_hex(32),
     )
     db.add(loc)
-    await db.flush()
+    await db.commit()
+    await db.refresh(loc)
 
     return {
         "id":      loc.id,

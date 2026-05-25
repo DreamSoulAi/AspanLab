@@ -525,7 +525,15 @@ async def _cmd_locations(chat_id: str):
         db_type  = "pg" if "postgresql" in settings.DATABASE_URL else "sqlite"
         loc_info = ", ".join(f"id={r[0]} owner={r[2]}" for r in all_loc_rows) or "none"
         log.debug("no locations for user_id=%s db=%s locs=[%s]", user.id, db_type, loc_info)
-        await _send(chat_id, "📍 У вас нет точек. Добавьте их в личном кабинете.")
+        await _send(
+            chat_id,
+            (
+                f"📍 У вас нет точек.\n\n"
+                f"Этот Telegram привязан к аккаунту: `{user.phone}`\n\n"
+                f"Если на сайте вы входите с другим номером — отвяжите Telegram "
+                f"и привяжите заново из нужного аккаунта."
+            ),
+        )
         return
 
     lines = ["📍 *МОИ ТОЧКИ*\n"]
