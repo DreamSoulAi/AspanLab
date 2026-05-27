@@ -48,9 +48,14 @@ router = APIRouter()
 MAX_AUDIO_SIZE_MB    = 10
 MAX_TRANSCRIPT_CHARS = 10_000
 
-# Per-API-key rate limit: max 60 submissions per minute
+# Per-API-key rate limits:
+#   * 60 запросов / минуту  → защита от пиковых атак
+#   * 1500 запросов / сутки → защита от runaway-кошелька OpenAI
+#     (1500 = ~1 разговор/минуту 24/7 — заведомо больше любой реальной кассы)
 _submit_attempts: dict[str, list[float]] = defaultdict(list)
+_daily_counts:    dict[str, tuple[str, int]] = {}  # key → (YYYY-MM-DD, count)
 MAX_SUBMITS_PER_MIN = 60
+MAX_SUBMITS_PER_DAY = 1500
 
 # Audio magic bytes — only accept real audio files
 _AUDIO_MAGIC = [b"RIFF", b"ID3", b"OggS", b"fLaC", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"]
@@ -69,6 +74,18 @@ def _check_submit_rate(api_key: str):
         raise HTTPException(status_code=429, detail="Слишком много запросов от этой точки")
     recent.append(now)
     _submit_attempts[api_key] = recent
+
+    # Дневной лимит (защита от runaway-расхода OpenAI)
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    day, count = _daily_counts.get(api_key, (today, 0))
+    if day != today:
+        day, count = today, 0
+    if count >= MAX_SUBMITS_PER_DAY:
+        raise HTTPException(
+            status_code=429,
+            detail="Превышен дневной лимит для этой точки (1500 разговоров)",
+        )
+    _daily_counts[api_key] = (day, count + 1)
 RETRY_DIR = Path("uploads/retry")
 RETRY_DIR.mkdir(parents=True, exist_ok=True)
 

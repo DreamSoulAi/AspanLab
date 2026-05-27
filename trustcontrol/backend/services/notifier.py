@@ -8,6 +8,10 @@ from backend.config import settings
 log = logging.getLogger("notifier")
 _bot: Bot | None = None
 
+# Диагностика для дашборда: что в последний раз отвалилось у Telegram-бота.
+# Юзер видит это в /api/auth/me и может починить токен / разблокировать бота.
+last_telegram_error: dict = {"at": None, "msg": None, "chat_id": None}
+
 
 def get_bot() -> Bot:
     global _bot
@@ -18,7 +22,8 @@ def get_bot() -> Bot:
     return _bot
 
 
-async def _send(chat_id: str, text: str, reply_markup=None):
+async def _send(chat_id: str, text: str, reply_markup=None) -> bool:
+    """Отправляет сообщение. True/False — успех. При сбое пишет в last_telegram_error."""
     try:
         await get_bot().send_message(
             chat_id=chat_id,
@@ -27,8 +32,15 @@ async def _send(chat_id: str, text: str, reply_markup=None):
             reply_markup=reply_markup,
             disable_web_page_preview=True,
         )
+        return True
     except Exception as e:
-        log.error(f"Telegram ({chat_id}): {e}")
+        msg = str(e)[:200]
+        log.error(f"Telegram ({chat_id}): {msg}")
+        print(f"❌ TELEGRAM_FAIL chat={chat_id}: {msg}", flush=True)
+        last_telegram_error["at"]      = datetime.utcnow().isoformat()
+        last_telegram_error["msg"]     = msg
+        last_telegram_error["chat_id"] = str(chat_id)
+        return False
 
 
 def _listen_button(audio_url: str | None) -> InlineKeyboardMarkup | None:

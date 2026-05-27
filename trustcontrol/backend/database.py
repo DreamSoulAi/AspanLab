@@ -43,25 +43,14 @@ async def get_db():
 # ── Инициализация таблиц ─────────────────────────────────────
 async def init_db():
     """
-    Создаём все таблицы при старте.
-    Для SQLite: если схема устарела — пересоздаём все таблицы (данных нет, Render ephemeral).
+    Создаём недостающие таблицы при старте (через create_all — IF NOT EXISTS).
+    Изменения схемы существующих таблиц делаются через _fix_schema() в main.py.
+    Данные НИКОГДА не уничтожаются автоматически.
     """
     import backend.models  # noqa — регистрирует все модели через __init__.py
 
     async with engine.begin() as conn:
-        if "sqlite" in settings.DATABASE_URL:
-            # Проверяем актуальность схемы по одной новой колонке
-            try:
-                await conn.execute(
-                    __import__("sqlalchemy").text(
-                        "SELECT track_upsell FROM locations LIMIT 0"
-                    )
-                )
-            except Exception:
-                # Схема устарела — пересоздаём все таблицы
-                await conn.run_sync(Base.metadata.drop_all)
-                print("⚠️ SQLite schema outdated — пересоздаём таблицы")
         await conn.run_sync(Base.metadata.create_all)
 
-    print("✅ База данных инициализирована")
-    print(f"   URL: {settings.DATABASE_URL.split('@')[-1] if '@' in settings.DATABASE_URL else settings.DATABASE_URL}")
+    print("✅ База данных инициализирована", flush=True)
+    print(f"   URL: {settings.DATABASE_URL.split('@')[-1] if '@' in settings.DATABASE_URL else settings.DATABASE_URL}", flush=True)

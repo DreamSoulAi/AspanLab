@@ -16,7 +16,9 @@ from backend.config import settings
 from backend.services.gpt_analyzer import gpt_analyze
 
 log = logging.getLogger("audio_analyzer")
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+# timeout=90s — режем зависание (с запасом на GPT-4o-mini-audio 5-30s),
+# не даём одному запросу заблокировать воркер на 10 минут.
+client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, timeout=90.0, max_retries=1)
 
 _AUDIO_MODEL    = "gpt-4o-mini-audio-preview"
 _FALLBACK_MODEL = "gpt-4o-mini-transcribe"

@@ -36,16 +36,26 @@ class Settings:
     TELEGRAM_BOT_TOKEN:str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
     # ── SECURITY: SECRET_KEY ─────────────────────────────────
+    # ОБЯЗАТЕЛЬНО задать в Render env vars. В DEBUG можно работать
+    # с временным ключом (но JWT инвалидируется при каждом рестарте).
     _secret = os.getenv("SECRET_KEY", "")
     if not _secret or len(_secret) < 32:
-        # Generate a temporary key — app starts, but tokens reset on each restart.
-        # Operators MUST set SECRET_KEY in Render env vars for persistence.
-        _secret = secrets.token_hex(32)
-        print("⚠️  WARNING: SECRET_KEY не задан — используется временный ключ.")
-        print("⚠️  Установите SECRET_KEY в переменных окружения Render!")
+        if os.getenv("DEBUG", "false").lower() == "true":
+            _secret = secrets.token_hex(32)
+            print("⚠️  DEBUG: SECRET_KEY не задан — временный ключ (JWT сбросятся при рестарте).", flush=True)
+        else:
+            raise RuntimeError(
+                "SECRET_KEY не задан или короче 32 символов. "
+                "Установите переменную окружения SECRET_KEY (не менее 32 символов)."
+            )
     SECRET_KEY: str = _secret
 
     TOKEN_EXPIRE_HOURS: int = int(os.getenv("TOKEN_EXPIRE_HOURS", 24))
+
+    # ── Админ ────────────────────────────────────────────────
+    # Телефон владельца платформы — этот юзер автоматически
+    # помечается is_admin=true при старте (не блокируется триалом).
+    ADMIN_PHONE: str = os.getenv("ADMIN_PHONE", "").strip()
 
     # ── Аудио ────────────────────────────────────────────────
     SAMPLE_RATE:     int   = 16000

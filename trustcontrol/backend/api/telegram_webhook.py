@@ -371,10 +371,11 @@ async def _handle_link_by_code(chat_id: str, code: str):
         )
         return
 
+    code_hash = hashlib.sha256(code.encode()).hexdigest()
     async with AsyncSessionLocal() as db:
         otp_result = await db.execute(
             select(OtpCode).where(
-                OtpCode.code == code,
+                OtpCode.code == code_hash,
                 OtpCode.phone.like("tg:%"),
                 OtpCode.used == False,  # noqa: E712
                 OtpCode.expires_at > datetime.utcnow(),

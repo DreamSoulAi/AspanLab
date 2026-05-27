@@ -39,16 +39,19 @@ app = FastAPI(
 )
 
 # ── CORS ────────────────────────────────────────────
-ALLOWED_ORIGINS = os.getenv(
-    "ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000"
-).split(",")
-if settings.DEBUG:
-    ALLOWED_ORIGINS = ["*"]
+# В проде: только домены из ALLOWED_ORIGINS env (через запятую).
+# В DEBUG: добавляем localhost для разработки, но НЕ wildcard.
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:3000,http://localhost:8000"
+    ).split(",") if o.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=(ALLOWED_ORIGINS != ["*"]),  # credentials forbidden with wildcard
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-API-Key"],
 )
@@ -414,6 +417,27 @@ async def _fix_schema():
                 print(f"⚠️ schema fix otp_codes.code: {e}", flush=True)
 
 
+async def _promote_admin():
+    """Помечает юзера с телефоном ADMIN_PHONE как is_admin=true."""
+    if not settings.ADMIN_PHONE:
+        return
+    try:
+        from backend.database import AsyncSessionLocal
+        from backend.models.user import User
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(User).where(User.phone == settings.ADMIN_PHONE))
+            user = result.scalar()
+            if user and not user.is_admin:
+                user.is_admin = True
+                await db.commit()
+                print(f"✅ Admin promoted: {settings.ADMIN_PHONE}", flush=True)
+            elif not user:
+                print(f"⚠️ ADMIN_PHONE={settings.ADMIN_PHONE} не найден в users (зарегистрируйтесь сначала)", flush=True)
+    except Exception as e:
+        print(f"⚠️ _promote_admin: {e}", flush=True)
+
+
 @app.on_event("startup")
 async def startup():
     try:
@@ -437,22 +461,28 @@ async def startup():
     except Exception as e:
         log.error(f"_fix_schema error (non-fatal): {e}")
 
-    # Фоновые задачи — каждая независима
+    try:
+        await _promote_admin()
+    except Exception as e:
+        log.error(f"_promote_admin error (non-fatal): {e}")
+
+    # Фоновые задачи — храним ссылки чтобы GC не убил их
+    app.state.background_tasks = []
     for task_fn in (_retry_worker, _retention_worker, _daily_report_worker):
         try:
-            asyncio.create_task(task_fn())
+            app.state.background_tasks.append(asyncio.create_task(task_fn()))
         except Exception as e:
             log.error(f"Task {task_fn.__name__} error: {e}")
 
     try:
         from backend.services.health_monitor import run_health_monitor
-        asyncio.create_task(run_health_monitor())
+        app.state.background_tasks.append(asyncio.create_task(run_health_monitor()))
     except Exception as e:
         log.error(f"health_monitor error (non-fatal): {e}")
 
     try:
         from backend.services.subscription_reminder import run_subscription_reminder
-        asyncio.create_task(run_subscription_reminder())
+        app.state.background_tasks.append(asyncio.create_task(run_subscription_reminder()))
     except Exception as e:
         log.error(f"subscription_reminder error (non-fatal): {e}")
 

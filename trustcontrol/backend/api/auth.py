@@ -376,6 +376,7 @@ async def login(
 @router.get("/me")
 async def me(user: User = Depends(get_current_user)):
     from backend.services.subscription import get_status as _sub_status, days_left
+    from backend.services.notifier import last_telegram_error
     return {
         "id":                  user.id,
         "name":                user.name,
@@ -384,6 +385,7 @@ async def me(user: User = Depends(get_current_user)):
         "email":               user.email or "",
         "telegram_chat":       user.telegram_chat or "",
         "plan":                user.plan,
+        "is_admin":            bool(user.is_admin),
         "is_verified":         user.is_verified,
         "plan_expires":        user.plan_expires.isoformat() if user.plan_expires else None,
         "subscription_status": _sub_status(user),  # active | grace | blocked
@@ -392,6 +394,11 @@ async def me(user: User = Depends(get_current_user)):
             user.plan == "trial"
             and user.plan_expires is not None
             and user.plan_expires > datetime.utcnow()
+        ),
+        "telegram_health": (
+            last_telegram_error
+            if last_telegram_error.get("chat_id") == (user.telegram_chat or "")
+            else {"at": None, "msg": None, "chat_id": None}
         ),
     }
 
@@ -472,7 +479,7 @@ async def tg_link(
     """Generate one-time Telegram deep link + manual 6-digit code for account linking."""
     from backend.api.telegram_webhook import generate_link_token
 
-    # 6-digit manual code stored in otp_codes table (phone="tg:{user_id}")
+    # 6-digit manual code: показываем юзеру открытым текстом, в БД храним хеш
     code = str(secrets.randbelow(900000) + 100000)
     await db.execute(
         sa_update(OtpCode)
@@ -481,7 +488,7 @@ async def tg_link(
     )
     db.add(OtpCode(
         phone=f"tg:{user.id}",
-        code=code,
+        code=_hash_otp(code),  # хеш в БД, как и обычный OTP
         expires_at=datetime.utcnow() + timedelta(minutes=10),
     ))
     await db.commit()
