@@ -218,6 +218,20 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer}
 .hw-guarantee{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--dim)}
 .hw-guarantee span{color:var(--accent2);font-size:16px;flex-shrink:0}
 
+/* FAQ */
+.lp-faq{padding:80px 24px;border-top:1px solid var(--bdr)}
+.faq-list{max-width:780px;margin:32px auto 0;display:flex;flex-direction:column;gap:10px}
+.faq-item{background:var(--surface);border:1px solid var(--bdr);border-radius:12px;overflow:hidden;transition:border-color .2s}
+.faq-item:hover{border-color:var(--bdr2)}
+.faq-item[open]{border-color:var(--accent)}
+.faq-item summary{padding:18px 22px;cursor:pointer;font-weight:600;font-size:15px;list-style:none;position:relative;padding-right:48px;user-select:none}
+.faq-item summary::-webkit-details-marker{display:none}
+.faq-item summary::after{content:'+';position:absolute;right:20px;top:50%;transform:translateY(-50%);font-size:24px;color:var(--muted);font-weight:300;transition:transform .2s}
+.faq-item[open] summary::after{content:'−';color:var(--accent2)}
+.faq-body{padding:0 22px 20px;color:var(--muted);font-size:14px;line-height:1.7}
+.faq-body b{color:var(--txt)}
+@media(max-width:560px){.lp-faq{padding:56px 18px}.faq-item summary{font-size:14px;padding:16px 18px;padding-right:42px}.faq-body{padding:0 18px 16px;font-size:13px}}
+
 /* CTA SECTION */
 .lp-cta-sec{padding:80px 24px;text-align:center}
 .lp-cta-sec h2{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(28px,3vw,48px);letter-spacing:-1.5px;margin-bottom:16px}
@@ -336,14 +350,24 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
 /* MAIN */
 .main{margin-left:240px;min-height:100vh;padding:28px 28px 90px}
-@media(max-width:768px){.main{margin-left:0;padding:16px 14px 90px}}
+@media(max-width:768px){.main{margin-left:0;padding:14px 12px 96px}}
 @media(max-width:768px){.sidebar{display:none}.mob-header{display:flex}}
 
 /* TOPBAR */
-.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;width:100%;box-sizing:border-box}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;width:100%;box-sizing:border-box}
 .page-title{font-family:'Syne',sans-serif;font-size:24px;font-weight:800;letter-spacing:-.5px}
-.topbar-r{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-@media(max-width:768px){.page-title{font-size:20px;letter-spacing:-.3px}}
+.topbar-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+@media(max-width:768px){
+  .page-title{font-size:19px;letter-spacing:-.3px}
+  .topbar{margin-bottom:16px;gap:8px}
+  .topbar-r{flex:0 0 auto}
+  .topbar-r .btn,.topbar-r select{font-size:12px;padding:7px 12px}
+}
+@media(max-width:380px){
+  .topbar{flex-direction:column;align-items:flex-start}
+  .topbar-r{width:100%}
+  .topbar-r .btn,.topbar-r select{flex:1;text-align:center}
+}
 .loc-select{background:var(--surface);border:1px solid var(--bdr2);color:var(--txt);padding:8px 12px;font-size:13px;border-radius:8px;outline:none;cursor:pointer}
 .btn{padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;border:none;border-radius:8px;font-family:'DM Sans',sans-serif;transition:all .18s}
 .btn-a{background:var(--accent);color:#fff}
@@ -363,7 +387,8 @@ textarea.f-input{resize:vertical;line-height:1.6}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* STAT CARDS */
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+@media(max-width:560px){.cards{grid-template-columns:repeat(2,1fr);gap:10px}.card{padding:14px}.card-val{font-size:24px}.card-label{font-size:9px}}
 .card{background:var(--surface);border:1px solid var(--bdr);padding:20px;border-radius:16px;transition:border-color .2s,transform .2s;position:relative;overflow:hidden}
 .card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),transparent);opacity:0;transition:opacity .2s}
 .card:hover{border-color:var(--bdr2);transform:translateY(-2px)}
@@ -393,6 +418,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
 @media(max-width:768px){.grid-2{grid-template-columns:1fr}}
 .panel{background:var(--surface);border:1px solid var(--bdr);border-radius:16px;padding:20px;margin-bottom:16px;width:100%;box-sizing:border-box;overflow:hidden}
+@media(max-width:560px){.panel{padding:16px;border-radius:12px}}
 .panel h3{font-family:'Syne',sans-serif;font-weight:700;font-size:15px;letter-spacing:-.2px}
 .score-row{display:flex;align-items:center;gap:18px}
 .score-ring-wrap{position:relative;width:88px;height:88px;flex-shrink:0}
@@ -581,7 +607,8 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <div class="lp-nav-links">
         <button class="lp-nav-link" onclick="document.getElementById('howItWorks').scrollIntoView({behavior:'smooth'})">Как работает</button>
         <button class="lp-nav-link" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Тарифы</button>
-        <button class="lp-nav-link" onclick="document.getElementById('hardware').scrollIntoView({behavior:'smooth'})">Оборудование</button>
+        <button class="lp-nav-link" onclick="document.getElementById('hardware').scrollIntoView({behavior:'smooth'})">Что нужно</button>
+        <button class="lp-nav-link" onclick="document.getElementById('faq').scrollIntoView({behavior:'smooth'})">Вопросы</button>
       </div>
       <div class="lp-nav-r">
         <button class="lp-ghost lp-hide-xs" onclick="goToAuth(false)">Войти</button>
@@ -592,50 +619,54 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
   <!-- HERO -->
   <section class="lp-hero">
-    <h1>ИИ следит за сервисом,<br>пока вы занимаетесь <em>бизнесом</em></h1>
-    <p class="lp-hero-sub">Каждый разговор на кассе — анализ через 15 секунд. Грубость, мошенничество, упущенные продажи — всё в Telegram.</p>
+    <h1>Узнайте что на самом деле<br>говорят на вашей <em>кассе</em></h1>
+    <p class="lp-hero-sub">Пока вас нет на точке — кассиры грубят, забывают приветствие, забирают чаевые мимо кассы, не предлагают допродажи. Вы теряете клиентов и деньги. <b style="color:#fff">Не зная об этом.</b></p>
     <div class="lp-hero-btns">
-      <button class="lp-btn-hero" onclick="goToAuth(true)">Попробовать бесплатно →</button>
-      <button class="lp-btn-outline" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Посмотреть тарифы</button>
+      <button class="lp-btn-hero" onclick="goToAuth(true)">7 дней бесплатно →</button>
+      <button class="lp-btn-outline" onclick="document.getElementById('howItWorks').scrollIntoView({behavior:'smooth'})">Как это работает</button>
     </div>
     <div class="lp-anchor-hero">
       <div class="lp-anchor">
         <div class="lp-anchor-dot"></div>
-        <span>Без карты · Без контракта · Отменить в любой момент · Настройка за 5 минут</span>
+        <span>Без карты · Настройка за 10 минут · Отмена в один клик</span>
       </div>
     </div>
     <div class="lp-hero-stats">
-      <div class="lp-stat"><span>98%</span><p>точность обнаружения</p></div>
-      <div class="lp-stat" style="border-left:1px solid var(--bdr)"><span>15 сек</span><p>отчёт после разговора</p></div>
-      <div class="lp-stat" style="border-left:1px solid var(--bdr)"><span>×12</span><p>средний ROI в первый месяц</p></div>
+      <div class="lp-stat"><span>15 сек</span><p>от разговора до отчёта в Telegram</p></div>
+      <div class="lp-stat" style="border-left:1px solid var(--bdr)"><span>24/7</span><p>пока работает касса — работает ИИ</p></div>
+      <div class="lp-stat" style="border-left:1px solid var(--bdr)"><span>ru + kk</span><p>русский и казахский в одном диалоге</p></div>
     </div>
   </section>
 
-  <!-- SOCIAL PROOF -->
+  <!-- PAIN -->
   <section class="lp-proof reveal">
     <div class="lp-section">
-      <div class="lp-eyebrow">Реальные цифры</div>
-      <h2 class="lp-h2">Возврат инвестиций — за 30 дней.</h2>
-      <p class="lp-h2-sub">Сравнение «до» и «через месяц после подключения» по пилотным точкам в Алматы.</p>
+      <div class="lp-eyebrow">Знакомо?</div>
+      <h2 class="lp-h2">Каждый день вы теряете деньги —<br>и даже не знаете об этом</h2>
+      <p class="lp-h2-sub">Что реально происходит, когда владельца нет рядом:</p>
       <div class="proof-grid">
         <div class="proof-col before">
-          <div class="proof-col-label">До TrustControl</div>
-          <div class="proof-row"><span class="proof-metric">Средний чек</span><span class="proof-val">2 100 ₸</span></div>
-          <div class="proof-row"><span class="proof-metric">Конверсия в допродажу</span><span class="proof-val">12%</span></div>
-          <div class="proof-row"><span class="proof-metric">Жалобы клиентов / мес.</span><span class="proof-val">14</span></div>
-          <div class="proof-row"><span class="proof-metric">Слитая выручка / мес.</span><span class="proof-val">280 000 ₸</span></div>
+          <div class="proof-col-label">Сейчас у вас</div>
+          <div class="proof-row"><span class="proof-metric">😶 Кассир не здоровается</span><span class="proof-val">—</span></div>
+          <div class="proof-row"><span class="proof-metric">🤐 Не предлагает допродажу</span><span class="proof-val">—</span></div>
+          <div class="proof-row"><span class="proof-metric">😤 Хамит постоянным клиентам</span><span class="proof-val">—</span></div>
+          <div class="proof-row"><span class="proof-metric">💸 Берёт оплату на свой Kaspi</span><span class="proof-val">—</span></div>
+          <div class="proof-row"><span class="proof-metric">📵 Сидит в TikTok пол смены</span><span class="proof-val">—</span></div>
+          <div class="proof-row"><span class="proof-metric">🚪 Клиенты молча уходят к конкурентам</span><span class="proof-val">—</span></div>
         </div>
         <div class="proof-col after">
-          <div class="proof-col-label">Через 30 дней</div>
-          <div class="proof-row"><span class="proof-metric">Средний чек</span><span class="proof-val">2 680 ₸ <small style="font-size:11px;color:var(--green)">+28%</small></span></div>
-          <div class="proof-row"><span class="proof-metric">Конверсия в допродажу</span><span class="proof-val">38% <small style="font-size:11px;color:var(--green)">+217%</small></span></div>
-          <div class="proof-row"><span class="proof-metric">Жалобы клиентов / мес.</span><span class="proof-val">3 <small style="font-size:11px;color:var(--green)">–79%</small></span></div>
-          <div class="proof-row"><span class="proof-metric">Дополнительная выручка</span><span class="proof-val">+<span class="count-up" data-target="312000">0</span> ₸</span></div>
+          <div class="proof-col-label">С TrustControl</div>
+          <div class="proof-row"><span class="proof-metric">✅ Видите % приветствий по сменам</span><span class="proof-val">✓</span></div>
+          <div class="proof-row"><span class="proof-metric">✅ Каждая упущенная допродажа — в отчёте</span><span class="proof-val">✓</span></div>
+          <div class="proof-row"><span class="proof-metric">✅ Тревога в Telegram при грубости</span><span class="proof-val">✓</span></div>
+          <div class="proof-row"><span class="proof-metric">✅ Мгновенное обнаружение чужого Kaspi</span><span class="proof-val">✓</span></div>
+          <div class="proof-row"><span class="proof-metric">✅ Реальная активность вместо «всё ок»</span><span class="proof-val">✓</span></div>
+          <div class="proof-row"><span class="proof-metric">✅ Вы знаете о проблеме раньше клиента</span><span class="proof-val">✓</span></div>
         </div>
       </div>
       <div class="proof-roi">
-        <div class="proof-roi-big">Средний клиент возвращает <span><span class="count-up" data-target="312000">0</span> ₸ / мес.</span></div>
-        <div class="proof-roi-sub">При подписке 25 000 ₸ это <b>ROI ×12 в первый же месяц</b></div>
+        <div class="proof-roi-big">Одна потерянная допродажа в день = <span>~120 000 ₸ в месяц мимо кассы</span></div>
+        <div class="proof-roi-sub">TrustControl стоит <b>15 000 ₸/мес</b> — окупается даже одной пойманной утечкой</div>
       </div>
     </div>
   </section>
@@ -644,86 +675,67 @@ textarea.f-input{resize:vertical;line-height:1.6}
   <section class="lp-pricing reveal" id="pricing">
     <div class="lp-section">
       <div class="lp-eyebrow">Тарифы</div>
-      <h2 class="lp-h2">14 дней бесплатно.<br>Потом — от 15 000 ₸.</h2>
-      <p class="lp-h2-sub">Оборудование, AI-анализ и Telegram-отчёты включены. Без скрытых платежей. Без карты при регистрации.</p>
+      <h2 class="lp-h2">7 дней бесплатно.<br>Потом — от 15 000 ₸ в месяц.</h2>
+      <p class="lp-h2-sub">Без карты при регистрации. Без скрытых платежей. Отмена в один клик.</p>
       <div class="lp-plans">
 
         <!-- СТАРТ -->
         <div class="lp-plan">
-          <div class="lp-plan-badge grey">Для теста</div>
+          <div class="lp-plan-badge grey">Для одной точки</div>
           <div class="lp-plan-name">Старт</div>
           <div class="lp-plan-price">15 000 <sup>₸</sup></div>
           <div class="lp-plan-period">в месяц · помесячно</div>
-          <div class="lp-plan-hw none">🎙 Оборудование: ваше</div>
+          <div class="lp-plan-hw none">🎙 Микрофон: ваш (USB ~3 000 ₸)</div>
           <ul>
-            <li>1 касса</li>
-            <li>50 часов AI-анализа в месяц</li>
-            <li>Telegram-отчёт ежедневно</li>
-            <li>Базовые скрипты бизнеса</li>
-            <li>FAQ-поддержка</li>
+            <li>1 касса / точка</li>
+            <li>Анализ каждого разговора</li>
+            <li>Дневной отчёт в Telegram</li>
+            <li>Тревоги при грубости и мошенничестве</li>
+            <li>История 30 дней в дашборде</li>
           </ul>
           <button class="lp-plan-btn outline" onclick="goToAuth(true)">Начать бесплатно</button>
         </div>
 
-        <!-- БАЗОВЫЙ -->
+        <!-- БИЗНЕС -->
         <div class="lp-plan hot">
-          <div class="lp-plan-tag">ХИТ</div>
-          <div class="lp-plan-badge blue">Оборудование в подарок</div>
-          <div class="lp-plan-name">Базовый</div>
+          <div class="lp-plan-tag">ПОПУЛЯРНЫЙ</div>
+          <div class="lp-plan-badge blue">Лучший выбор</div>
+          <div class="lp-plan-name">Бизнес</div>
           <div class="lp-plan-price">25 000 <sup>₸</sup></div>
-          <div class="lp-plan-period">в месяц · контракт 12 мес.</div>
-          <div class="lp-plan-hw">🎙 USB-микрофон в подарок</div>
+          <div class="lp-plan-period">в месяц · помесячно</div>
+          <div class="lp-plan-hw">🎁 USB-микрофон в подарок</div>
           <ul>
-            <li>1–2 точки малого бизнеса</li>
-            <li>120 часов AI-анализа в месяц</li>
-            <li>Ежедневный + еженедельный отчёт</li>
-            <li>Скрипты под ваш бизнес</li>
-            <li>Защита от мошенничества</li>
-            <li>Email-поддержка 24ч</li>
+            <li>До 5 касс / точек</li>
+            <li>Всё из тарифа «Старт»</li>
+            <li>Сравнение точек и сотрудников</li>
+            <li>Защита от мошенничества Kaspi</li>
+            <li>Аналитика по сменам</li>
+            <li>Поддержка в Telegram</li>
           </ul>
           <button class="lp-plan-btn solid" onclick="goToAuth(true)">Попробовать бесплатно</button>
         </div>
 
-        <!-- PRO -->
+        <!-- СЕТЬ -->
         <div class="lp-plan">
-          <div class="lp-plan-badge green">Для сетей</div>
-          <div class="lp-plan-name">Pro</div>
-          <div class="lp-plan-price">50 000 <sup>₸</sup></div>
-          <div class="lp-plan-period">в месяц · контракт 12 мес.</div>
-          <div class="lp-plan-hw">📎 AI-Pin или петличка ×2 в подарок</div>
+          <div class="lp-plan-badge orange">Для сетей</div>
+          <div class="lp-plan-name">Сеть</div>
+          <div class="lp-plan-price" style="font-size:24px">от 120 000 <sup>₸</sup></div>
+          <div class="lp-plan-period">в месяц · обсуждаем условия</div>
+          <div class="lp-plan-hw">📦 Оборудование под задачи</div>
           <ul>
-            <li>Сети 3–10 точек</li>
-            <li>240 часов AI-анализа в месяц</li>
-            <li>Telegram + Slack-интеграция</li>
-            <li>Кастомные скрипты под стандарты</li>
-            <li>Выявление Kaspi-мошенничества</li>
-            <li>Рейтинг сотрудников по точкам</li>
-            <li>WhatsApp-поддержка</li>
+            <li>Безлимит точек</li>
+            <li>Всё из тарифа «Бизнес»</li>
+            <li>Свои скрипты обслуживания</li>
+            <li>Рейтинг сотрудников по сети</li>
+            <li>Индивидуальный аккаунт-менеджер</li>
+            <li>Данные хранятся в РК</li>
           </ul>
-          <button class="lp-plan-btn outline" onclick="goToAuth(true)">Попробовать бесплатно</button>
-        </div>
-
-        <!-- ENTERPRISE -->
-        <div class="lp-plan">
-          <div class="lp-plan-badge orange">Индивидуально</div>
-          <div class="lp-plan-name">Enterprise</div>
-          <div class="lp-plan-price" style="font-size:22px">от 120 000 <sup>₸</sup></div>
-          <div class="lp-plan-period">в месяц · контракт 24 мес.</div>
-          <div class="lp-plan-hw">📦 5+ устройств под задачи</div>
-          <ul>
-            <li>Корпоративные сети 10+ точек</li>
-            <li>600+ часов AI-анализа</li>
-            <li>Custom API + интеграция CRM/POS</li>
-            <li>Персональный менеджер</li>
-            <li>SLA 99.9%</li>
-            <li>On-premise (данные в РК)</li>
-          </ul>
-          <button class="lp-plan-btn outline" onclick="window.open('https://t.me/trustcontrol_kzbot','_blank')">Запросить расчёт</button>
+          <button class="lp-plan-btn outline" onclick="window.open('https://t.me/trustcontrol_kzbot','_blank')">Связаться с нами</button>
         </div>
 
       </div>
       <div class="lp-pricing-note">
-        🎁 <b>Первые 14 дней бесплатно</b> на любом тарифе. Карта не нужна. Оборудование в подарок для Базового, Pro и Enterprise.
+        🎁 <b>Первые 7 дней — бесплатно</b> на любом тарифе. Карта при регистрации не нужна.
       </div>
     </div>
   </section>
@@ -731,52 +743,46 @@ textarea.f-input{resize:vertical;line-height:1.6}
   <!-- HARDWARE -->
   <section class="lp-hw reveal" id="hardware">
     <div class="lp-section">
-      <div class="lp-eyebrow">Оборудование</div>
-      <h2 class="lp-h2">Микрофон, петличка или AI-Pin —<br>подбираем под ваш бизнес.</h2>
-      <p class="lp-h2-sub">Вы не покупаете железо. Мы выдаём, настраиваем и обслуживаем. Заберём бесплатно при отказе.</p>
+      <div class="lp-eyebrow">Что нужно для запуска</div>
+      <h2 class="lp-h2">Минимум техники.<br>10 минут — и работает.</h2>
+      <p class="lp-h2-sub">Ничего покупать заранее не нужно. Скачать программу — задача на 1 клик.</p>
       <div class="hw-grid">
         <div class="hw-card">
+          <div class="hw-ico">💻</div>
+          <div class="hw-type">Шаг 1</div>
+          <h3>Любой компьютер на кассе</h3>
+          <p class="hw-when">Windows 7, 8, 10, 11 — всё подходит</p>
+          <ul class="hw-props">
+            <li>Подойдёт даже старый кассовый ПК</li>
+            <li>Нужен интернет (любой — Wi-Fi, кабель, 4G)</li>
+            <li>Если ПК нет — б/у ноутбук от 25 000 ₸</li>
+          </ul>
+          <div class="hw-plans">⚠ Кассовое ПО трогать не нужно</div>
+        </div>
+        <div class="hw-card">
           <div class="hw-ico">🎙️</div>
-          <div class="hw-type">Стационарный микрофон</div>
+          <div class="hw-type">Шаг 2</div>
           <h3>USB-микрофон</h3>
-          <p class="hw-when">Кассы, стойки, кофе-точки, АЗС</p>
+          <p class="hw-when">Любой за 3 000–5 000 ₸ из Технодома или Алсера</p>
           <ul class="hw-props">
-            <li>Подключается за 5 минут</li>
-            <li>Работает 24/7 от USB</li>
-            <li>Запись прямо в облако</li>
+            <li>Втыкаете в USB — он сам определяется</li>
+            <li>Направляете на кассу-покупателя</li>
+            <li>В тарифе «Бизнес» — дарим</li>
           </ul>
-          <div class="hw-plans">Входит в: <b>Базовый, Pro, Enterprise</b></div>
+          <div class="hw-plans">Простые модели работают идеально</div>
         </div>
         <div class="hw-card">
-          <div class="hw-ico">📎</div>
-          <div class="hw-type">Мобильный сотрудник</div>
-          <h3>Беспроводная петличка</h3>
-          <p class="hw-when">Официанты, барберы, мастера СТО</p>
+          <div class="hw-ico">⬇️</div>
+          <div class="hw-type">Шаг 3</div>
+          <h3>Скачать TrustControl.exe</h3>
+          <p class="hw-when">Один файл из вашего личного кабинета</p>
           <ul class="hw-props">
-            <li>10 часов работы</li>
-            <li>Активное шумоподавление</li>
-            <li>Зарядка через USB-C</li>
+            <li>Двойной клик — программа запустилась</li>
+            <li>Ничего устанавливать не надо</li>
+            <li>Автозапуск при включении ПК</li>
           </ul>
-          <div class="hw-plans">Входит в: <b>Pro, Enterprise</b></div>
+          <div class="hw-plans">Готово — слушает и шлёт в Telegram</div>
         </div>
-        <div class="hw-card">
-          <div class="hw-new">NEW</div>
-          <div class="hw-ico">📍</div>
-          <div class="hw-type">Премиум-сервис</div>
-          <h3>AI-Pin</h3>
-          <p class="hw-when">Рестораны, ресепшен отелей, банкетные залы</p>
-          <ul class="hw-props">
-            <li>20 часов — не сядет за смену</li>
-            <li>Магнит / клип / шнурок на выбор</li>
-            <li>Размер с монету</li>
-          </ul>
-          <div class="hw-plans">Входит в: <b>Pro, Enterprise</b></div>
-        </div>
-      </div>
-      <div class="hw-guarantees">
-        <div class="hw-guarantee"><span>✓</span> <span><b style="color:var(--txt)">Гарантия 12 месяцев</b> на всё железо</span></div>
-        <div class="hw-guarantee"><span>✓</span> <span><b style="color:var(--txt)">Бесплатная замена</b> при поломке не по вашей вине</span></div>
-        <div class="hw-guarantee"><span>✓</span> <span><b style="color:var(--txt)">Без вложений</b> — оборудование наше</span></div>
       </div>
     </div>
   </section>
@@ -785,27 +791,27 @@ textarea.f-input{resize:vertical;line-height:1.6}
   <section class="lp-how reveal" id="howItWorks">
     <div class="lp-section">
       <h2 class="lp-h2">Как это работает</h2>
-      <p class="lp-h2-sub">Три шага — и вы видите всё что происходит на кассе</p>
+      <p class="lp-h2-sub">Три шага. Никаких настроек. Никакого программиста.</p>
       <div class="lp-steps">
         <div class="lp-step">
           <div class="lp-step-num">1</div>
           <div class="lp-step-ico">🎙️</div>
-          <h3>Подключите микрофон</h3>
-          <p>USB-микрофон к кассовому ПК. Наш скрипт запускается одной командой. Никаких облачных записей.</p>
+          <h3>Поставили микрофон</h3>
+          <p>USB-микрофон в любой компьютер рядом с кассой. Скачали один файл — программа запустилась.</p>
         </div>
         <div class="lp-step-arr">→</div>
         <div class="lp-step">
           <div class="lp-step-num">2</div>
           <div class="lp-step-ico">🧠</div>
-          <h3>ИИ анализирует речь</h3>
-          <p>ИИ переводит речь в текст за секунды. Система находит тон, фразы, нарушения и допродажи.</p>
+          <h3>ИИ слушает разговор</h3>
+          <p>Каждый разговор кассир–покупатель анализируется. Понимает русский, казахский и смешанную речь.</p>
         </div>
         <div class="lp-step-arr">→</div>
         <div class="lp-step">
           <div class="lp-step-num">3</div>
           <div class="lp-step-ico">📱</div>
-          <h3>Отчёт в Telegram</h3>
-          <p>Оценка смены, текст разговора, тревоги — прямо на ваш телефон. Тревоги приходят мгновенно.</p>
+          <h3>Вы видите всё в Telegram</h3>
+          <p>Грубость или мошенничество — тревога мгновенно. Дневной отчёт вечером. Полная история — в дашборде.</p>
         </div>
       </div>
     </div>
@@ -851,17 +857,116 @@ textarea.f-input{resize:vertical;line-height:1.6}
     </div>
   </section>
 
+  <!-- FAQ -->
+  <section class="lp-faq reveal" id="faq">
+    <div class="lp-section">
+      <div class="lp-eyebrow">Часто спрашивают</div>
+      <h2 class="lp-h2">Ответы на главные вопросы</h2>
+      <div class="faq-list">
+
+        <details class="faq-item">
+          <summary>Это слежка? Сотрудники не уволятся?</summary>
+          <div class="faq-body">
+            Нет, это не слежка — это контроль качества сервиса, как видеокамеры. Сотрудники
+            заранее предупреждаются что разговоры на кассе анализируются — это законно
+            (публичное место, рабочее время). На практике: хорошие сотрудники работают
+            ещё лучше когда знают что их слышат и видят результат своей работы.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Кто слушает наши разговоры? Это безопасно?</summary>
+          <div class="faq-body">
+            <b>Живые люди разговоры не слушают.</b> Звук анализируется искусственным
+            интеллектом за секунды и сразу удаляется. В дашборде вы видите только
+            текст разговора. Архивируется только то, где обнаружено нарушение —
+            и только для вас.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>А если касса в другом городе?</summary>
+          <div class="faq-body">
+            Без разницы. Программа работает на любом ПК с интернетом. Всё видно в
+            одном дашборде и Telegram — вы в Алматы, кассы в Шымкенте, Караганде
+            и Астане. Работает одинаково.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Что если у нас сотрудники говорят на казахском?</summary>
+          <div class="faq-body">
+            Поддерживаем казахский, русский и шала-казахский (когда в одной фразе
+            оба языка). ИИ обучен на реальной речи Казахстана.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Нужно ли что-то покупать?</summary>
+          <div class="faq-body">
+            Только USB-микрофон за 3 000–5 000 ₸ (в любом Технодоме или на Kaspi).
+            На тарифе «Бизнес» микрофон мы дарим. Компьютер на кассе у вас уже есть.
+            Программное обеспечение — скачать один файл из личного кабинета.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Можно ли использовать с моим кассовым аппаратом?</summary>
+          <div class="faq-body">
+            <b>Кассовый аппарат вообще не нужно трогать.</b> Программа работает
+            на отдельном ноутбуке/ПК рядом с кассой. Это безопаснее — никакого
+            риска для вашего фискального ПО.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Сколько хранятся записи?</summary>
+          <div class="faq-body">
+            Текстовые разговоры — навсегда (можно посмотреть историю). Аудио —
+            только если был фрод, до 90 дней (для доказательств).
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>А если интернет отвалится?</summary>
+          <div class="faq-body">
+            Программа сохранит разговоры локально и отправит когда интернет
+            появится — ничего не теряется.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Как платить? Можно по Kaspi?</summary>
+          <div class="faq-body">
+            Да, Kaspi перевод. После 7 дней бесплатного периода вы получите
+            реквизиты — оплачиваете в один клик из приложения Kaspi.
+            Никаких карт, никаких подписок на автосписание.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Что если мне не понравится?</summary>
+          <div class="faq-body">
+            7 дней — бесплатно, никаких карт. Можно уйти в любой момент в один клик.
+            Никто не позвонит вам с уговорами.
+          </div>
+        </details>
+
+      </div>
+    </div>
+  </section>
+
   <!-- FINAL CTA -->
   <section class="lp-cta-sec reveal">
     <div class="lp-section">
-      <div class="lp-eyebrow">Попробуйте бесплатно</div>
-      <h2>14 дней бесплатно.<br>Первый отчёт — через 15 секунд.</h2>
-      <p>Регистрация за 2 минуты. Первый анализ разговора придёт прямо в Telegram.</p>
+      <div class="lp-eyebrow">Попробуйте</div>
+      <h2>7 дней бесплатно.<br>Без карты. Без обязательств.</h2>
+      <p>Регистрация занимает 2 минуты. Первый анализ разговора — в день подключения.</p>
       <div class="lp-cta-btns">
         <button class="lp-btn-hero" onclick="goToAuth(true)">Начать бесплатно →</button>
-        <button class="lp-btn-outline" onclick="window.open('https://t.me/trustcontrol_kzbot','_blank')">Написать нам в Telegram</button>
+        <button class="lp-btn-outline" onclick="window.open('https://t.me/trustcontrol_kzbot','_blank')">Задать вопрос в Telegram</button>
       </div>
-      <div class="lp-cta-micro">Без карты · Без контракта · Оборудование привезём сами · Отменить в 1 клик</div>
+      <div class="lp-cta-micro">Без карты · Отмена в 1 клик · Поддержка в Telegram</div>
     </div>
   </section>
 
@@ -870,7 +975,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <div class="lp-logo">Trust<span>Control</span></div>
       <div class="lp-footer-links">
         <a onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Тарифы</a>
-        <a onclick="document.getElementById('hardware').scrollIntoView({behavior:'smooth'})">Оборудование</a>
+        <a onclick="document.getElementById('faq').scrollIntoView({behavior:'smooth'})">Вопросы</a>
         <a onclick="goToAuth(false)">Войти</a>
         <a onclick="goToAuth(true)">Регистрация</a>
       </div>
@@ -936,7 +1041,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <!-- REGISTER -->
       <div id="registerForm" style="display:none">
         <div class="auth-title">Создать аккаунт</div>
-        <div class="auth-sub">14 дней бесплатно — без карты</div>
+        <div class="auth-sub">7 дней бесплатно — без карты</div>
         <div class="f-group">
           <label class="f-label">Ваше имя</label>
           <input class="f-input" type="text" id="regName" placeholder="Иван Иванов" autocomplete="name" autocorrect="off">
@@ -954,7 +1059,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             </button>
           </div>
         </div>
-        <button class="f-btn" id="registerBtn" onclick="doRegister()">Зарегистрироваться — 14 дней бесплатно</button>
+        <button class="f-btn" id="registerBtn" onclick="doRegister()">Зарегистрироваться — 7 дней бесплатно</button>
         <div class="f-switch">Уже есть аккаунт? <a onclick="showLogin()">Войти</a></div>
         <div class="auth-back-link" onclick="goBackToLanding()">← На главную</div>
       </div>
@@ -1043,52 +1148,61 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <input class="f-input" type="text" id="editLocAddress">
     </div>
     <hr class="modal-divider">
-    <div class="modal-sec-title">Уведомления</div>
+    <div class="modal-sec-title">Куда слать отчёты</div>
     <div style="font-size:13px;color:var(--dim);line-height:1.6;margin-bottom:14px">
-      Тревоги и отчёты приходят в ваш Telegram, подключённый в <a onclick="document.getElementById('editLocationModal').style.display='none';showPage('settings')" style="color:var(--accent2);cursor:pointer">Настройках</a>.<br>
-      Если хотите отдельный чат для этой точки — разверните ниже.
+      По умолчанию — в ваш личный Telegram (подключается в <a onclick="document.getElementById('editLocationModal').style.display='none';showPage('settings')" style="color:var(--accent2);cursor:pointer">Настройках</a>).
+      Если для этой точки нужен отдельный чат (например групповой с менеджерами) — напишите нам в поддержку, мы поможем.
     </div>
     <details style="margin-bottom:14px">
-      <summary style="font-size:12px;color:var(--muted);cursor:pointer;padding:6px 0;user-select:none">⚙️ Отдельный групповой чат для этой точки</summary>
+      <summary style="font-size:12px;color:var(--muted);cursor:pointer;padding:6px 0;user-select:none">Для продвинутых: указать чат вручную</summary>
       <div style="margin-top:12px">
         <div class="f-group">
-          <label class="f-label">ID группового чата</label>
+          <label class="f-label">Идентификатор группового чата</label>
           <input class="f-input" type="text" id="editLocTg" placeholder="-1001234567890">
-          <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">Напишите нам в Telegram — мы добавим бота и пришлём ID.</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">
+            Это длинное число с минусом в начале. Узнать его можно если добавить нашего
+            бота в группу и написать <code style="background:rgba(255,255,255,.08);padding:1px 5px;border-radius:3px">/id</code>.
+            Если не знаете что это — оставьте пустым, отчёты пойдут в ваш личный Telegram.
+          </div>
         </div>
-        <button class="test-tg-btn" onclick="testTelegram()">📨 Проверить уведомление</button>
+        <button class="test-tg-btn" onclick="testTelegram()">📨 Прислать тестовое уведомление</button>
         <div id="testTgResult"></div>
       </div>
     </details>
     <hr class="modal-divider">
-    <div class="modal-sec-title">Уведомления</div>
+    <div class="modal-sec-title">Что слушать, что игнорировать</div>
     <div class="f-group" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
       <input type="checkbox" id="editLocIgnoreBg" style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;margin-top:2px">
       <label for="editLocIgnoreBg" style="font-size:13px;color:var(--dim);line-height:1.4;cursor:pointer">
-        <b style="color:var(--txt)">Не считать матом нарушения</b> из видео / ТВ / динамика телефона рядом<br>
-        <span style="font-size:11px;color:var(--muted)">Рекомендуется — защита от ложных тревог из фонового звука</span>
+        <b style="color:var(--txt)">Не реагировать на звук из ТВ, музыки или соседнего телефона</b><br>
+        <span style="font-size:11px;color:var(--muted)">Рекомендуется включить — защита от ложных тревог</span>
       </label>
     </div>
     <div class="f-group" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
       <input type="checkbox" id="editLocIgnoreInternal" style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;margin-top:2px">
       <label for="editLocIgnoreInternal" style="font-size:13px;color:var(--dim);line-height:1.4;cursor:pointer">
-        <b style="color:var(--txt)">Игнорировать мат сотрудников между собой</b> (когда нет клиента)<br>
-        <span style="font-size:11px;color:var(--muted)">Сотрудники матерятся в паузах — не твоё дело пока клиента нет</span>
+        <b style="color:var(--txt)">Не реагировать на разговоры сотрудников между собой</b><br>
+        <span style="font-size:11px;color:var(--muted)">Когда клиента нет — пусть болтают свободно</span>
       </label>
     </div>
     <div class="f-group" style="display:flex;align-items:center;gap:10px">
       <input type="checkbox" id="editLocNotifyOk" style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0">
       <label for="editLocNotifyOk" style="font-size:13px;color:var(--dim);line-height:1.4;cursor:pointer">
-        Получать уведомление на <b style="color:var(--txt)">каждый</b> разговор (не только нарушения)
+        Присылать в Telegram <b style="color:var(--txt)">каждый</b> разговор, не только нарушения
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">⚠ Может быть много сообщений — выключено по умолчанию</div>
       </label>
     </div>
     <hr class="modal-divider">
-    <div class="modal-sec-title">Защита от мошенничества</div>
+    <div class="modal-sec-title">Защита от мошенничества с Kaspi</div>
     <div class="f-group">
-      <label class="f-label">Свои Kaspi-номера (не тревожить)</label>
+      <label class="f-label">Ваши «свои» Kaspi-номера</label>
       <textarea class="f-input" id="editLocPhones" rows="3"
         placeholder="+77001234567&#10;+77009876543"></textarea>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">Номера ваших кассиров или партнёров — система не будет их отмечать как подозрительные</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5">
+        Номера ваших кассиров, бухгалтерии, ваш личный — на которые официально может
+        идти оплата. <b>Все остальные</b> Kaspi-номера в разговоре будут отмечены
+        как подозрительные (вероятно кассир переводит деньги мимо кассы).
+      </div>
     </div>
     <button class="f-btn" id="saveLocBtn" onclick="saveLocation()">Сохранить</button>
   </div>
@@ -1428,71 +1542,106 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <div class="page" id="page-settings">
         <div class="topbar"><div class="page-title">Настройки</div></div>
 
+        <!-- 1. Профиль -->
         <div class="panel" style="margin-bottom:14px">
-          <h3 style="margin-bottom:16px">Аккаунт</h3>
+          <h3 style="margin-bottom:6px">Ваш профиль</h3>
+          <p style="color:var(--muted);font-size:12px;margin-bottom:18px">Контакты и название бизнеса — что мы покажем в отчётах</p>
           <div class="f-group">
-            <label class="f-label">Имя</label>
-            <input class="f-input" type="text" id="settingsName" placeholder="Ваше имя" autocomplete="name" autocorrect="off">
+            <label class="f-label">Ваше имя</label>
+            <input class="f-input" type="text" id="settingsName" placeholder="Например: Айдар" autocomplete="name" autocorrect="off">
           </div>
           <div class="f-group">
-            <label class="f-label">Телефон (только просмотр)</label>
+            <label class="f-label">Номер телефона</label>
             <input class="f-input" type="tel" id="settingsPhone" readonly style="opacity:.5">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Изменить нельзя — это ваш логин</div>
           </div>
           <div class="f-group">
-            <label class="f-label">Название компании</label>
-            <input class="f-input" type="text" id="settingsCompany" placeholder="ООО Ромашка">
+            <label class="f-label">Название бизнеса</label>
+            <input class="f-input" type="text" id="settingsCompany" placeholder="Например: Кофейня «Меридиан»">
           </div>
           <div class="f-group">
-            <label class="f-label">Email</label>
+            <label class="f-label">Email (необязательно)</label>
             <input class="f-input" type="email" id="settingsEmail" placeholder="you@example.com" autocomplete="email" autocorrect="off" autocapitalize="off">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Сюда придёт чек об оплате</div>
           </div>
           <div class="f-group">
-            <label class="f-label">Telegram</label>
-            <div id="tgStatusBlock" style="margin-top:2px"></div>
-            <div id="tgLinkInfo" style="font-size:12px;margin-top:6px;min-height:16px;color:var(--accent2)"></div>
-          </div>
-          <div class="f-group">
-            <label class="f-label">Новый пароль (оставьте пустым чтобы не менять)</label>
+            <label class="f-label">Новый пароль</label>
             <div class="pw-wrap">
-              <input class="f-input" type="password" id="settingsPassword" placeholder="••••••••" autocomplete="new-password">
+              <input class="f-input" type="password" id="settingsPassword" placeholder="Оставьте пустым чтобы не менять" autocomplete="new-password">
               <button type="button" class="pw-eye" onclick="togglePw('settingsPassword',this)" tabindex="-1">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
               </button>
             </div>
           </div>
-          <button class="f-btn" onclick="saveSettings()">Сохранить изменения</button>
+          <button class="f-btn" onclick="saveSettings()">Сохранить</button>
         </div>
 
+        <!-- 2. Уведомления -->
         <div class="panel" style="margin-bottom:14px">
-          <h3 style="margin-bottom:14px">Тариф</h3>
+          <h3 style="margin-bottom:6px">Уведомления в Telegram</h3>
+          <p style="color:var(--muted);font-size:12px;margin-bottom:14px">Куда присылать отчёты и тревоги о нарушениях</p>
+          <div id="tgStatusBlock" style="margin-top:2px"></div>
+          <div id="tgLinkInfo" style="font-size:12px;margin-top:6px;min-height:16px;color:var(--accent2)"></div>
+          <details style="margin-top:14px">
+            <summary style="cursor:pointer;font-size:12px;color:var(--muted);user-select:none">Зачем это нужно?</summary>
+            <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-top:8px;padding-left:4px">
+              Каждый вечер на ваш Telegram придёт сводка за день: сколько было разговоров,
+              приветствий, допродаж, нарушений. А когда кто-то нагрубит клиенту или
+              попытается обмануть — тревога придёт мгновенно. Никаких смс, email, звонков.
+            </div>
+          </details>
+        </div>
+
+        <!-- 3. Подписка -->
+        <div class="panel" style="margin-bottom:14px">
+          <h3 style="margin-bottom:6px">Ваш тариф</h3>
+          <p style="color:var(--muted);font-size:12px;margin-bottom:14px">Что у вас сейчас и сколько осталось</p>
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
             <span class="plan-badge" id="sPlanBadge">—</span>
-            <span id="sPlanExpiry" style="font-size:12px;color:var(--muted)"></span>
+            <span id="sPlanExpiry" style="font-size:13px;color:var(--muted)"></span>
           </div>
           <div id="sPlanDesc" style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px"></div>
-          <button class="upgrade-btn" onclick="document.getElementById('payModal').style.display='flex'">🚀 Сменить / продлить тариф</button>
+          <button class="upgrade-btn" onclick="showPayInfo()">💳 Оплатить / продлить</button>
         </div>
 
-        <div class="panel" style="margin-bottom:14px;border-color:rgba(59,130,246,.2);background:rgba(59,130,246,.03)">
-          <h3 style="margin-bottom:14px;color:var(--accent2)">О системе</h3>
-          <div class="about-quote">TrustControl — это не инструмент слежки и не способ усложнить жизнь сотрудникам.</div>
-          <p style="margin-top:12px;font-size:13px;color:var(--muted);line-height:1.75">
-            Когда бизнес растёт, владелец не может присутствовать везде. Клиенты уходят молча,
-            не объясняя почему. Система помогает <b style="color:var(--txt)">вернуть доверие и лояльность</b> —
-            замечая холодный тон, пропущенное приветствие, упущенную продажу.
-            Хорошие сотрудники получают признание. Проблемы решаются до того, как клиент ушёл навсегда.
-          </p>
-        </div>
-
-        <div class="panel">
-          <h3 style="margin-bottom:14px">Быстрый старт</h3>
-          <div style="font-size:13px;color:var(--muted);line-height:2.2">
-            <div>1. Раздел <b style="color:var(--txt)">Точки</b> → <b style="color:var(--txt)">+ Добавить кассу</b></div>
-            <div>2. <b style="color:var(--txt)">Настройки</b> → <b style="color:var(--txt)">Подключить через Telegram</b></div>
-            <div>3. На карточке кассы нажми <b style="color:var(--txt)">⬇ Скачать для кассы</b></div>
-            <div>4. На кассовом ПК: разархивируй → двойной клик <b style="color:var(--txt)">1_SETUP.bat</b></div>
-            <div>5. Затем двойной клик <b style="color:var(--txt)">3_RUN.bat</b> — готово!</div>
+        <!-- 4. Установка на кассу -->
+        <div class="panel" style="margin-bottom:14px">
+          <h3 style="margin-bottom:6px">Подключение кассы — за 3 шага</h3>
+          <p style="color:var(--muted);font-size:12px;margin-bottom:16px">Никакого программиста. Сами справитесь за 10 минут.</p>
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;gap:14px;align-items:flex-start">
+              <div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:rgba(59,130,246,.15);color:var(--accent2);display:flex;align-items:center;justify-content:center;font-weight:700">1</div>
+              <div style="font-size:13px;line-height:1.6">
+                <b style="color:var(--txt)">Добавьте кассу</b> в разделе «Точки» → кнопка «+ Добавить».
+                Дайте название (например «Касса №1»).
+              </div>
+            </div>
+            <div style="display:flex;gap:14px;align-items:flex-start">
+              <div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:rgba(59,130,246,.15);color:var(--accent2);display:flex;align-items:center;justify-content:center;font-weight:700">2</div>
+              <div style="font-size:13px;line-height:1.6">
+                <b style="color:var(--txt)">Скачайте программу</b> на этой же карточке кассы —
+                кнопка «⬇ Скачать для кассы». Получите один файл, перенесите на ПК на точке.
+              </div>
+            </div>
+            <div style="display:flex;gap:14px;align-items:flex-start">
+              <div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:rgba(16,185,129,.15);color:var(--green);display:flex;align-items:center;justify-content:center;font-weight:700">3</div>
+              <div style="font-size:13px;line-height:1.6">
+                <b style="color:var(--txt)">Запустите программу</b> двойным кликом на TrustControl.exe.
+                Подключите USB-микрофон и направьте его на кассу. <span style="color:var(--green)">Готово!</span>
+              </div>
+            </div>
           </div>
+        </div>
+
+        <!-- 5. О сервисе -->
+        <div class="panel" style="border-color:rgba(59,130,246,.2);background:rgba(59,130,246,.03)">
+          <h3 style="margin-bottom:14px;color:var(--accent2)">О TrustControl</h3>
+          <p style="font-size:13px;color:var(--muted);line-height:1.75">
+            TrustControl — это не слежка за сотрудниками. Это <b style="color:var(--txt)">контроль качества сервиса</b>,
+            как видеокамеры в торговом зале. Хорошие сотрудники получают признание,
+            проблемы решаются до того как клиент ушёл навсегда. По закону РК запись
+            в публичном месте в рабочее время — разрешена.
+          </p>
         </div>
       </div>
 
@@ -1682,7 +1831,7 @@ async function doRegister(){
   const btn=document.getElementById('registerBtn');
   btn.disabled=true;btn.textContent='Регистрация...';
   const d=await apiFetch('/auth/register',{method:'POST',body:JSON.stringify({name,phone,password})});
-  btn.disabled=false;btn.textContent='Зарегистрироваться — 14 дней бесплатно';
+  btn.disabled=false;btn.textContent='Зарегистрироваться — 7 дней бесплатно';
   if(!d)return;
   if(d.access_token){_token=d.access_token;localStorage.setItem('tc_token',_token);startDashboard();}
   else{
@@ -2359,15 +2508,19 @@ function closeOnboard(){
 /* ── TELEGRAM LINK / UNLINK ── */
 function renderTgStatus(d){
   const el=document.getElementById('tgStatusBlock');if(!el)return;
+  // Health warning — если Telegram сломан, показываем красным
+  const health = d && d.telegram_health;
+  const healthWarn = (health && health.at && health.msg)
+    ? `<div style="margin-top:8px;padding:10px 12px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;font-size:12px;color:#fca5a5"><b>⚠ Последняя отправка не прошла:</b> ${esc((health.msg||'').slice(0,140))}<br><span style="opacity:.7">Проверьте что бот не заблокирован у вас в Telegram.</span></div>`
+    : '';
   if(d&&d.telegram_chat){
     el.innerHTML=`<div class="tg-status-box linked">
-      <span>✅ Telegram подключён</span>
-      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;opacity:.7">${esc(d.telegram_chat)}</span>
-      <button class="tg-unlink-btn" onclick="unlinkTelegram()">Отвязать</button>
-    </div>`;
+      <span>✅ Отчёты приходят в Telegram</span>
+      <button class="tg-unlink-btn" onclick="unlinkTelegram()">Отключить</button>
+    </div>${healthWarn}`;
   }else{
-    el.innerHTML=`<div class="tg-status-box unlinked">⚡ Telegram не подключён — тревоги не будут приходить</div>
-    <button class="tg-link-btn" id="tgLinkBtn" onclick="linkTelegram()">🔗 Подключить через Telegram</button>`;
+    el.innerHTML=`<div class="tg-status-box unlinked">⚡ Telegram ещё не подключён — отчёты и тревоги не придут</div>
+    <button class="tg-link-btn" id="tgLinkBtn" onclick="linkTelegram()">📱 Подключить Telegram</button>`;
   }
 }
 
