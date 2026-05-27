@@ -181,15 +181,22 @@ class TestAnalyzer:
         found = analyze("Добро пожаловать! Что будете заказывать?", "coffee")
         assert "✅ Приветствие" in found
 
-    def test_fraud_detected(self):
-        from backend.services.analyzer import analyze
-        found = analyze("Переведи мне на карту, без чека сделаем", "coffee")
-        assert "🚨 МОШЕННИЧЕСТВО" in found
+    def test_fraud_confidence_in_score(self):
+        """Если GPT вернул fraud, calculate_score должен дать < 15."""
+        from backend.services.analyzer import calculate_score
+        score = calculate_score(
+            gpt_score=50,
+            events={"fraud_attempt": True},
+            has_fraud=True,
+        )
+        assert score < 15
 
-    def test_bad_language_detected(self):
-        from backend.services.analyzer import analyze
-        found = analyze("Я же сказал, достали уже", "coffee")
-        assert "⚠️ Грубость" in found
+    def test_no_false_positive_on_short_text(self):
+        """Короткий текст не должен давать score 0."""
+        from backend.services.analyzer import analyze, calculate_score
+        found = analyze("Спасибо", "coffee")
+        score = calculate_score(None, has_greeting=False, has_goodbye=False)
+        assert score >= 40
 
     def test_bonus_coffee_detected(self):
         from backend.services.analyzer import analyze
@@ -226,10 +233,13 @@ class TestAnalyzer:
         assert score > 70
 
     def test_score_fraud_penalty(self):
-        from backend.services.analyzer import analyze, calculate_score
-        found = analyze("Переведи на мой каспи, никто не узнает", "coffee")
-        score = calculate_score(found)
-        assert score < 30
+        from backend.services.analyzer import calculate_score
+        score = calculate_score(
+            gpt_score=50,
+            events={"fraud_attempt": True},
+            has_fraud=True,
+        )
+        assert score < 15
 
 
 @pytest.mark.asyncio

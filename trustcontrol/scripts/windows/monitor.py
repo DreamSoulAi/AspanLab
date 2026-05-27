@@ -306,6 +306,78 @@ def denoise(frames: list[bytes]) -> list[bytes]:
         return frames
 
 
+def detect_speaker_diversity(frames: list[bytes]) -> dict:
+    """
+    Лёгкая эвристика без ML: оценивает похоже ли это на диалог 2 спикеров.
+
+    Использует два сигнала:
+    1. Дисперсия громкости — в диалоге кассир/клиент на разной громкости
+    2. Дисперсия спектрального центроида — у разных голосов разный тембр
+
+    Возвращает: {"likely_dialogue": bool, "volume_var_db": float, "centroid_var": float}
+    """
+    if not frames or len(frames) < 50:
+        return {"likely_dialogue": True, "volume_var_db": 0.0, "centroid_var": 0.0}
+
+    try:
+        # ── Дисперсия громкости по окнам ~250 мс ──
+        window_ms       = 250
+        window_frames   = max(1, int(window_ms / FRAME_DURATION))
+        rms_values      = []
+
+        for i in range(0, len(frames), window_frames):
+            chunk = b"".join(frames[i:i + window_frames])
+            pcm   = np.frombuffer(chunk, dtype=np.int16).astype(np.float32)
+            if len(pcm) == 0:
+                continue
+            rms = float(np.sqrt(np.mean(pcm ** 2)))
+            if rms > 1e-3:
+                rms_values.append(20.0 * float(np.log10(rms / 32768.0)))
+
+        if len(rms_values) < 4:
+            return {"likely_dialogue": True, "volume_var_db": 0.0, "centroid_var": 0.0}
+
+        rms_arr = np.array(rms_values, dtype=np.float32)
+        volume_var_db = float(np.std(rms_arr))
+
+        # ── Дисперсия спектрального центроида ──
+        # Простая аппроксимация: считаем "центр тяжести" частот в окне.
+        # Разные голоса → разные центроиды.
+        centroids = []
+        big_chunks = max(2, len(frames) // 10)
+        chunk_size = max(1, len(frames) // big_chunks)
+        for i in range(0, len(frames), chunk_size):
+            chunk = b"".join(frames[i:i + chunk_size])
+            pcm   = np.frombuffer(chunk, dtype=np.int16).astype(np.float32)
+            if len(pcm) < 256:
+                continue
+            spec   = np.abs(np.fft.rfft(pcm))
+            freqs  = np.fft.rfftfreq(len(pcm), d=1.0 / SAMPLE_RATE)
+            total  = spec.sum()
+            if total < 1e-6:
+                continue
+            centroid = float((freqs * spec).sum() / total)
+            centroids.append(centroid)
+
+        centroid_var = float(np.std(centroids)) if len(centroids) >= 2 else 0.0
+
+        # ── Решение: похоже ли на диалог? ──
+        # Критерии калибровались на типовых записях:
+        #   диалог: volume_var > 6 dB, centroid_var > 200 Hz
+        #   монолог: оба ниже
+        likely_dialogue = (volume_var_db > 6.0 and centroid_var > 200.0)
+
+        return {
+            "likely_dialogue": likely_dialogue,
+            "volume_var_db":   round(volume_var_db, 1),
+            "centroid_var":    round(centroid_var, 1),
+        }
+    except Exception as e:
+        log.debug(f"speaker diversity ошибка: {e}")
+        # При ошибке — пропускаем фильтр, лучше отправить чем потерять
+        return {"likely_dialogue": True, "volume_var_db": 0.0, "centroid_var": 0.0}
+
+
 def transcribe_local(wav_bytes: bytes) -> str | None:
     """Транскрипция через faster-whisper локально."""
     if not _whisper_model_instance:
@@ -581,6 +653,17 @@ def run_rtsp(url: str):
             voiced = []; silence = 0; in_speech = False
             speech_segments = 0; last_was_speech = False
             return
+        # Лёгкая диарзация: если 2 голоса по дисперсии — продолжаем,
+        # иначе вероятно монолог несмотря на turn-taking
+        diversity = detect_speaker_diversity(voiced)
+        if not diversity["likely_dialogue"]:
+            log.info(
+                f"Низкая диверсия (vol_var={diversity['volume_var_db']} dB, "
+                f"centroid_var={diversity['centroid_var']} Hz) — вероятно монолог, пропуск"
+            )
+            voiced = []; silence = 0; in_speech = False
+            speech_segments = 0; last_was_speech = False
+            return
         log.info(f"Диалог ({speech_segments} сегм., {reason}) — отправляю на сервер")
         clean   = denoise(voiced)
         raw_wav = frames_to_wav(clean)
@@ -696,6 +779,17 @@ def run():
             voiced = []; silence = 0; in_speech = False
             speech_segments = 0; last_was_speech = False
             return
+        # Лёгкая диарзация: если 2 голоса по дисперсии — продолжаем,
+        # иначе вероятно монолог несмотря на turn-taking
+        diversity = detect_speaker_diversity(voiced)
+        if not diversity["likely_dialogue"]:
+            log.info(
+                f"Низкая диверсия (vol_var={diversity['volume_var_db']} dB, "
+                f"centroid_var={diversity['centroid_var']} Hz) — вероятно монолог, пропуск"
+            )
+            voiced = []; silence = 0; in_speech = False
+            speech_segments = 0; last_was_speech = False
+            return
         log.info(f"Диалог ({speech_segments} сегм., {reason}) — отправляю на сервер")
         clean   = denoise(voiced)
         raw_wav = frames_to_wav(clean)
@@ -776,6 +870,170 @@ def run():
 
 
 # ════════════════════════════════════════════════════════════
+#  МАСТЕР ПЕРВОЙ УСТАНОВКИ
+# ════════════════════════════════════════════════════════════
+
+SETUP_FLAG = Path(__file__).parent / "setup_ok.flag"
+
+
+def _measure_loudness(stream, pa: pyaudio.PyAudio, seconds: float = 3.0) -> float:
+    """Записывает {seconds} секунд и возвращает среднюю громкость (RMS dB)."""
+    frames = []
+    n = int(SAMPLE_RATE * seconds / FRAME_SIZE)
+    for _ in range(n):
+        try:
+            frames.append(stream.read(FRAME_SIZE, exception_on_overflow=False))
+        except Exception:
+            pass
+    if not frames:
+        return -120.0
+    pcm = np.frombuffer(b"".join(frames), dtype=np.int16).astype(np.float32)
+    rms = float(np.sqrt(np.mean(pcm ** 2)))
+    if rms < 1e-9:
+        return -120.0
+    # 20*log10(rms / 32768) — нормализуем int16
+    db = 20.0 * float(np.log10(rms / 32768.0))
+    return db
+
+
+def run_setup_wizard():
+    """
+    Запускается один раз при первом запуске .exe.
+    Проверяет микрофон через два тестовых замера.
+    Сохраняет setup_ok.flag — больше не запустится.
+    """
+    if SETUP_FLAG.exists():
+        return
+
+    print()
+    print("=" * 60)
+    print("   ДОБРО ПОЖАЛОВАТЬ В TRUSTCONTROL — МАСТЕР УСТАНОВКИ")
+    print("=" * 60)
+    print()
+    print("  Сейчас мы проверим что микрофон стоит правильно.")
+    print("  Это займёт 1 минуту.")
+    print()
+    input("  Нажмите Enter чтобы продолжить... ")
+
+    pa = pyaudio.PyAudio()
+    device_index = _resolve_device_index(pa, DEVICE_ARG)
+
+    # Список устройств — для информации
+    print()
+    _list_devices(pa)
+
+    try:
+        stream = _open_stream(pa, device_index=device_index, retry_interval=2)
+    except Exception as e:
+        print(f"\n  ❌ Не удалось открыть микрофон: {e}")
+        print("  Подключите USB-микрофон и запустите .exe снова.")
+        input("\n  Нажмите Enter для выхода... ")
+        pa.terminate()
+        sys.exit(1)
+
+    # ── Шаг 1: тишина (фоновый шум) ─────────────────────────────
+    print()
+    print("─" * 60)
+    print("  ШАГ 1 / 3: ЗАМЕР ФОНОВОГО ШУМА")
+    print("─" * 60)
+    print("  Сейчас 3 секунды НИЧЕГО НЕ ГОВОРИТЕ.")
+    print("  Просто стойте тихо около микрофона.")
+    print()
+    input("  Нажмите Enter и молчите 3 секунды... ")
+    print("  Замеряю... 🎤")
+    noise_db = _measure_loudness(stream, pa, seconds=3.0)
+    print(f"  Фоновый шум: {noise_db:.1f} dB")
+
+    # ── Шаг 2: голос с позиции кассира ──────────────────────────
+    print()
+    print("─" * 60)
+    print("  ШАГ 2 / 3: ГОЛОС С ПОЗИЦИИ КАССИРА")
+    print("─" * 60)
+    print("  Встаньте где обычно стоит КАССИР (за стойкой/прилавком).")
+    print("  Произнесите громко: «Тест, тест, проверка микрофона»")
+    print()
+    input("  Когда готовы — нажмите Enter и сразу говорите 3 секунды... ")
+    print("  Замеряю... 🎤")
+    cashier_db = _measure_loudness(stream, pa, seconds=3.0)
+    print(f"  Громкость кассира: {cashier_db:.1f} dB")
+
+    # ── Шаг 3: голос с позиции клиента ──────────────────────────
+    print()
+    print("─" * 60)
+    print("  ШАГ 3 / 3: ГОЛОС С ПОЗИЦИИ КЛИЕНТА")
+    print("─" * 60)
+    print("  Встаньте где обычно стоит КЛИЕНТ (перед стойкой).")
+    print("  Произнесите громко: «Тест, тест, проверка»")
+    print()
+    input("  Когда готовы — нажмите Enter и сразу говорите 3 секунды... ")
+    print("  Замеряю... 🎤")
+    customer_db = _measure_loudness(stream, pa, seconds=3.0)
+    print(f"  Громкость клиента: {customer_db:.1f} dB")
+
+    # ── Закрываем поток, освобождаем микрофон ────────────────────
+    try:
+        stream.stop_stream(); stream.close()
+    except Exception:
+        pass
+    pa.terminate()
+
+    # ── Анализ результатов ──────────────────────────────────────
+    print()
+    print("=" * 60)
+    print("   РЕЗУЛЬТАТ ПРОВЕРКИ")
+    print("=" * 60)
+
+    issues = []
+    cashier_above_noise = cashier_db - noise_db
+    customer_above_noise = customer_db - noise_db
+
+    if noise_db > -45:
+        issues.append("⚠️  Фоновый шум слишком высокий. Уберите вентилятор / посудомойку / громкую музыку рядом с микрофоном.")
+
+    if cashier_above_noise < 10:
+        issues.append("⚠️  Кассира плохо слышно. Микрофон слишком далеко от позиции кассира — переставьте ближе.")
+    elif cashier_above_noise > 35:
+        issues.append("ℹ️  Кассир очень громкий — возможно микрофон ВПЛОТНУЮ к нему. Это ок, но клиента может быть не слышно.")
+
+    if customer_above_noise < 8:
+        issues.append("⚠️  Клиента почти не слышно. Микрофон слишком далеко от клиента — переставьте ближе к краю прилавка / поверните в сторону клиента.")
+
+    if issues:
+        print()
+        print("  Есть замечания:")
+        print()
+        for issue in issues:
+            print(f"  {issue}")
+        print()
+        print(f"  📊 Шум: {noise_db:.1f} dB | Кассир: {cashier_db:.1f} dB | Клиент: {customer_db:.1f} dB")
+        print()
+        print("  Можно продолжить, но рекомендуется исправить замечания.")
+        print("  Подсказки по установке: https://aspanlab.kz/help/install")
+        ans = input("\n  Продолжить с текущей настройкой? (y/n): ").strip().lower()
+        if ans not in ("y", "yes", "д", "да", ""):
+            print("\n  Запустите .exe снова после исправления.")
+            sys.exit(0)
+    else:
+        print()
+        print("  ✅ ВСЁ ОТЛИЧНО!")
+        print(f"  Шум: {noise_db:.1f} dB | Кассир: {cashier_db:.1f} dB | Клиент: {customer_db:.1f} dB")
+        print("  Микрофон установлен правильно.")
+        print()
+
+    # ── Сохраняем флаг — больше не запускать ─────────────────────
+    SETUP_FLAG.write_text(
+        f"setup_ok=true\n"
+        f"noise_db={noise_db:.1f}\n"
+        f"cashier_db={cashier_db:.1f}\n"
+        f"customer_db={customer_db:.1f}\n"
+    )
+    print("=" * 60)
+    print("  Запускаю мониторинг...")
+    print("=" * 60)
+    print()
+
+
+# ════════════════════════════════════════════════════════════
 #  АВТООБНОВЛЕНИЕ
 # ════════════════════════════════════════════════════════════
 
@@ -849,6 +1107,8 @@ def _check_for_updates():
 # ════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    if not _args.list_devices:
+        run_setup_wizard()
     _check_for_updates()
     _main = (lambda: run_rtsp(RTSP_URL)) if RTSP_URL else run
     while True:

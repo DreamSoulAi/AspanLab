@@ -57,6 +57,47 @@ _daily_counts:    dict[str, tuple[str, int]] = {}  # key → (YYYY-MM-DD, count)
 MAX_SUBMITS_PER_MIN = 60
 MAX_SUBMITS_PER_DAY = 1500
 
+# Monthly conversation limits per plan
+# Costs ~2₸/conversation on cheap pipeline → gross margin 75-85%
+# These limits leave headroom for ads/sales team without going underwater
+_PLAN_MONTHLY_LIMITS = {
+    "trial":    150,      # 7-day trial enough to evaluate
+    "start":    1500,     # 50/day - small kiosk/salon/shop
+    "business": 3000,     # 100/day across 3 кассы - cafe/fastfood
+    "potok":    7500,     # 250/day across 5 кассы - АЗС/supermarket
+    "network":  999_999,  # individual, fair-use
+}
+
+# In-memory monthly count cache: user_id → (year_month_str, count, last_checked_ts)
+# Refreshed from DB every 5 minutes to avoid per-request DB overhead
+_monthly_cache: dict[int, tuple[str, int, float]] = {}
+_CACHE_TTL = 300  # 5 minutes
+
+
+async def _get_monthly_count(user_id: int, location_ids: list) -> int:
+    """Returns conversation count for current month from cache or DB."""
+    import time as _time
+    from sqlalchemy import func
+    now = _time.time()
+    cur_month = datetime.utcnow().strftime("%Y-%m")
+    cached = _monthly_cache.get(user_id)
+    if cached and cached[0] == cur_month and now - cached[2] < _CACHE_TTL:
+        return cached[1]
+    # Refresh from DB
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(func.count(Report.id)).where(
+                Report.location_id.in_(location_ids),
+                Report.timestamp >= month_start,
+                Report.is_hidden == False,
+            )
+        )
+        count = result.scalar() or 0
+    _monthly_cache[user_id] = (cur_month, count, now)
+    return count
+
+
 # Audio magic bytes — only accept real audio files
 _AUDIO_MAGIC = [b"RIFF", b"ID3", b"OggS", b"fLaC", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"]
 
@@ -337,6 +378,22 @@ async def _process_submission(
                         proof_s3_url=incident.proof_s3_url,
                         detected_phone=hit["phone"],
                     )
+                # Email alert for fraud — send to location owner
+                try:
+                    async with AsyncSessionLocal() as _mail_db:
+                        _loc = await _mail_db.get(Location, location_id)
+                        if _loc and _loc.owner_id:
+                            _usr = await _mail_db.get(User, _loc.owner_id)
+                            if _usr and _usr.email:
+                                await notifier.send_fraud_email(
+                                    user_email=_usr.email,
+                                    location_name=location_name,
+                                    incident_type="KASPI_FRAUD",
+                                    description=incident.description,
+                                    audio_url=incident.proof_s3_url,
+                                )
+                except Exception as _e:
+                    log.warning(f"Fraud email not sent: {_e}")
 
             if kaspi_hits:
                 await db.commit()
@@ -407,6 +464,24 @@ async def _process_submission(
                 upsell=upsell_attempt,
                 greeting=has_greeting,
             )
+
+        # Email for fraud incidents
+        if (has_fraud or has_bad) and not suppress_alert:
+            try:
+                async with AsyncSessionLocal() as _mail_db:
+                    _loc = await _mail_db.get(Location, location_id)
+                    if _loc and _loc.owner_id:
+                        _usr = await _mail_db.get(User, _loc.owner_id)
+                        if _usr and _usr.email and has_fraud:
+                            await notifier.send_fraud_email(
+                                user_email=_usr.email,
+                                location_name=location_name,
+                                incident_type="FRAUD",
+                                description=gpt_summary or "Обнаружено GPT-анализом",
+                                audio_url=s3_url,
+                            )
+            except Exception as _e:
+                log.warning(f"Fraud email not sent: {_e}")
 
         _mark_job_done(failed_job_id)
 
@@ -522,6 +597,22 @@ async def submit_audio(
                     status_code=402,
                     detail="Подписка истекла. Оплатите в личном кабинете для возобновления.",
                 )
+
+            # Monthly conversation limit check
+            plan = owner.plan or "trial"
+            monthly_limit = _PLAN_MONTHLY_LIMITS.get(plan, 100)
+            if monthly_limit < 999_999:
+                locs_result = await db.execute(
+                    select(Location.id).where(Location.owner_id == location.owner_id)
+                )
+                owner_loc_ids = [r[0] for r in locs_result.all()]
+                monthly_used = await _get_monthly_count(location.owner_id, owner_loc_ids)
+                if monthly_used >= monthly_limit:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"Месячный лимит {monthly_limit} разговоров исчерпан. "
+                               f"Обновите тариф в личном кабинете.",
+                    )
 
     location.last_seen = datetime.utcnow()
     await db.commit()
