@@ -45,6 +45,7 @@ jobs:
           OPENAI_API_KEY: "sk-fake-key-for-tests"
           TELEGRAM_BOT_TOKEN: "123:fake-token"
           DEBUG: "true"
+          OTP_BYPASS: "true"
         run: |
           pytest tests/ -v --tb=short
 
