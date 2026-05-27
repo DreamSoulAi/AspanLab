@@ -378,9 +378,21 @@ async def login(
 
 
 @router.get("/me")
-async def me(user: User = Depends(get_current_user)):
+async def me(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     from backend.services.subscription import get_status as _sub_status, days_left
     from backend.services.notifier import last_telegram_error
+    from backend.api.reports import _get_monthly_count, _PLAN_MONTHLY_LIMITS
+    from sqlalchemy import select as _sel
+    from backend.models.location import Location as _Loc
+
+    locs_r = await db.execute(_sel(_Loc.id).where(_Loc.owner_id == user.id))
+    loc_ids = [r[0] for r in locs_r.all()]
+    conversations_used = await _get_monthly_count(user.id, loc_ids) if loc_ids else 0
+    conversations_limit = _PLAN_MONTHLY_LIMITS.get(user.plan or "trial", 100)
+
     return {
         "id":                  user.id,
         "name":                user.name,
@@ -404,6 +416,8 @@ async def me(user: User = Depends(get_current_user)):
             if last_telegram_error.get("chat_id") == (user.telegram_chat or "")
             else {"at": None, "msg": None, "chat_id": None}
         ),
+        "conversations_used":  conversations_used,
+        "conversations_limit": conversations_limit,
     }
 
 
