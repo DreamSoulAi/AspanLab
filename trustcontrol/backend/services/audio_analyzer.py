@@ -270,6 +270,46 @@ async def analyze_audio(wav_bytes: bytes, language: str = None, business_context
         return {}
 
 
+async def _transcribe_audio(wav_bytes: bytes, language: str = None) -> str:
+    """Whisper-1 транскрипция. Дешёвый базовый путь (~1.5₸/разговор)."""
+    if not settings.OPENAI_API_KEY:
+        return ""
+    try:
+        import io as _io
+        buf = _io.BytesIO(wav_bytes)
+        buf.name = "audio.wav"
+        tr = await client.audio.transcriptions.create(
+            model="whisper-1", file=buf, language=language,
+        )
+        return (tr.text or "").strip()
+    except Exception as e:
+        log.warning(f"Whisper транскрипция не удалась: {e}")
+        return ""
+
+
+def _normalize_text_result(gpt: dict, transcript: str, language: str = None) -> dict:
+    """Приводит результат gpt_analyze (текстовый путь) к формату аудио-модели."""
+    return {
+        "status":               "OK",
+        "is_business":          True,
+        "is_personal_talk":     False,
+        "priority":             int(gpt.get("priority", 0)) if gpt.get("priority") else (1 if gpt.get("events", {}).get("fraud_attempt") or gpt.get("events", {}).get("rudeness") else 0),
+        "transcript":           transcript,
+        "tone":                 gpt.get("tone", "neutral"),
+        "score":                gpt.get("score", 50),
+        "summary":              gpt.get("summary", ""),
+        "speakers":             [],
+        "events":               gpt.get("events", {}),
+        "fraud_confidence":     int(gpt.get("fraud_confidence", 0)),
+        "language":             gpt.get("language") or language or "ru",
+        "payment_confirmed":    None,
+        "upsell_attempt":       gpt.get("events", {}).get("upsell"),
+        "customer_satisfaction": int(gpt.get("customer_satisfaction", 3)),
+        "positives":            gpt.get("positives", []),
+        "issues":               gpt.get("issues", []),
+    }
+
+
 async def analyze_audio_with_fallback(
     wav_bytes: bytes | None,
     transcript_text: str | None,
@@ -286,71 +326,43 @@ async def analyze_audio_with_fallback(
     status="PERSONAL" — личный разговор, сохранить как is_hidden=true
     status="OK"       — рабочий разговор, анализировать полностью
     """
+    # ── Режим 1: уже есть транскрипт (local-whisper на кассе) ───
     if transcript_text and transcript_text.strip():
         gpt = await gpt_analyze(transcript_text)
         if not gpt.get("is_business", True):
             return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
-        return {
-            "status":               "OK",
-            "is_business":          True,
-            "is_personal_talk":     False,
-            "priority":             gpt.get("priority", 0),
-            "transcript":           transcript_text.strip(),
-            "tone":                 gpt.get("tone", "neutral"),
-            "score":                gpt.get("score", 50),
-            "summary":              gpt.get("summary", ""),
-            "speakers":             [],
-            "events":               {},
-            "language":             language or "ru",
-            "payment_confirmed":    None,
-            "upsell_attempt":       None,
-            "customer_satisfaction": 3,
-        }
+        return _normalize_text_result(gpt, transcript_text.strip(), language)
 
-    if wav_bytes:
-        result = await analyze_audio(wav_bytes, language, business_context=business_context)
+    # ── Режим 2: есть аудио. Сначала ДЕШЁВЫЙ путь ──────────────
+    # Whisper транскрипция → gpt-4o-mini текст-анализ.
+    # Это 3x дешевле, чем gpt-4o-mini-audio, и работает в 95% случаев.
+    # Аудио-модель используется только для эскалации при fraud_confidence > 50.
+    if not wav_bytes:
+        return {}
 
-        if result.get("status") in ("IGNORE", "PERSONAL"):
-            return result
+    text = await _transcribe_audio(wav_bytes, language)
+    if not text or len(text) < 3:
+        log.info("Whisper не распознал речь — пропуск")
+        return {}
 
-        if result and result.get("transcript"):
-            return result
+    gpt = await gpt_analyze(text)
+    if not gpt:
+        return {}
 
-        # Fallback: транскрипция отдельно → text анализ
-        log.info("Fallback: gpt-4o-mini-transcribe + text analysis")
-        try:
-            import io as _io
-            buf = _io.BytesIO(wav_bytes)
-            buf.name = "audio.wav"
-            tr = await client.audio.transcriptions.create(
-                model=_FALLBACK_MODEL, file=buf, language=language,
-            )
-            text = tr.text.strip()
-        except Exception as e:
-            log.error(f"Fallback транскрипция не удалась: {e}")
-            return {}
+    if not gpt.get("is_business", True):
+        return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
 
-        if not text or len(text) < 3:
-            return {}
+    # ── Эскалация на аудио-модель при подозрении на фрод ────────
+    # Текст не передаёт тон, и для фрода нужна максимальная точность.
+    fraud_conf = int(gpt.get("fraud_confidence", 0))
+    needs_audio_check = fraud_conf >= 50 or gpt.get("events", {}).get("fraud_attempt")
 
-        gpt = await gpt_analyze(text)
-        if not gpt.get("is_business", True):
-            return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
-        return {
-            "status":               "OK",
-            "is_business":          True,
-            "is_personal_talk":     False,
-            "priority":             gpt.get("priority", 0),
-            "transcript":           text,
-            "tone":                 gpt.get("tone", "neutral"),
-            "score":                gpt.get("score", 50),
-            "summary":              gpt.get("summary", ""),
-            "speakers":             [],
-            "events":               {},
-            "language":             language or "ru",
-            "payment_confirmed":    None,
-            "upsell_attempt":       None,
-            "customer_satisfaction": 3,
-        }
+    if needs_audio_check:
+        log.info(f"Эскалация на audio-модель (fraud_confidence={fraud_conf})")
+        audio_result = await analyze_audio(wav_bytes, language, business_context=business_context)
+        if audio_result and audio_result.get("transcript"):
+            # Аудио-модель уточнила: берём её результат как более точный
+            return audio_result
 
-    return {}
+    # ── Обычный путь: возвращаем дешёвый результат ──────────────
+    return _normalize_text_result(gpt, text, language)

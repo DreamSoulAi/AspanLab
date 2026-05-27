@@ -64,7 +64,7 @@ frontend/
 
 ### Тарифы и лимиты
 ```python
-limits = {"trial": 1, "start": 1, "business": 5, "network": 999}
+limits = {"trial": 1, "start": 1, "business": 3, "potok": 5, "network": 999}
 ```
 Проверяются при создании новой точки в `api/locations.py`
 

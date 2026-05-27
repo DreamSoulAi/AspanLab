@@ -58,11 +58,14 @@ MAX_SUBMITS_PER_MIN = 60
 MAX_SUBMITS_PER_DAY = 1500
 
 # Monthly conversation limits per plan
+# Costs ~2₸/conversation on cheap pipeline → gross margin 75-85%
+# These limits leave headroom for ads/sales team without going underwater
 _PLAN_MONTHLY_LIMITS = {
-    "trial":    100,
-    "start":    300,
-    "business": 1500,
-    "network":  999_999,
+    "trial":    150,      # 7-day trial enough to evaluate
+    "start":    1500,     # 50/day - small kiosk/salon/shop
+    "business": 3000,     # 100/day across 3 кассы - cafe/fastfood
+    "potok":    7500,     # 250/day across 5 кассы - АЗС/supermarket
+    "network":  999_999,  # individual, fair-use
 }
 
 # In-memory monthly count cache: user_id → (year_month_str, count, last_checked_ts)
