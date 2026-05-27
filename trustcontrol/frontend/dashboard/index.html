@@ -1604,6 +1604,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <span id="sPlanExpiry" style="font-size:13px;color:var(--muted)"></span>
           </div>
           <div id="sPlanDesc" style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px"></div>
+          <div id="sUsageBar" style="display:none;margin-bottom:14px;font-size:13px;color:var(--muted)"></div>
           <button class="upgrade-btn" onclick="showPayInfo()">💳 Оплатить / продлить</button>
         </div>
 
@@ -1983,15 +1984,17 @@ function renderSubBanner(d){
       &nbsp;·&nbsp; <a href="#" onclick="showPayInfo();return false" style="color:#60a5fa">Как оплатить</a></div>`;
   } else { el.style.display='none'; }
   if(html){el.style.background=bg;el.style.border=border;el.innerHTML=html;el.style.display='block';}
-  // Conversations usage bar
-  const ub=document.getElementById('usageBanner');
-  if(ub&&!d.is_admin){
+  // Conversations usage bar (main banner + settings page)
+  if(!d.is_admin){
     const usedConvs=d.conversations_used||0;
     const limitConvs=d.conversations_limit||100;
     const pct=Math.min(100,Math.round(usedConvs/limitConvs*100));
     const barColor=pct>=90?'#dc2626':pct>=70?'#f59e0b':'#10b981';
-    ub.innerHTML=`<div style="color:#6b7280">\u{1F4CA} Разговоров в этом месяце: <strong style="color:#f2f4f8">${usedConvs}</strong> из <strong style="color:#f2f4f8">${limitConvs}</strong><div style="margin-top:4px;height:6px;background:#1f2937;border-radius:3px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${barColor};border-radius:3px;transition:width 0.3s"></div></div></div>`;
-    ub.style.display='block';
+    const barHtml=`<div>&#128202; Разговоров в этом месяце: <strong style="color:#f2f4f8">${usedConvs}</strong> из <strong style="color:#f2f4f8">${limitConvs}</strong><div style="margin-top:4px;height:6px;background:#1f2937;border-radius:3px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${barColor};border-radius:3px;transition:width 0.3s"></div></div></div>`;
+    const ub=document.getElementById('usageBanner');
+    if(ub){ub.innerHTML=`<div style="color:#6b7280">${barHtml}</div>`;ub.style.display='block';}
+    const sb=document.getElementById('sUsageBar');
+    if(sb){sb.innerHTML=barHtml;sb.style.display='block';}
   }
 }
 
