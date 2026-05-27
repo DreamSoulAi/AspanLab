@@ -271,16 +271,36 @@ async def analyze_audio(wav_bytes: bytes, language: str = None, business_context
 
 
 async def _transcribe_audio(wav_bytes: bytes, language: str = None) -> str:
-    """Whisper-1 транскрипция. Дешёвый базовый путь (~1.5₸/разговор)."""
+    """
+    Whisper-1 транскрипция. Дешёвый базовый путь (~1.5₸/разговор).
+
+    Если language передан явно как "kk" или "en" — используем подсказку.
+    Иначе (включая дефолтный "ru" локации) — даём Whisper auto-detect,
+    т.к. в Казахстане в одном разговоре может быть смесь языков.
+    """
     if not settings.OPENAI_API_KEY:
         return ""
     try:
         import io as _io
         buf = _io.BytesIO(wav_bytes)
         buf.name = "audio.wav"
-        tr = await client.audio.transcriptions.create(
-            model="whisper-1", file=buf, language=language,
+
+        # Только явные не-русские подсказки передаём в Whisper.
+        # Если language=None или "ru" — даём авто-определение
+        # (Whisper хорошо различает ru/kk/en при автодетекте).
+        whisper_lang = language if language and language not in ("ru", "auto", "") else None
+
+        kwargs = {"model": "whisper-1", "file": buf}
+        if whisper_lang:
+            kwargs["language"] = whisper_lang
+        # prompt подсказывает Whisper про многоязычный казахстанский контекст
+        kwargs["prompt"] = (
+            "Разговор с кассы в Казахстане. Возможна смесь русского, казахского, "
+            "английского. Примеры казахских слов: сәлем, рахмет, картамен, теңге, "
+            "қайырлы күн, не аласыз. Сохраняй оригинальный язык каждой фразы."
         )
+
+        tr = await client.audio.transcriptions.create(**kwargs)
         return (tr.text or "").strip()
     except Exception as e:
         log.warning(f"Whisper транскрипция не удалась: {e}")
@@ -289,21 +309,22 @@ async def _transcribe_audio(wav_bytes: bytes, language: str = None) -> str:
 
 def _normalize_text_result(gpt: dict, transcript: str, language: str = None) -> dict:
     """Приводит результат gpt_analyze (текстовый путь) к формату аудио-модели."""
+    events = gpt.get("events", {}) or {}
     return {
         "status":               "OK",
         "is_business":          True,
-        "is_personal_talk":     False,
-        "priority":             int(gpt.get("priority", 0)) if gpt.get("priority") else (1 if gpt.get("events", {}).get("fraud_attempt") or gpt.get("events", {}).get("rudeness") else 0),
+        "is_personal_talk":     bool(gpt.get("is_personal_talk", False)),
+        "priority":             int(gpt.get("priority", 0)) if gpt.get("priority") else (1 if events.get("fraud_attempt") or events.get("rudeness") else 0),
         "transcript":           transcript,
         "tone":                 gpt.get("tone", "neutral"),
         "score":                gpt.get("score", 50),
         "summary":              gpt.get("summary", ""),
         "speakers":             [],
-        "events":               gpt.get("events", {}),
+        "events":               events,
         "fraud_confidence":     int(gpt.get("fraud_confidence", 0)),
         "language":             gpt.get("language") or language or "ru",
         "payment_confirmed":    None,
-        "upsell_attempt":       gpt.get("events", {}).get("upsell"),
+        "upsell_attempt":       events.get("upsell"),
         "customer_satisfaction": int(gpt.get("customer_satisfaction", 3)),
         "positives":            gpt.get("positives", []),
         "issues":               gpt.get("issues", []),
@@ -329,7 +350,18 @@ async def analyze_audio_with_fallback(
     # ── Режим 1: уже есть транскрипт (local-whisper на кассе) ───
     if transcript_text and transcript_text.strip():
         gpt = await gpt_analyze(transcript_text)
-        if not gpt.get("is_business", True):
+        if not gpt:
+            return {}
+        if gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk"):
+            return {
+                "status":           "PERSONAL",
+                "is_business":      False,
+                "is_personal_talk": True,
+                "priority":         0,
+                "transcript":       "",
+                "summary":          gpt.get("summary", "Личный разговор сотрудника"),
+            }
+        if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
             return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
         return _normalize_text_result(gpt, transcript_text.strip(), language)
 
@@ -349,7 +381,19 @@ async def analyze_audio_with_fallback(
     if not gpt:
         return {}
 
-    if not gpt.get("is_business", True):
+    # PERSONAL: личный разговор → сохранить как is_hidden=true в БД
+    if gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk"):
+        return {
+            "status":           "PERSONAL",
+            "is_business":      False,
+            "is_personal_talk": True,
+            "priority":         0,
+            "transcript":       "",
+            "summary":          gpt.get("summary", "Личный разговор сотрудника"),
+        }
+
+    # IGNORE: мусор
+    if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
         return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
 
     # ── Эскалация на аудио-модель при подозрении на фрод ────────
