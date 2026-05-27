@@ -1190,6 +1190,9 @@ textarea.f-input{resize:vertical;line-height:1.6}
     <!-- MAIN -->
     <div class="main">
 
+      <!-- Subscription banner (shown when trial expiring, grace, or blocked) -->
+      <div id="subBanner" style="display:none;margin:0 0 16px;padding:14px 18px;border-radius:10px;font-size:14px;line-height:1.5"></div>
+
       <!-- ── OVERVIEW ── -->
       <div class="page active" id="page-overview">
         <div id="dashLoading" style="display:none;text-align:center;padding:80px 24px;color:var(--muted);font-size:15px">
@@ -1798,11 +1801,62 @@ async function loadUserInfo(){
     if(days<=3&&days>0)document.getElementById('sPlanExpiry').style.color='#F59E0B';
     if(days<=0)document.getElementById('sPlanExpiry').style.color='#EF4444';
   }
-  const planNames={trial:'Пробный период — 14 дней бесплатно',start:'Старт — 15 000 ₸/мес',business:'Базовый — 25 000 ₸/мес',network:'Enterprise — от 120 000 ₸/мес'};
+  const planNames={trial:'Пробный период — 7 дней бесплатно',start:'Старт — 15 000 ₸/мес',business:'Базовый — 25 000 ₸/мес',network:'Enterprise — от 120 000 ₸/мес'};
   set('sPlanDesc',planNames[d.plan]||d.plan||'');
   // Telegram status
   _userTgLinked = !!(d.telegram_chat);
   renderTgStatus(d);
+  // Subscription banner
+  renderSubBanner(d);
+}
+
+function renderSubBanner(d){
+  const el=document.getElementById('subBanner');if(!el)return;
+  if(d.is_admin){el.style.display='none';return;}
+  const st=d.subscription_status||'active', dl=typeof d.days_left==='number'?d.days_left:999;
+  let html='', bg='', border='';
+  if(st==='blocked'){
+    bg='#3d1212';border='1px solid #ef4444';
+    html=`<div style="color:#fecaca"><b style="font-size:15px">🔒 Подписка заблокирована</b><br>
+      Сбор разговоров с кассы остановлен. Оплатите чтобы продолжить работу.
+      <div style="margin-top:8px"><button onclick="showPayInfo()" style="background:#ef4444;color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:600">Как оплатить →</button></div></div>`;
+  } else if(st==='grace'){
+    bg='#3d2a12';border='1px solid #f59e0b';
+    html=`<div style="color:#fde68a"><b>⚠️ Подписка истекла — работаем в льготный период</b><br>
+      Через несколько дней сервис будет заблокирован. Оплатите сейчас.
+      <div style="margin-top:8px"><button onclick="showPayInfo()" style="background:#f59e0b;color:#000;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:600">Как оплатить →</button></div></div>`;
+  } else if(st==='active' && dl>=0 && dl<=3){
+    bg='#1f2937';border='1px solid #6b7280';
+    html=`<div style="color:#cbd5e1"><b>Подписка истекает через ${dl===0?'сегодня':dl+' дн.'}</b>
+      &nbsp;·&nbsp; <a href="#" onclick="showPayInfo();return false" style="color:#60a5fa">Как оплатить</a></div>`;
+  } else { el.style.display='none'; return; }
+  el.style.background=bg;el.style.border=border;el.innerHTML=html;el.style.display='block';
+}
+
+let _appConfig = null;
+async function loadAppConfig(){
+  if(_appConfig)return _appConfig;
+  try{ _appConfig = await apiFetch('/auth/app-config'); }catch(e){}
+  return _appConfig || {};
+}
+
+async function showPayInfo(){
+  const c = await loadAppConfig();
+  const kaspi   = c.kaspi_number    || '(номер ещё не настроен)';
+  const name    = c.kaspi_name      || 'TrustControl';
+  const support = c.support_telegram|| 'trustcontrol_support';
+  alert(
+    "ОПЛАТА ПОДПИСКИ\n\n" +
+    "1. Переведите на Kaspi Gold:\n" +
+    "   " + kaspi + "\n" +
+    "   Получатель: " + name + "\n\n" +
+    "2. В комментарии укажите номер телефона,\n" +
+    "   на который вы зарегистрированы.\n\n" +
+    "3. Пришлите скриншот чека в Telegram:\n" +
+    "   @" + support + "\n\n" +
+    "Подписка активируется в течение 15 минут\n" +
+    "в рабочее время (9:00–22:00 по Алматы)."
+  );
 }
 
 async function saveSettings(){

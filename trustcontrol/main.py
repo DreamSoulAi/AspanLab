@@ -499,7 +499,52 @@ async def shutdown():
 
 @app.get("/health")
 async def health():
+    """Лайт-пинг (для UptimeRobot, keep-alive). Всегда 200."""
     return {"status": "ok", "version": "3.0.0"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """
+    Глубокая проверка — БД, OpenAI, Telegram бот.
+    Возвращает 503 если хоть что-то не в порядке (чтобы UptimeRobot прислал email).
+    """
+    import sqlalchemy as sa
+    from backend.database import AsyncSessionLocal
+    from backend.config import settings as _s
+
+    checks: dict = {"db": "?", "openai": "?", "telegram": "?"}
+    healthy = True
+
+    # 1. База
+    try:
+        async with AsyncSessionLocal() as db:
+            await asyncio.wait_for(db.execute(sa.text("SELECT 1")), timeout=5)
+        checks["db"] = "ok"
+    except Exception as e:
+        checks["db"] = f"fail: {str(e)[:80]}"
+        healthy = False
+
+    # 2. OpenAI ключ присутствует (полный запрос — дорого, не делаем)
+    checks["openai"] = "ok" if _s.OPENAI_API_KEY else "missing OPENAI_API_KEY"
+    if not _s.OPENAI_API_KEY:
+        healthy = False
+
+    # 3. Telegram бот доступен
+    try:
+        from backend.services.notifier import get_bot
+        bot = get_bot()
+        me  = await asyncio.wait_for(bot.get_me(), timeout=5)
+        checks["telegram"] = f"ok (@{me.username})"
+    except Exception as e:
+        checks["telegram"] = f"fail: {str(e)[:80]}"
+        healthy = False
+
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={"status": "ok" if healthy else "degraded", "checks": checks},
+    )
 
 
 if __name__ == "__main__":

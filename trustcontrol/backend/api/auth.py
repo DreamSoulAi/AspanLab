@@ -17,6 +17,7 @@
 #    - otp_code НЕ возвращается в продакшн-ответах (только OTP_BYPASS=true)
 # ════════════════════════════════════════════════════════════
 
+import os
 import re
 import time
 import hashlib
@@ -225,7 +226,10 @@ async def require_active_subscription(
 async def app_config():
     """Public config returned to frontend on load."""
     return {
-        "tg_bot_username": settings.TELEGRAM_BOT_USERNAME,
+        "tg_bot_username":  settings.TELEGRAM_BOT_USERNAME,
+        "kaspi_number":     settings.KASPI_NUMBER or "",
+        "kaspi_name":       settings.KASPI_NAME or "TrustControl",
+        "support_telegram": os.getenv("SUPPORT_TELEGRAM", "trustcontrol_support"),
     }
 
 
