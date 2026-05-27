@@ -391,7 +391,7 @@ async def me(
     locs_r = await db.execute(_sel(_Loc.id).where(_Loc.owner_id == user.id))
     loc_ids = [r[0] for r in locs_r.all()]
     conversations_used = await _get_monthly_count(user.id, loc_ids) if loc_ids else 0
-    conversations_limit = _PLAN_MONTHLY_LIMITS.get(user.plan or "trial", 100)
+    conversations_limit = _PLAN_MONTHLY_LIMITS.get(user.plan or "trial", _PLAN_MONTHLY_LIMITS["trial"])
 
     return {
         "id":                  user.id,

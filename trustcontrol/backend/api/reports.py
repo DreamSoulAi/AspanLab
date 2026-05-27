@@ -600,7 +600,7 @@ async def submit_audio(
 
             # Monthly conversation limit check
             plan = owner.plan or "trial"
-            monthly_limit = _PLAN_MONTHLY_LIMITS.get(plan, 100)
+            monthly_limit = _PLAN_MONTHLY_LIMITS.get(plan, _PLAN_MONTHLY_LIMITS["trial"])
             if monthly_limit < 999_999:
                 locs_result = await db.execute(
                     select(Location.id).where(Location.owner_id == location.owner_id)

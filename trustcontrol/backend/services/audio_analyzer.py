@@ -368,7 +368,8 @@ async def analyze_audio_with_fallback(
     # ── Режим 2: есть аудио. Сначала ДЕШЁВЫЙ путь ──────────────
     # Whisper транскрипция → gpt-4o-mini текст-анализ.
     # Это 3x дешевле, чем gpt-4o-mini-audio, и работает в 95% случаев.
-    # Аудио-модель используется только для эскалации при fraud_confidence > 50.
+    # Аудио-модель используется только для эскалации при fraud_confidence >= 50
+    # либо если GPT-текст уже выставил events.fraud_attempt=true.
     if not wav_bytes:
         return {}
 
