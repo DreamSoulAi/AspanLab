@@ -1,0 +1,81 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'trustcontrol/scripts/windows/monitor.py'
+      - 'trustcontrol/requirements-monitor-py38.txt'
+      - '.github/workflows/build-exe.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2019
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
+        run: |
+          pip install "pyinstaller>=5.13,<6.0"
+          pip install -r trustcontrol/requirements-monitor-py38.txt
+        shell: cmd
+
+      - name: Build EXE
+        run: >
+          pyinstaller
+          --onefile
+          --name TrustControl
+          --collect-all webrtcvad
+          --collect-all pyaudio
+          --hidden-import=noisereduce
+          --hidden-import=scipy
+          --hidden-import=scipy.signal
+          --hidden-import=scipy.fft
+          --hidden-import=requests
+          --hidden-import=certifi
+          --hidden-import=charset_normalizer
+          --distpath dist
+          trustcontrol/scripts/windows/monitor.py
+        shell: cmd
+
+      - name: Package ZIP
+        shell: powershell
+        run: |
+          Copy-Item "trustcontrol\scripts\windows\config.ini" "dist\config.ini"
+
+          $readme = @"
+          ╔══════════════════════════════════════════════════╗
+            TrustControl — Мониторинг качества сервиса
+          ╚══════════════════════════════════════════════════╝
+
+          ШАГ 1.  Откройте config.ini в Блокноте.
+                  Замените  ВСТАВЬ_СЮДА_API_КЛЮЧ  на ключ
+                  из личного кабинета (Точки → кнопка ⧉).
+                  Файл → Сохранить → закрыть.
+
+          ШАГ 2.  Запустите TrustControl.exe
+                  Окно не закрывайте.
+
+          ──────────────────────────────────────────────────
+          АВТОЗАПУСК при включении ПК:
+            Правой кнопкой на TrustControl.exe
+            → Создать ярлык
+            → Скопировать ярлык в папку:
+            C:\Users\<ВашеИмя>\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup
+          "@
+          $readme | Out-File -FilePath "dist\README.txt" -Encoding utf8
+
+          Compress-Archive -Path "dist\TrustControl.exe","dist\config.ini","dist\README.txt" -DestinationPath "TrustControl_Windows.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrustControl-Windows
+          path: TrustControl_Windows.zip
+          retention-days: 90
