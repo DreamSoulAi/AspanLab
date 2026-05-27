@@ -21,3 +21,10 @@ logs/
 # Временные файлы
 fails/
 uploads/
+
+# PyInstaller artifacts
+scripts/windows/build/
+scripts/windows/dist/
+scripts/windows/*.spec
+scripts/windows/__pycache__/
+
