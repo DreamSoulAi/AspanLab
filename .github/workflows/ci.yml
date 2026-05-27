@@ -12,6 +12,10 @@ on:
   pull_request:
     branches: [main]
 
+defaults:
+  run:
+    working-directory: trustcontrol
+
 jobs:
 
   # ── Шаг 1: Тесты ─────────────────────────────────────────
@@ -24,10 +28,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Установка Python 3.11
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
+          cache-dependency-path: trustcontrol/requirements.txt
 
       - name: Установка зависимостей
         run: |
@@ -57,7 +62,10 @@ jobs:
     name: Деплой на VPS
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.VPS_HOST != ''
+    defaults:
+      run:
+        working-directory: .
 
     steps:
       - name: Checkout кода

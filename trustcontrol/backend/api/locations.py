@@ -201,7 +201,7 @@ async def create_location(
     )
     existing = result.scalars().all()
 
-    limits = {"trial": 1, "start": 1, "business": 3, "potok": 5, "network": 999}
+    limits = {"trial": 1, "start": 1, "business": 3, "potok": 5, "network": 999_999}
     limit = limits.get(user.plan, 1)
 
     if len(existing) >= limit:
