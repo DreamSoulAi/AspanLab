@@ -558,23 +558,35 @@ def run_rtsp(url: str):
 
     BYTES_PER_FRAME = FRAME_SIZE * 2  # int16 = 2 байта/сэмпл
 
-    voiced    = []
-    silence   = 0
-    in_speech = False
+    voiced          = []
+    silence         = 0
+    in_speech       = False
+    speech_segments = 0
+    last_was_speech = False
 
     def flush(reason=""):
-        nonlocal voiced, silence, in_speech
+        nonlocal voiced, silence, in_speech, speech_segments, last_was_speech
         if not voiced:
             return
         if len(voiced) < 100:
             log.debug(f"Сегмент слишком короткий ({len(voiced)} кадров) — пропускаем")
             voiced = []; silence = 0; in_speech = False
+            speech_segments = 0; last_was_speech = False
             return
-        log.info(f"Обрабатываю сегмент ({reason}), кадров: {len(voiced)}")
+        # Turn-taking фильтр: реальный диалог = минимум 2 речевых сегмента
+        # (кассир говорит → пауза → клиент отвечает)
+        # Монолог/телефонный звонок = 1 сегмент без смен
+        if speech_segments < 2:
+            log.info(f"Монолог ({speech_segments} сегм.) — пропускаем локально, не тратим API")
+            voiced = []; silence = 0; in_speech = False
+            speech_segments = 0; last_was_speech = False
+            return
+        log.info(f"Диалог ({speech_segments} сегм., {reason}) — отправляю на сервер")
         clean   = denoise(voiced)
         raw_wav = frames_to_wav(clean)
         process_segment(raw_wav)
         voiced = []; silence = 0; in_speech = False
+        speech_segments = 0; last_was_speech = False
 
     proc = None
     try:
@@ -614,10 +626,14 @@ def run_rtsp(url: str):
                 is_speech = False
 
             if is_speech:
+                if not last_was_speech and len(voiced) > 0:
+                    speech_segments += 1
                 voiced.append(frame)
-                silence   = 0
-                in_speech = True
+                silence         = 0
+                in_speech       = True
+                last_was_speech = True
             elif in_speech:
+                last_was_speech = False
                 voiced.append(frame)
                 silence += 1
                 if silence >= SILENCE_LIMIT:
@@ -656,25 +672,36 @@ def run():
     compress_info = f"{COMPRESS_FORMAT.upper()} 64kbps" if COMPRESS and COMPRESS_FORMAT == "mp3" else ("WAV 8kHz" if COMPRESS else "выкл")
     log.info(f"Мониторинг запущен | Транскрипция: {mode} | Сжатие: {compress_info}")
 
-    voiced    = []
-    silence   = 0
-    in_speech = False
+    voiced          = []
+    silence         = 0
+    in_speech       = False
+    speech_segments = 0
+    last_was_speech = False
 
     def flush(reason=""):
-        nonlocal voiced, silence, in_speech
+        nonlocal voiced, silence, in_speech, speech_segments, last_was_speech
         if not voiced:
             return
         # Минимум 100 кадров ≈ 3 секунды реальной речи
-        # Короче — шум, случайный звук или одно слово, не отправляем
         if len(voiced) < 100:
             log.debug(f"Сегмент слишком короткий ({len(voiced)} кадров) — пропускаем")
             voiced = []; silence = 0; in_speech = False
+            speech_segments = 0; last_was_speech = False
             return
-        log.info(f"Обрабатываю сегмент ({reason}), кадров: {len(voiced)}")
+        # Turn-taking фильтр: реальный диалог = минимум 2 речевых сегмента
+        # (кассир говорит → пауза → клиент отвечает)
+        # Монолог/телефонный звонок = 1 сегмент без смен
+        if speech_segments < 2:
+            log.info(f"Монолог ({speech_segments} сегм.) — пропускаем локально, не тратим API")
+            voiced = []; silence = 0; in_speech = False
+            speech_segments = 0; last_was_speech = False
+            return
+        log.info(f"Диалог ({speech_segments} сегм., {reason}) — отправляю на сервер")
         clean   = denoise(voiced)
         raw_wav = frames_to_wav(clean)
         process_segment(raw_wav)
         voiced = []; silence = 0; in_speech = False
+        speech_segments = 0; last_was_speech = False
 
     try:
         while True:
@@ -721,10 +748,14 @@ def run():
                 is_speech = False
 
             if is_speech:
+                if not last_was_speech and len(voiced) > 0:
+                    speech_segments += 1
                 voiced.append(frame)
-                silence   = 0
-                in_speech = True
+                silence         = 0
+                in_speech       = True
+                last_was_speech = True
             elif in_speech:
+                last_was_speech = False
                 voiced.append(frame)
                 silence += 1
                 if silence >= SILENCE_LIMIT:
