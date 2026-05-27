@@ -38,6 +38,7 @@ from backend.database import get_db
 from backend.models.user import User
 from backend.models.otp_code import OtpCode
 from backend.config import settings
+from backend.services.subscription import TRIAL_DAYS
 
 _log    = logging.getLogger("auth")
 router  = APIRouter()
@@ -205,6 +206,19 @@ async def get_current_user(
     return user
 
 
+async def require_active_subscription(
+    user: User = Depends(get_current_user),
+) -> User:
+    """Like get_current_user but blocks if subscription expired beyond grace."""
+    from backend.services.subscription import get_status as _sub_status
+    if _sub_status(user) == "blocked":
+        raise HTTPException(
+            status_code=402,
+            detail="Подписка истекла. Оплатите для продолжения работы.",
+        )
+    return user
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/app-config")
@@ -229,7 +243,7 @@ async def register(data: RegisterRequest, request: Request, db: AsyncSession = D
             existing_user.name            = data.name
             existing_user.email           = data.email
             existing_user.hashed_password = hash_password(data.password)
-            existing_user.plan_expires    = datetime.utcnow() + timedelta(days=14)
+            existing_user.plan_expires    = datetime.utcnow() + timedelta(days=TRIAL_DAYS)
             code = await _create_and_send_otp(data.phone, data.name, db)
             await db.commit()
             resp = {"status": "otp_sent", "phone": data.phone}
@@ -243,7 +257,7 @@ async def register(data: RegisterRequest, request: Request, db: AsyncSession = D
             email=data.email,
             hashed_password=hash_password(data.password),
             plan="trial",
-            plan_expires=datetime.utcnow() + timedelta(days=14),
+            plan_expires=datetime.utcnow() + timedelta(days=TRIAL_DAYS),
             is_verified=False,
         )
         db.add(user)
@@ -361,21 +375,62 @@ async def login(
 
 @router.get("/me")
 async def me(user: User = Depends(get_current_user)):
+    from backend.services.subscription import get_status as _sub_status, days_left
     return {
-        "id":              user.id,
-        "name":            user.name,
-        "company_name":    user.company_name or "",
-        "phone":           user.phone,
-        "email":           user.email or "",
-        "telegram_chat":   user.telegram_chat or "",
-        "plan":            user.plan,
-        "is_verified":     user.is_verified,
-        "plan_expires":    user.plan_expires.isoformat() if user.plan_expires else None,
+        "id":                  user.id,
+        "name":                user.name,
+        "company_name":        user.company_name or "",
+        "phone":               user.phone,
+        "email":               user.email or "",
+        "telegram_chat":       user.telegram_chat or "",
+        "plan":                user.plan,
+        "is_verified":         user.is_verified,
+        "plan_expires":        user.plan_expires.isoformat() if user.plan_expires else None,
+        "subscription_status": _sub_status(user),  # active | grace | blocked
+        "days_left":           days_left(user),
         "is_trial_active": (
             user.plan == "trial"
             and user.plan_expires is not None
             and user.plan_expires > datetime.utcnow()
         ),
+    }
+
+
+class ExtendSubscriptionRequest(BaseModel):
+    phone: str = Field(..., max_length=20)
+    days:  int = Field(..., ge=1, le=365)
+    plan:  str | None = Field(None, max_length=20)
+
+
+@router.post("/admin/extend-subscription")
+async def admin_extend_subscription(
+    data: ExtendSubscriptionRequest,
+    admin: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Продлить подписку клиенту вручную (после получения оплаты Kaspi)."""
+    if not admin.is_admin:
+        raise HTTPException(status_code=403, detail="Только для администратора")
+
+    phone = normalize_phone(data.phone) or data.phone.strip()
+    result = await db.execute(select(User).where(User.phone == phone))
+    target = result.scalar()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    from backend.services.subscription import extend
+    extend(target, data.days)
+    if data.plan:
+        target.plan = data.plan
+    target.last_subscription_reminder = None  # reset, чтобы можно было снова напомнить
+    await db.commit()
+
+    return {
+        "status":       "ok",
+        "user_id":      target.id,
+        "phone":        target.phone,
+        "plan":         target.plan,
+        "plan_expires": target.plan_expires.isoformat() if target.plan_expires else None,
     }
 
 

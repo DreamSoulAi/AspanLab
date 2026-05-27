@@ -379,6 +379,10 @@ def _handle_response(r, wav_bytes: bytes | None = None):
         _retry_fails()
     elif r.status_code == 401:
         log.error("НЕВЕРНЫЙ API КЛЮЧ! Проверьте --api-key")
+    elif r.status_code == 402:
+        log.error("ПОДПИСКА ИСТЕКЛА! Зайдите в личный кабинет и оплатите.")
+        if wav_bytes:
+            _save_fail(wav_bytes)
     else:
         log.warning(f"Сервер вернул {r.status_code}: {r.text[:120]}")
         if wav_bytes:

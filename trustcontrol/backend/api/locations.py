@@ -189,15 +189,11 @@ async def create_location(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Enforce subscription expiry for trial accounts
-    if (
-        user.plan == "trial"
-        and user.plan_expires is not None
-        and user.plan_expires < datetime.utcnow()
-    ):
+    from backend.services.subscription import get_status as _sub_status
+    if _sub_status(user) == "blocked":
         raise HTTPException(
-            status_code=403,
-            detail="Пробный период истёк. Пожалуйста, обновите тариф для продолжения.",
+            status_code=402,
+            detail="Подписка истекла. Оплатите для добавления новых точек.",
         )
 
     result = await db.execute(

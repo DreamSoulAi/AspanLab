@@ -371,6 +371,17 @@ async def _fix_schema():
         except Exception as e:
             print(f"⚠️ schema fix users.company_name: {e}", flush=True)
 
+        # ── users.last_subscription_reminder ────────────────────────────────
+        try:
+            if not await _check_col(db, "users", "last_subscription_reminder"):
+                await _run(
+                    db,
+                    "ALTER TABLE users ADD COLUMN last_subscription_reminder TIMESTAMP",
+                    "users.last_subscription_reminder added",
+                )
+        except Exception as e:
+            print(f"⚠️ schema fix users.last_subscription_reminder: {e}", flush=True)
+
         # ── locations: все новые колонки через IF NOT EXISTS ────────────────
         _loc_cols = [
             ("ignore_background_media", "BOOLEAN DEFAULT TRUE"),
@@ -438,6 +449,12 @@ async def startup():
         asyncio.create_task(run_health_monitor())
     except Exception as e:
         log.error(f"health_monitor error (non-fatal): {e}")
+
+    try:
+        from backend.services.subscription_reminder import run_subscription_reminder
+        asyncio.create_task(run_subscription_reminder())
+    except Exception as e:
+        log.error(f"subscription_reminder error (non-fatal): {e}")
 
     print("✅ TrustControl API v3.0 запущен!", flush=True)
     print(f"📡 http://localhost:{settings.PORT}", flush=True)

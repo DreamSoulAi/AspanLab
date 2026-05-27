@@ -36,6 +36,7 @@ class User(Base):
 
     created_at      = Column(DateTime, default=datetime.utcnow)
     last_login      = Column(DateTime)
+    last_subscription_reminder = Column(DateTime)
 
     locations       = relationship("Location", back_populates="owner", cascade="all, delete-orphan")
     payments        = relationship("Payment", back_populates="user")

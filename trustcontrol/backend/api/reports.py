@@ -38,6 +38,7 @@ from backend.services.evidence import create_evidence_clip
 from backend.services.context_analyzer import analyze_context, check_pos_window
 from backend.models.incident import Incident
 from backend.services import notifier
+from backend.services.subscription import get_status as get_sub_status
 from backend.api.auth import get_current_user
 from backend.api.deps import get_location_by_api_key
 
@@ -493,6 +494,18 @@ async def submit_audio(
     _check_submit_rate(effective_key)
 
     location = await get_location_by_api_key(effective_key, db)
+
+    # ── Проверка подписки владельца ──────────────────────────────
+    if location.owner_id:
+        owner = await db.get(User, location.owner_id)
+        if owner:
+            sub_status = get_sub_status(owner)
+            if sub_status == "blocked":
+                raise HTTPException(
+                    status_code=402,
+                    detail="Подписка истекла. Оплатите в личном кабинете для возобновления.",
+                )
+
     location.last_seen = datetime.utcnow()
     await db.commit()
 
