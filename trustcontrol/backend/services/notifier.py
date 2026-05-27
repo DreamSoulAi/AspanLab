@@ -247,3 +247,89 @@ async def send_shift_summary(chat_id: str, location_name: str, shift_data: dict)
 
     lines += [f"", f"{score_icon} *Оценка смены: {score:.0f}/100*"]
     await _send(chat_id, "\n".join(lines))
+
+
+async def send_fraud_email(
+    user_email: str,
+    location_name: str,
+    incident_type: str,
+    description: str,
+    audio_url: str | None = None,
+):
+    """Sends email alert for fraud incidents via Resend API or SMTP fallback."""
+    if not user_email:
+        return
+
+    from backend.config import settings
+
+    subject = f"🚨 TrustControl: подозрение на мошенничество — {location_name}"
+    ts = datetime.now().strftime("%d.%m.%Y %H:%M")
+
+    _TYPE_LABELS = {
+        "KASPI_FRAUD": "Подозрение на кражу (Kaspi)",
+        "FRAUD":       "Кассовый разрыв",
+    }
+    title = _TYPE_LABELS.get(incident_type, f"Инцидент: {incident_type}")
+
+    body_html = f"""
+<html><body style="font-family:sans-serif;max-width:600px">
+<h2 style="color:#dc2626">🚨 {title}</h2>
+<p><strong>Точка:</strong> {location_name}<br>
+<strong>Время:</strong> {ts}</p>
+<p>{description}</p>
+{"<p><a href='" + audio_url + "'>▶ Прослушать запись</a></p>" if audio_url else ""}
+<hr>
+<p style="color:#6b7280;font-size:12px">TrustControl — AI-мониторинг качества обслуживания</p>
+</body></html>
+"""
+
+    # Try Resend API first (works reliably on cloud hosting)
+    if settings.RESEND_API_KEY:
+        try:
+            import httpx
+            async with httpx.AsyncClient() as hclient:
+                resp = await hclient.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+                    json={
+                        "from": settings.SMTP_FROM or "noreply@trustcontrol.kz",
+                        "to": [user_email],
+                        "subject": subject,
+                        "html": body_html,
+                    },
+                    timeout=10,
+                )
+            if resp.status_code in (200, 201):
+                log.info(f"Fraud email sent via Resend to {user_email}")
+                return
+            log.warning(f"Resend failed: {resp.status_code} {resp.text[:100]}")
+        except Exception as e:
+            log.warning(f"Resend email error: {e}")
+
+    # Fallback: SMTP
+    if not (settings.SMTP_HOST and settings.SMTP_USER and settings.SMTP_PASS):
+        log.info("Email не настроен (нет RESEND_API_KEY или SMTP). Пропускаем.")
+        return
+
+    try:
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        import asyncio
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = settings.SMTP_FROM or settings.SMTP_USER
+        msg["To"]      = user_email
+        msg.attach(MIMEText(body_html, "html", "utf-8"))
+
+        def _smtp_send():
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as srv:
+                srv.starttls()
+                srv.login(settings.SMTP_USER, settings.SMTP_PASS)
+                srv.send_message(msg)
+
+        await asyncio.get_event_loop().run_in_executor(None, _smtp_send)
+        log.info(f"Fraud email sent via SMTP to {user_email}")
+    except Exception as e:
+        log.error(f"SMTP fraud email failed: {e}")
