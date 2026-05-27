@@ -328,7 +328,7 @@ def transcribe_local(wav_bytes: bytes) -> str | None:
 #  ОТПРАВКА НА СЕРВЕР
 # ════════════════════════════════════════════════════════════
 
-def _post(data: dict | None = None, files: dict | None = None, timeout: int = 60):
+def _post(data: dict | None = None, files: dict | None = None, timeout: int = 120):
     """POST на сервер. API-ключ передаётся в заголовке X-API-Key."""
     return requests.post(
         f"{SERVER_URL}/api/reports/submit",
@@ -353,7 +353,7 @@ def send_audio_to_server(wav_bytes: bytes):
         log.warning("Сервер недоступен (нет сети). Файл сохранён в fails/")
         _save_fail(wav_bytes)
     except requests.exceptions.Timeout:
-        log.warning("Сервер не ответил за 60 сек. Файл сохранён в fails/")
+        log.warning("Сервер не ответил за 120 сек. Файл сохранён в fails/")
         _save_fail(wav_bytes)
     except Exception as e:
         log.warning(f"Ошибка отправки: {e}")
