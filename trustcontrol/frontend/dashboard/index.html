@@ -620,7 +620,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
   <!-- HERO -->
   <section class="lp-hero">
     <h1>Узнайте что на самом деле<br>говорят на вашей <em>кассе</em></h1>
-    <p class="lp-hero-sub">Пока вас нет на точке — кассиры грубят, забывают приветствие, забирают чаевые мимо кассы, не предлагают допродажи. Вы теряете клиентов и деньги. <b style="color:#fff">Не зная об этом.</b></p>
+    <p class="lp-hero-sub">Пока вас нет на кассе — кассиры грубят, забывают приветствие, забирают чаевые мимо кассы, не предлагают допродажи. Вы теряете клиентов и деньги. <b style="color:#fff">Не зная об этом.</b></p>
     <div class="lp-hero-btns">
       <button class="lp-btn-hero" onclick="goToAuth(true)">7 дней бесплатно →</button>
       <button class="lp-btn-outline" onclick="document.getElementById('howItWorks').scrollIntoView({behavior:'smooth'})">Как это работает</button>
@@ -681,13 +681,13 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
         <!-- СТАРТ -->
         <div class="lp-plan">
-          <div class="lp-plan-badge grey">Для одной точки</div>
+          <div class="lp-plan-badge grey">Для одной кассы</div>
           <div class="lp-plan-name">Старт</div>
           <div class="lp-plan-price">15 000 <sup>₸</sup></div>
           <div class="lp-plan-period">в месяц · помесячно</div>
           <div class="lp-plan-hw none">🎙 Микрофон: ваш (USB ~3 000 ₸)</div>
           <ul>
-            <li>1 касса / точка</li>
+            <li>1 касса</li>
             <li>Анализ каждого разговора</li>
             <li>Дневной отчёт в Telegram</li>
             <li>Тревоги при грубости и мошенничестве</li>
@@ -705,9 +705,9 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <div class="lp-plan-period">в месяц · помесячно</div>
           <div class="lp-plan-hw">🎁 USB-микрофон в подарок</div>
           <ul>
-            <li>До 5 касс / точек</li>
+            <li>До 5 касс</li>
             <li>Всё из тарифа «Старт»</li>
-            <li>Сравнение точек и сотрудников</li>
+            <li>Сравнение касс и сотрудников</li>
             <li>Защита от мошенничества Kaspi</li>
             <li>Аналитика по сменам</li>
             <li>Поддержка в Telegram</li>
@@ -723,7 +723,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <div class="lp-plan-period">в месяц · обсуждаем условия</div>
           <div class="lp-plan-hw">📦 Оборудование под задачи</div>
           <ul>
-            <li>Безлимит точек</li>
+            <li>Безлимит касс</li>
             <li>Всё из тарифа «Бизнес»</li>
             <li>Свои скрипты обслуживания</li>
             <li>Рейтинг сотрудников по сети</li>
@@ -846,7 +846,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
         <div class="lp-feat-card">
           <div class="lp-feat-ico p">📊</div>
           <h3>Аналитика по сменам</h3>
-          <p>Графики за 7 дней, AI-оценка от 0 до 100, сравнение точек и смен.</p>
+          <p>Графики за 7 дней, AI-оценка от 0 до 100, сравнение касс и смен.</p>
         </div>
         <div class="lp-feat-card">
           <div class="lp-feat-ico t">🔔</div>
@@ -1093,9 +1093,9 @@ textarea.f-input{resize:vertical;line-height:1.6}
 ════════════════════════════════ -->
 <div class="modal-overlay" id="addLocationModal" onclick="if(event.target===this)closeAddLocation()">
   <div class="modal-box">
-    <div class="modal-title">Новая точка <span class="modal-close" onclick="closeAddLocation()">×</span></div>
+    <div class="modal-title">Новая касса <span class="modal-close" onclick="closeAddLocation()">×</span></div>
     <div class="f-group">
-      <label class="f-label">Название точки</label>
+      <label class="f-label">Название кассы</label>
       <input class="f-input" type="text" id="locName" placeholder="Кофейня на Абая">
     </div>
     <div class="f-group">
@@ -1115,7 +1115,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <label class="f-label">Адрес</label>
       <input class="f-input" type="text" id="locAddress" placeholder="ул. Абая 10, Алматы">
     </div>
-    <button class="f-btn" id="createLocBtn" onclick="createLocation()">Создать точку</button>
+    <button class="f-btn" id="createLocBtn" onclick="createLocation()">Создать кассу</button>
   </div>
 </div>
 
@@ -1124,7 +1124,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
 ════════════════════════════════ -->
 <div class="modal-overlay" id="editLocationModal" onclick="if(event.target===this)closeEditLocation()">
   <div class="modal-box">
-    <div class="modal-title">Настройки точки <span class="modal-close" onclick="closeEditLocation()">×</span></div>
+    <div class="modal-title">Настройки кассы <span class="modal-close" onclick="closeEditLocation()">×</span></div>
     <input type="hidden" id="editLocId">
     <div class="f-group">
       <label class="f-label">Название</label>
@@ -1151,7 +1151,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
     <div class="modal-sec-title">Куда слать отчёты</div>
     <div style="font-size:13px;color:var(--dim);line-height:1.6;margin-bottom:14px">
       По умолчанию — в ваш личный Telegram (подключается в <a onclick="document.getElementById('editLocationModal').style.display='none';showPage('settings')" style="color:var(--accent2);cursor:pointer">Настройках</a>).
-      Если для этой точки нужен отдельный чат (например групповой с менеджерами) — напишите нам в поддержку, мы поможем.
+      Если для этой кассы нужен отдельный чат (например групповой с менеджерами) — напишите нам в поддержку, мы поможем.
     </div>
     <details style="margin-bottom:14px">
       <summary style="font-size:12px;color:var(--muted);cursor:pointer;padding:6px 0;user-select:none">Для продвинутых: указать чат вручную</summary>
@@ -1217,7 +1217,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
     <h2 style="font-family:'Syne',sans-serif;font-weight:800;font-size:22px;letter-spacing:-.3px;margin-bottom:8px;text-align:center">Добро пожаловать!</h2>
     <p style="color:var(--muted);font-size:13px;margin-bottom:22px;line-height:1.6;text-align:center">Три шага — и первый отчёт придёт в Telegram</p>
     <div id="onboardSteps"></div>
-    <button onclick="closeOnboard();showPage('locations')" style="width:100%;background:var(--accent);color:#fff;border:none;padding:12px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:20px">Создать первую точку →</button>
+    <button onclick="closeOnboard();showPage('locations')" style="width:100%;background:var(--accent);color:#fff;border:none;padding:12px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:20px">Создать первую кассу →</button>
     <div onclick="closeOnboard()" style="margin-top:10px;font-size:12px;color:var(--muted);cursor:pointer;text-align:center;padding:4px">Закрыть</div>
   </div>
 </div>
@@ -1239,17 +1239,17 @@ textarea.f-input{resize:vertical;line-height:1.6}
         <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:3px 12px;border-radius:10px;white-space:nowrap">ХИТ</div>
         <div class="pay-plan-name">Базовый</div>
         <div class="pay-plan-price">25 000 ₸/мес</div>
-        <div class="pay-plan-desc">1–2 точки · 120 ч · Оборудование в подарок</div>
+        <div class="pay-plan-desc">1–2 кассы · 120 ч · Оборудование в подарок</div>
       </div>
       <div class="pay-plan">
         <div class="pay-plan-name">Pro</div>
         <div class="pay-plan-price">50 000 ₸/мес</div>
-        <div class="pay-plan-desc">До 10 точек · 240 ч · AI-Pin в подарок</div>
+        <div class="pay-plan-desc">До 10 касс · 240 ч · AI-Pin в подарок</div>
       </div>
       <div class="pay-plan">
         <div class="pay-plan-name">Enterprise</div>
         <div class="pay-plan-price">от 120 000 ₸/мес</div>
-        <div class="pay-plan-desc">10+ точек · SLA 99.9% · Данные в РК</div>
+        <div class="pay-plan-desc">10+ касс · SLA 99.9% · Данные в РК</div>
       </div>
     </div>
     <p style="font-size:13px;color:var(--muted);margin-bottom:16px;text-align:center">Напишите нам — оформим оплату через Kaspi или счёт. Ответим в течение часа.</p>
@@ -1289,7 +1289,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <span class="s-ico">📈</span> Сотрудники
         </a>
         <a class="s-item" data-page="locations" onclick="showPage('locations')">
-          <span class="s-ico">🏪</span> Точки
+          <span class="s-ico">🏪</span> Кассы
         </a>
         <a class="s-item" data-page="settings" onclick="showPage('settings')">
           <span class="s-ico">⚙️</span> Настройки
@@ -1306,6 +1306,9 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
       <!-- Subscription banner (shown when trial expiring, grace, or blocked) -->
       <div id="subBanner" style="display:none;margin:0 0 16px;padding:14px 18px;border-radius:10px;font-size:14px;line-height:1.5"></div>
+
+      <!-- Conversations usage banner -->
+      <div id="usageBanner" style="display:none;margin:0 0 16px;padding:10px 16px;border-radius:10px;background:var(--surface);border:1px solid var(--bdr);font-size:13px"></div>
 
       <!-- ── OVERVIEW ── -->
       <div class="page active" id="page-overview">
@@ -1532,7 +1535,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <!-- ── LOCATIONS ── -->
       <div class="page" id="page-locations">
         <div class="topbar">
-          <div class="page-title">Торговые точки</div>
+          <div class="page-title">Мои кассы</div>
           <button class="btn btn-a" onclick="showAddLocation()">+ Добавить кассу</button>
         </div>
         <div id="locationsList"></div>
@@ -1612,7 +1615,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <div style="display:flex;gap:14px;align-items:flex-start">
               <div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:rgba(59,130,246,.15);color:var(--accent2);display:flex;align-items:center;justify-content:center;font-weight:700">1</div>
               <div style="font-size:13px;line-height:1.6">
-                <b style="color:var(--txt)">Добавьте кассу</b> в разделе «Точки» → кнопка «+ Добавить».
+                <b style="color:var(--txt)">Добавьте кассу</b> в разделе «Кассы» → кнопка «+ Добавить».
                 Дайте название (например «Касса №1»).
               </div>
             </div>
@@ -1620,7 +1623,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
               <div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:rgba(59,130,246,.15);color:var(--accent2);display:flex;align-items:center;justify-content:center;font-weight:700">2</div>
               <div style="font-size:13px;line-height:1.6">
                 <b style="color:var(--txt)">Скачайте программу</b> на этой же карточке кассы —
-                кнопка «⬇ Скачать для кассы». Получите один файл, перенесите на ПК на точке.
+                кнопка «⬇ Скачать для кассы». Получите один файл, перенесите на ПК на кассе.
               </div>
             </div>
             <div style="display:flex;gap:14px;align-items:flex-start">
@@ -1662,7 +1665,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
         <span class="mn-badge" id="mnAlertsBadge" style="display:none">0</span>
       </button>
       <button class="mn-item" id="mn-locations" onclick="showPage('locations')">
-        <span class="mn-ico">🏪</span><span>Точки</span>
+        <span class="mn-ico">🏪</span><span>Кассы</span>
       </button>
       <button class="mn-item" id="mn-settings" onclick="showPage('settings')">
         <span class="mn-ico">⚙️</span><span>Настройки</span>
@@ -1978,8 +1981,18 @@ function renderSubBanner(d){
     bg='#1f2937';border='1px solid #6b7280';
     html=`<div style="color:#cbd5e1"><b>Подписка истекает через ${dl===0?'сегодня':dl+' дн.'}</b>
       &nbsp;·&nbsp; <a href="#" onclick="showPayInfo();return false" style="color:#60a5fa">Как оплатить</a></div>`;
-  } else { el.style.display='none'; return; }
-  el.style.background=bg;el.style.border=border;el.innerHTML=html;el.style.display='block';
+  } else { el.style.display='none'; }
+  if(html){el.style.background=bg;el.style.border=border;el.innerHTML=html;el.style.display='block';}
+  // Conversations usage bar
+  const ub=document.getElementById('usageBanner');
+  if(ub&&!d.is_admin){
+    const usedConvs=d.conversations_used||0;
+    const limitConvs=d.conversations_limit||100;
+    const pct=Math.min(100,Math.round(usedConvs/limitConvs*100));
+    const barColor=pct>=90?'#dc2626':pct>=70?'#f59e0b':'#10b981';
+    ub.innerHTML=`<div style="color:#6b7280">\u{1F4CA} Разговоров в этом месяце: <strong style="color:#f2f4f8">${usedConvs}</strong> из <strong style="color:#f2f4f8">${limitConvs}</strong><div style="margin-top:4px;height:6px;background:#1f2937;border-radius:3px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${barColor};border-radius:3px;transition:width 0.3s"></div></div></div>`;
+    ub.style.display='block';
+  }
 }
 
 let _appConfig = null;
@@ -2226,7 +2239,7 @@ async function loadReportsPage(){
 async function loadLocations(){
   const d=await apiFetch('/locations/');
   const el=document.getElementById('locationsList');if(!el)return;
-  if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет торговых точек. Добавьте первую!</p>';return;}
+  if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет касс. Добавьте первую!</p>';return;}
   el.innerHTML=d.map(loc=>`
     <div class="loc-card">
       <div class="loc-card-hdr">
@@ -2270,11 +2283,11 @@ async function createLocation(){
     business_type:document.getElementById('locType')?.value||'shop',
     allowed_phones:[],
   };
-  if(!payload.name)return showErr('Введите название точки');
+  if(!payload.name)return showErr('Введите название кассы');
   const btn=document.getElementById('createLocBtn');
   if(btn){btn.disabled=true;btn.textContent='Создание...';}
   const d=await apiFetch('/locations/',{method:'POST',body:JSON.stringify(payload)});
-  if(btn){btn.disabled=false;btn.textContent='Создать точку';}
+  if(btn){btn.disabled=false;btn.textContent='Создать кассу';}
   if(d){closeAddLocation();loadLocations();}
 }
 
@@ -2343,7 +2356,7 @@ async function linkLocationTelegram(){
         setVal('editLocTg',loc.telegram_chat);
         const statusEl=document.getElementById('locTgStatus');
         if(statusEl)statusEl.innerHTML=`✅ Telegram привязан: <code>${esc(loc.telegram_chat)}</code>`;
-        showErr('✅ Telegram привязан к точке!');
+        showErr('✅ Telegram привязан к кассе!');
       }
       if(tries>=6)clearInterval(timer);
     },5000);
@@ -2450,7 +2463,7 @@ async function exportCSV(){
   showErr('Подготовка экспорта...');
   const d=await apiFetch('/reports/?days='+days+'&limit=2000');
   if(!d||!d.length){showErr('Нет данных для экспорта');return;}
-  const rows=[['Дата','Время','Точка','Тон','Оценка','Приветствие','Допродажа','Нарушение','Мошенничество','Текст разговора']];
+  const rows=[['Дата','Время','Касса','Тон','Оценка','Приветствие','Допродажа','Нарушение','Мошенничество','Текст разговора']];
   d.forEach(r=>{
     const dt=new Date(r.timestamp||r.created_at);
     rows.push([
@@ -2485,9 +2498,9 @@ async function checkOnboarding(){
   const hasLoc=locs&&locs.length>0;
   const hasTg=me&&!!me.telegram_chat;
   const steps=[
-    {done:hasLoc,title:'Создайте первую точку',    desc:'Раздел «Точки» → кнопка «+ Добавить»'},
+    {done:hasLoc,title:'Создайте первую кассу',    desc:'Раздел «Кассы» → кнопка «+ Добавить»'},
     {done:hasTg, title:'Подключите Telegram',       desc:'«Настройки» → «Подключить через Telegram»'},
-    {done:false, title:'Запустите кассовый скрипт', desc:'Скачайте установщик в разделе «Точки»'},
+    {done:false, title:'Запустите кассовый скрипт', desc:'Скачайте установщик в разделе «Кассы»'},
   ];
   document.getElementById('onboardSteps').innerHTML=steps.map(s=>`
     <div class="onboard-step">
