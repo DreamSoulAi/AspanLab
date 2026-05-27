@@ -375,14 +375,7 @@ def send_text_to_server(transcript: str):
 def _handle_response(r, wav_bytes: bytes | None = None):
     if r.status_code == 200:
         data = r.json()
-        status = data.get("status", "ok")
-        if status == "queued":
-            log.info("В очередь | обработка в фоне")
-        else:
-            log.info(
-                f"Отправлено | тон={data.get('tone')} "
-                f"| оценка={data.get('gpt_score') or data.get('score')}"
-            )
+        log.info(f"✓ Обработано | {data.get('message', 'ok')}")
         _retry_fails()
     elif r.status_code == 401:
         log.error("НЕВЕРНЫЙ API КЛЮЧ! Проверьте --api-key")
