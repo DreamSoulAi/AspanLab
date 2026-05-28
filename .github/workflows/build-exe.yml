@@ -31,9 +31,8 @@ jobs:
           pyinstaller
           --onefile
           --name TrustControl
-          --collect-submodules webrtcvad
-          --collect-binaries webrtcvad
           --collect-all pyaudio
+          --hidden-import=webrtcvad
           --hidden-import=noisereduce
           --hidden-import=scipy
           --hidden-import=scipy.signal
