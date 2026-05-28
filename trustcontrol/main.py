@@ -417,6 +417,35 @@ async def _fix_schema():
                 print(f"⚠️ schema fix otp_codes.code: {e}", flush=True)
 
 
+async def _setup_telegram_webhook():
+    """
+    Register webhook URL with Telegram so the bot receives /start, callbacks, etc.
+    Without this the bot is deaf — users can't link their accounts.
+    """
+    if not settings.TELEGRAM_BOT_TOKEN:
+        log.info("TELEGRAM_BOT_TOKEN не задан — webhook не регистрируется")
+        return
+    if not settings.APP_URL:
+        log.warning("APP_URL не задан — webhook не регистрируется (нужен публичный URL)")
+        return
+
+    webhook_url = f"{settings.APP_URL}/telegram/webhook"
+    payload = {"url": webhook_url, "drop_pending_updates": True}
+    if settings.TELEGRAM_WEBHOOK_SECRET:
+        payload["secret_token"] = settings.TELEGRAM_WEBHOOK_SECRET
+
+    import httpx
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.post(
+            f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook",
+            json=payload,
+        )
+        if r.status_code == 200 and r.json().get("ok"):
+            print(f"✅ Telegram webhook → {webhook_url}", flush=True)
+        else:
+            log.error(f"Telegram setWebhook failed: {r.status_code} {r.text}")
+
+
 async def _promote_admin():
     """Помечает юзера с телефоном ADMIN_PHONE как is_admin=true."""
     if not settings.ADMIN_PHONE:
@@ -465,6 +494,12 @@ async def startup():
         await _promote_admin()
     except Exception as e:
         log.error(f"_promote_admin error (non-fatal): {e}")
+
+    # Telegram webhook auto-registration — без него бот не получает /start
+    try:
+        await _setup_telegram_webhook()
+    except Exception as e:
+        log.error(f"telegram webhook setup error (non-fatal): {e}")
 
     # Фоновые задачи — храним ссылки чтобы GC не убил их
     app.state.background_tasks = []
