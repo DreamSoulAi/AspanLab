@@ -364,14 +364,27 @@ async def analyze_audio_with_fallback(
             return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
         return _normalize_text_result(gpt, transcript_text.strip(), language)
 
-    # ── Режим 2: есть аудио. Сначала ДЕШЁВЫЙ путь ──────────────
-    # Whisper транскрипция → gpt-4o-mini текст-анализ.
-    # Это 3x дешевле, чем gpt-4o-mini-audio, и работает в 95% случаев.
-    # Аудио-модель используется только для эскалации при fraud_confidence >= 50
-    # либо если GPT-текст уже выставил events.fraud_attempt=true.
+    # ── Режим 2: есть аудио. Основной путь — gpt-4o-mini-audio-preview ──
+    # В Казахстане шала-казахский / казахский / узбекский — Whisper-only
+    # путь даёт каракули типа "Папаю пите Чарльз". Audio-preview слышит
+    # звуки напрямую и понимает контекст в один проход — кост чуть выше,
+    # но качество распознавания принципиально другое.
     if not wav_bytes:
         return {}
 
+    audio_result = await analyze_audio(wav_bytes, language, business_context=business_context)
+
+    if audio_result:
+        status = audio_result.get("status", "OK")
+        # PERSONAL / IGNORE — возвращаем как есть
+        if status in ("PERSONAL", "IGNORE"):
+            return audio_result
+        # OK с реальным транскриптом — успех
+        if audio_result.get("transcript"):
+            return audio_result
+
+    # ── Фолбэк: Whisper + текстовый GPT (если audio-preview упал) ──────
+    log.info("Audio-preview не дал результат — фолбэк на Whisper+text")
     text = await _transcribe_audio(wav_bytes, language)
     if not text or len(text) < 3:
         log.info("Whisper не распознал речь — пропуск")
@@ -396,17 +409,4 @@ async def analyze_audio_with_fallback(
     if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
         return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
 
-    # ── Эскалация на аудио-модель при подозрении на фрод ────────
-    # Текст не передаёт тон, и для фрода нужна максимальная точность.
-    fraud_conf = int(gpt.get("fraud_confidence", 0))
-    needs_audio_check = fraud_conf >= 50 or gpt.get("events", {}).get("fraud_attempt")
-
-    if needs_audio_check:
-        log.info(f"Эскалация на audio-модель (fraud_confidence={fraud_conf})")
-        audio_result = await analyze_audio(wav_bytes, language, business_context=business_context)
-        if audio_result and audio_result.get("transcript"):
-            # Аудио-модель уточнила: берём её результат как более точный
-            return audio_result
-
-    # ── Обычный путь: возвращаем дешёвый результат ──────────────
     return _normalize_text_result(gpt, text, language)
