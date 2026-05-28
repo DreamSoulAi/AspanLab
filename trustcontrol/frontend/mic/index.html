@@ -268,7 +268,8 @@ async function sendChunk(wavBlob) {
   const key = apiKeyInput.value.trim();
   const fd = new FormData();
   fd.append("audio", wavBlob, "chunk.wav");
-  fd.append("language", "ru");
+  // Язык не отправляем — сервер использует language из настроек точки,
+  // Whisper всё равно multilingual и ловит шала-казахский / RU+KZ микс
   try {
     const r = await fetch(url, {
       method: "POST",
