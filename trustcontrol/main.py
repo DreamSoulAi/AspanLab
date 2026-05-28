@@ -82,6 +82,29 @@ if DASHBOARD_DIR.exists():
         resp.headers["Pragma"] = "no-cache"
         return resp
 
+# ── PWA-микрофон (для Android/iPhone вместо .exe) ──────
+MIC_DIR = Path(__file__).parent / "frontend" / "mic"
+if MIC_DIR.exists():
+    app.mount("/mic", StaticFiles(directory=str(MIC_DIR), html=True), name="mic")
+
+    @app.get("/app-mic-manifest.json")
+    async def mic_manifest():
+        from fastapi.responses import JSONResponse
+        return JSONResponse({
+            "name": "TrustControl Mic",
+            "short_name": "TC Mic",
+            "start_url": "/mic/",
+            "scope": "/mic/",
+            "display": "standalone",
+            "orientation": "portrait",
+            "background_color": "#0a0a0a",
+            "theme_color": "#0a0a0a",
+            "icons": [
+                {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
+            ],
+        })
+
 
 # ── Фоновые задачи ───────────────────────────────────
 

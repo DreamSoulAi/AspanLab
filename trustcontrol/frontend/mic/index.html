@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0a0a">
+<title>TrustControl Mic</title>
+<link rel="manifest" href="/app-mic-manifest.json">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0a0a0a; color: #fff;
+    overscroll-behavior: none; user-select: none;
+  }
+  body {
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom);
+    min-height: 100vh;
+  }
+  header { padding: 16px 0; text-align: center; }
+  h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.5px; }
+  .sub { color: #888; font-size: 12px; margin-top: 4px; }
+
+  .config { display: flex; flex-direction: column; gap: 10px; margin: 20px 0; }
+  .config label { font-size: 12px; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
+  .config input {
+    width: 100%; padding: 14px; font-size: 16px;
+    background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 10px;
+    font-family: monospace;
+  }
+  .config input:focus { outline: none; border-color: #4a9eff; }
+
+  .main {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 24px; padding: 20px 0;
+  }
+  .indicator {
+    width: 180px; height: 180px; border-radius: 50%;
+    background: #1a1a1a; border: 4px solid #333;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.3s ease;
+    position: relative;
+  }
+  .indicator.recording {
+    background: #1a0a0a; border-color: #e63946;
+    box-shadow: 0 0 60px rgba(230, 57, 70, 0.4);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.03); }
+  }
+  .level-ring {
+    position: absolute; inset: -4px; border-radius: 50%;
+    border: 4px solid transparent; pointer-events: none;
+  }
+  .indicator.recording .level-ring {
+    border-color: rgba(230, 57, 70, 0.7);
+    transform: scale(var(--level, 1));
+    transition: transform 80ms linear;
+  }
+  .mic-icon { font-size: 64px; }
+
+  .status { text-align: center; min-height: 60px; }
+  .status .state { font-size: 20px; font-weight: 600; }
+  .status .detail { color: #888; font-size: 13px; margin-top: 6px; }
+
+  .button {
+    width: 100%; padding: 18px; font-size: 17px; font-weight: 600;
+    border: none; border-radius: 14px; cursor: pointer;
+    transition: opacity 0.15s, transform 0.05s;
+  }
+  .button:active { transform: scale(0.98); }
+  .button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-start { background: #e63946; color: #fff; }
+  .btn-stop { background: #333; color: #fff; }
+
+  .stats {
+    background: #1a1a1a; border-radius: 12px; padding: 14px;
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+    margin-top: 16px;
+  }
+  .stat { text-align: center; }
+  .stat .v { font-size: 18px; font-weight: 600; }
+  .stat .l { font-size: 10px; color: #888; text-transform: uppercase; margin-top: 2px; }
+
+  .log {
+    background: #1a1a1a; border-radius: 12px; padding: 12px;
+    margin-top: 16px; max-height: 140px; overflow-y: auto;
+    font-family: monospace; font-size: 11px; line-height: 1.5;
+  }
+  .log .line { color: #888; padding: 2px 0; }
+  .log .line.err { color: #ff6b6b; }
+  .log .line.ok { color: #4ade80; }
+
+  .warn {
+    background: #2a1f0a; color: #ffd166; padding: 12px;
+    border-radius: 10px; font-size: 13px; line-height: 1.4;
+    border-left: 3px solid #ffd166; margin-top: 12px;
+  }
+
+  footer { padding: 12px 0; text-align: center; color: #555; font-size: 11px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>🎙️ TrustControl Mic</h1>
+    <div class="sub">Мониторинг качества — мобильный микрофон</div>
+  </header>
+
+  <div class="config" id="config">
+    <label for="apiKey">API-ключ точки</label>
+    <input id="apiKey" type="text" placeholder="tc_xxxxx..." autocomplete="off" autocapitalize="off" spellcheck="false">
+    <label for="serverUrl">Сервер</label>
+    <input id="serverUrl" type="text" value="" placeholder="https://aspanlab.onrender.com">
+  </div>
+
+  <div class="main">
+    <div class="indicator" id="indicator">
+      <div class="level-ring"></div>
+      <div class="mic-icon">🎤</div>
+    </div>
+    <div class="status">
+      <div class="state" id="state">Готов к работе</div>
+      <div class="detail" id="detail">Введите API-ключ и нажмите «Начать»</div>
+    </div>
+    <button class="button btn-start" id="btnStart">Начать запись</button>
+    <button class="button btn-stop" id="btnStop" style="display:none">Остановить</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="v" id="sChunks">0</div><div class="l">Отправлено</div></div>
+    <div class="stat"><div class="v" id="sErrs">0</div><div class="l">Ошибок</div></div>
+    <div class="stat"><div class="v" id="sTime">00:00</div><div class="l">Время</div></div>
+  </div>
+
+  <div class="warn" id="iosWarn" style="display:none">
+    ⚠️ <b>iPhone:</b> экран должен оставаться включённым. Включите «Гид-доступ»
+    (Настройки → Универсальный доступ → Гид-доступ), чтобы зафиксировать
+    приложение и отключить блокировку экрана.
+  </div>
+
+  <div class="log" id="log"></div>
+
+  <footer>v1.0 · PWA · добавь на главный экран</footer>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  TrustControl Mic PWA
+//  Записывает 30-сек куски WAV (PCM16, 16kHz mono) и шлёт на сервер
+// ════════════════════════════════════════════════════════════
+
+const CHUNK_SECONDS = 30;
+const TARGET_RATE = 16000;
+
+const $ = (id) => document.getElementById(id);
+const apiKeyInput = $("apiKey");
+const serverInput = $("serverUrl");
+const btnStart = $("btnStart");
+const btnStop = $("btnStop");
+const indicator = $("indicator");
+const stateEl = $("state");
+const detailEl = $("detail");
+const logEl = $("log");
+const sChunks = $("sChunks"), sErrs = $("sErrs"), sTime = $("sTime");
+
+let audioCtx = null, source = null, processor = null, stream = null;
+let pcmBuf = [];           // Float32 accumulators
+let sampleRate = 16000;
+let recording = false;
+let startedAt = 0;
+let chunksOk = 0, chunksErr = 0;
+let timerInt = null;
+let wakeLock = null;
+
+// Restore saved config
+apiKeyInput.value = localStorage.getItem("tc_api_key") || "";
+serverInput.value = localStorage.getItem("tc_server") || location.origin;
+
+if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+  $("iosWarn").style.display = "block";
+}
+
+function log(msg, cls = "") {
+  const t = new Date().toTimeString().slice(0, 8);
+  const div = document.createElement("div");
+  div.className = "line" + (cls ? " " + cls : "");
+  div.textContent = `[${t}] ${msg}`;
+  logEl.insertBefore(div, logEl.firstChild);
+  while (logEl.children.length > 50) logEl.removeChild(logEl.lastChild);
+}
+
+function setState(state, detail = "") {
+  stateEl.textContent = state;
+  detailEl.textContent = detail;
+}
+
+function updateTimer() {
+  const sec = Math.floor((Date.now() - startedAt) / 1000);
+  const m = String(Math.floor(sec / 60)).padStart(2, "0");
+  const s = String(sec % 60).padStart(2, "0");
+  sTime.textContent = `${m}:${s}`;
+}
+
+// ── Downsample Float32 audio to TARGET_RATE ──────────────────
+function downsample(buffer, srcRate, dstRate) {
+  if (srcRate === dstRate) return buffer;
+  const ratio = srcRate / dstRate;
+  const outLen = Math.round(buffer.length / ratio);
+  const out = new Float32Array(outLen);
+  let oi = 0, ii = 0;
+  while (oi < outLen) {
+    const next = Math.round((oi + 1) * ratio);
+    let sum = 0, cnt = 0;
+    for (let i = ii; i < next && i < buffer.length; i++) {
+      sum += buffer[i]; cnt++;
+    }
+    out[oi] = cnt ? sum / cnt : 0;
+    oi++; ii = next;
+  }
+  return out;
+}
+
+// ── Float32 → 16-bit PCM WAV (RIFF) ──────────────────────────
+function encodeWAV(samples, rate) {
+  const buf = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buf);
+  const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
+
+  writeStr(0, "RIFF");
+  v.setUint32(4, 36 + samples.length * 2, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  v.setUint32(16, 16, true);          // PCM chunk size
+  v.setUint16(20, 1, true);           // PCM format
+  v.setUint16(22, 1, true);           // mono
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true);    // byte rate
+  v.setUint16(32, 2, true);           // block align
+  v.setUint16(34, 16, true);          // bits per sample
+  writeStr(36, "data");
+  v.setUint32(40, samples.length * 2, true);
+
+  let off = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    off += 2;
+  }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+// ── Send a single WAV chunk to /api/reports/submit ───────────
+async function sendChunk(wavBlob) {
+  const url = serverInput.value.trim().replace(/\/+$/, "") + "/api/reports/submit";
+  const key = apiKeyInput.value.trim();
+  const fd = new FormData();
+  fd.append("audio", wavBlob, "chunk.wav");
+  fd.append("language", "ru");
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "X-API-Key": key },
+      body: fd,
+    });
+    if (r.ok) {
+      chunksOk++; sChunks.textContent = chunksOk;
+      log(`✓ отправлено ${(wavBlob.size / 1024).toFixed(1)} КБ`, "ok");
+    } else {
+      chunksErr++; sErrs.textContent = chunksErr;
+      const txt = await r.text();
+      log(`✗ HTTP ${r.status}: ${txt.slice(0, 100)}`, "err");
+    }
+  } catch (e) {
+    chunksErr++; sErrs.textContent = chunksErr;
+    log(`✗ сеть: ${e.message}`, "err");
+  }
+}
+
+// ── Audio capture: ScriptProcessor (works on iOS Safari) ─────
+async function start() {
+  const key = apiKeyInput.value.trim();
+  const srv = serverInput.value.trim();
+  if (!key) { alert("Введите API-ключ"); return; }
+  if (!srv) { alert("Введите адрес сервера"); return; }
+
+  localStorage.setItem("tc_api_key", key);
+  localStorage.setItem("tc_server", srv);
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+      },
+    });
+  } catch (e) {
+    log(`✗ нет доступа к микрофону: ${e.message}`, "err");
+    setState("Ошибка", "Разрешите доступ к микрофону");
+    return;
+  }
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  sampleRate = audioCtx.sampleRate;
+  source = audioCtx.createMediaStreamSource(stream);
+  processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+  const chunkSamples = TARGET_RATE * CHUNK_SECONDS;
+  let accumulated = 0;
+  pcmBuf = [];
+
+  processor.onaudioprocess = (e) => {
+    if (!recording) return;
+    const input = e.inputBuffer.getChannelData(0);
+    const ds = downsample(input, sampleRate, TARGET_RATE);
+
+    // simple RMS for visual level meter
+    let sum = 0;
+    for (let i = 0; i < ds.length; i++) sum += ds[i] * ds[i];
+    const rms = Math.sqrt(sum / ds.length);
+    const lvl = Math.min(1.15, 1 + rms * 3);
+    indicator.style.setProperty("--level", lvl.toFixed(2));
+
+    pcmBuf.push(ds);
+    accumulated += ds.length;
+
+    if (accumulated >= chunkSamples) {
+      const merged = new Float32Array(accumulated);
+      let off = 0;
+      for (const arr of pcmBuf) { merged.set(arr, off); off += arr.length; }
+      pcmBuf = []; accumulated = 0;
+
+      // Skip silent chunks to save server quota
+      let peak = 0;
+      for (let i = 0; i < merged.length; i++) {
+        const a = Math.abs(merged[i]);
+        if (a > peak) peak = a;
+      }
+      if (peak < 0.01) {
+        log("· тишина — пропуск");
+        return;
+      }
+
+      const wav = encodeWAV(merged, TARGET_RATE);
+      sendChunk(wav);
+    }
+  };
+
+  source.connect(processor);
+  processor.connect(audioCtx.destination);
+
+  recording = true;
+  startedAt = Date.now();
+  timerInt = setInterval(updateTimer, 1000);
+
+  // Keep screen on (Android Chrome, iOS 16.4+)
+  try {
+    if ("wakeLock" in navigator) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      log("✓ wake lock активен");
+    }
+  } catch (e) { log(`! wake lock: ${e.message}`); }
+
+  indicator.classList.add("recording");
+  setState("Запись идёт", `Кусок каждые ${CHUNK_SECONDS} сек`);
+  btnStart.style.display = "none";
+  btnStop.style.display = "block";
+  $("config").style.opacity = "0.5";
+  apiKeyInput.disabled = true;
+  serverInput.disabled = true;
+  log("▶ старт записи", "ok");
+}
+
+async function stop() {
+  recording = false;
+  clearInterval(timerInt);
+  try { processor && processor.disconnect(); } catch {}
+  try { source && source.disconnect(); } catch {}
+  try { stream && stream.getTracks().forEach(t => t.stop()); } catch {}
+  try { audioCtx && await audioCtx.close(); } catch {}
+  try { wakeLock && await wakeLock.release(); } catch {}
+  audioCtx = source = processor = stream = wakeLock = null;
+
+  indicator.classList.remove("recording");
+  indicator.style.setProperty("--level", 1);
+  setState("Остановлено", `Отправлено ${chunksOk}, ошибок ${chunksErr}`);
+  btnStart.style.display = "block";
+  btnStop.style.display = "none";
+  $("config").style.opacity = "1";
+  apiKeyInput.disabled = false;
+  serverInput.disabled = false;
+  log("■ стоп");
+}
+
+btnStart.addEventListener("click", start);
+btnStop.addEventListener("click", stop);
+
+// Re-acquire wake lock when tab becomes visible again
+document.addEventListener("visibilitychange", async () => {
+  if (recording && document.visibilityState === "visible" && "wakeLock" in navigator) {
+    try { wakeLock = await navigator.wakeLock.request("screen"); } catch {}
+  }
+});
+</script>
+</body>
+</html>
