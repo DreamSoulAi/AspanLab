@@ -497,7 +497,7 @@ async def shutdown():
     print("👋 TrustControl API остановлен")
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     """Лайт-пинг (для UptimeRobot, keep-alive). Всегда 200."""
     return {"status": "ok", "version": "3.0.0"}
