@@ -178,9 +178,16 @@ let chunksOk = 0, chunksErr = 0;
 let timerInt = null;
 let wakeLock = null;
 
-// Restore saved config
-apiKeyInput.value = localStorage.getItem("tc_api_key") || "";
+// Restore saved config (URL hash > localStorage)
+const hashParams = new URLSearchParams(location.hash.slice(1));
+const hashKey = hashParams.get("key");
+apiKeyInput.value = hashKey || localStorage.getItem("tc_api_key") || "";
 serverInput.value = localStorage.getItem("tc_server") || location.origin;
+if (hashKey) {
+  localStorage.setItem("tc_api_key", hashKey);
+  // Очищаем хеш чтобы ключ не висел в адресной строке
+  history.replaceState(null, "", location.pathname);
+}
 
 if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
   $("iosWarn").style.display = "block";

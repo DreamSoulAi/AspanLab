@@ -2279,7 +2279,8 @@ async function loadLocations(){
         </label>
       </div>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        <button class="btn btn-ghost" style="flex:1;min-width:120px;white-space:nowrap" onclick="downloadInstaller(${loc.id},'${esc(loc.name)}',this)">⬇ Скачать</button>
+        <button class="btn btn-ghost" style="flex:1;min-width:120px;white-space:nowrap" onclick="downloadInstaller(${loc.id},'${esc(loc.name)}',this)">⬇ Скачать .exe</button>
+        <button class="btn btn-ghost" style="flex:1;min-width:120px;white-space:nowrap" onclick="openMicPWA('${esc(loc.api_key||'')}')">🎙 С телефона</button>
         <button class="btn btn-ghost" style="flex:1;min-width:80px;white-space:nowrap" onclick="openEditLoc(${loc.id})">⚙ Настройки</button>
       </div>
     </div>`).join('');
@@ -2291,6 +2292,28 @@ async function toggleNotifyOk(id, val){
 
 function maskKey(k){if(!k||k.length<8)return k||'—';return k.slice(0,6)+'···'+k.slice(-4);}
 function copyKey(k){navigator.clipboard.writeText(k).then(()=>showErr('Ключ скопирован ✓'));}
+
+function openMicPWA(apiKey){
+  if(!apiKey){showErr('Ключ точки не найден');return;}
+  const url = location.origin + '/mic/#key=' + encodeURIComponent(apiKey);
+  // QR-кодом или ссылкой
+  const modal = document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px';
+  modal.onclick = (e) => { if(e.target===modal) modal.remove(); };
+  const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=' + encodeURIComponent(url);
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:16px;padding:24px;max-width:360px;width:100%;text-align:center">
+      <h3 style="margin:0 0 8px">🎙 Запуск с телефона</h3>
+      <p style="color:var(--muted);font-size:13px;margin:0 0 16px">Отсканируйте QR-код камерой телефона —<br>микрофон откроется автоматически</p>
+      <img src="${qrUrl}" alt="QR" style="width:100%;max-width:260px;border-radius:8px;background:#fff;padding:8px;box-sizing:border-box">
+      <div style="margin-top:14px;font-size:11px;color:var(--muted);word-break:break-all">${esc(url)}</div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-ghost" style="flex:1" onclick="navigator.clipboard.writeText('${esc(url)}').then(()=>{this.textContent='Скопировано ✓';setTimeout(()=>this.textContent='Скопировать ссылку',1500)})">Скопировать ссылку</button>
+        <button class="btn" style="flex:1" onclick="this.closest('div[style*=fixed]').remove()">Закрыть</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
 
 function showAddLocation(){document.getElementById('addLocationModal').style.display='flex';}
 function closeAddLocation(){document.getElementById('addLocationModal').style.display='none';}
