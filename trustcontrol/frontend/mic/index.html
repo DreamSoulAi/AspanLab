@@ -152,10 +152,18 @@
 <script>
 // ════════════════════════════════════════════════════════════
 //  TrustControl Mic PWA
-//  Записывает 30-сек куски WAV (PCM16, 16kHz mono) и шлёт на сервер
+//  Записывает разговор целиком (PCM16, 16kHz mono) и шлёт на сервер
+//  ОДНИМ файлом = один отчёт. Раньше резали на 30-сек куски, из-за чего
+//  один разговор разваливался на несколько отчётов, а начало/середина
+//  часто отсеивались фильтром сервера. Теперь весь разговор идёт целиком
+//  → у модели полный контекст, казахский распознаётся заметно лучше.
+//
+//  Аварийный авто-сброс только для очень длинных записей (защита от
+//  превышения лимита 10 МБ на загрузку). 16кГц·16бит·моно ≈ 1.92 МБ/мин,
+//  поэтому 180 сек ≈ 5.8 МБ — с запасом под лимит.
 // ════════════════════════════════════════════════════════════
 
-const CHUNK_SECONDS = 30;
+const MAX_SEGMENT_SECONDS = 180;   // авто-сброс для длинных записей (защита лимита 10МБ)
 const TARGET_RATE = 16000;
 
 const $ = (id) => document.getElementById(id);
@@ -320,7 +328,7 @@ async function start() {
   source = audioCtx.createMediaStreamSource(stream);
   processor = audioCtx.createScriptProcessor(4096, 1, 1);
 
-  const chunkSamples = TARGET_RATE * CHUNK_SECONDS;
+  const chunkSamples = TARGET_RATE * MAX_SEGMENT_SECONDS;
   let accumulated = 0;
   pcmBuf = [];
 
@@ -377,7 +385,7 @@ async function start() {
   } catch (e) { log(`! wake lock: ${e.message}`); }
 
   indicator.classList.add("recording");
-  setState("Запись идёт", `Кусок каждые ${CHUNK_SECONDS} сек`);
+  setState("Запись идёт", "Разговор отправится целиком при остановке");
   btnStart.style.display = "none";
   btnStop.style.display = "block";
   $("config").style.opacity = "0.5";
