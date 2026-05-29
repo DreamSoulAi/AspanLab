@@ -389,6 +389,33 @@ async function start() {
 async function stop() {
   recording = false;
   clearInterval(timerInt);
+
+  // Дошлём остаток записи (диалог короче CHUNK_SECONDS).
+  // Без этого короткий разговор < 30с выбрасывался и не попадал на сервер.
+  try {
+    let total = 0;
+    for (const arr of pcmBuf) total += arr.length;
+    if (total >= TARGET_RATE) {           // хотя бы ~1 секунда речи
+      const merged = new Float32Array(total);
+      let off = 0;
+      for (const arr of pcmBuf) { merged.set(arr, off); off += arr.length; }
+      let peak = 0;
+      for (let i = 0; i < merged.length; i++) {
+        const a = Math.abs(merged[i]);
+        if (a > peak) peak = a;
+      }
+      if (peak >= 0.01) {
+        log("⤓ дослал остаток записи");
+        await sendChunk(encodeWAV(merged, TARGET_RATE));
+      } else {
+        log("· остаток — тишина, пропуск");
+      }
+    } else if (total > 0) {
+      log("· остаток < 1с — пропуск");
+    }
+  } catch (e) { log(`! flush: ${e.message}`); }
+  pcmBuf = [];
+
   try { processor && processor.disconnect(); } catch {}
   try { source && source.disconnect(); } catch {}
   try { stream && stream.getTracks().forEach(t => t.stop()); } catch {}
