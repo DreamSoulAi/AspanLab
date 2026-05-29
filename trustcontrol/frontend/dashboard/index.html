@@ -608,6 +608,18 @@ textarea.f-input{resize:vertical;line-height:1.6}
 .wiz-next{background:var(--accent);color:#fff;border:none;padding:12px 0;border-radius:var(--r);font-size:14px;font-weight:600;transition:all .2s;flex:1;position:relative;overflow:hidden}
 .wiz-next::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.15) 0,transparent 60%)}
 .wiz-next:hover{background:#2563EB;transform:translateY(-1px);box-shadow:0 8px 24px rgba(59,130,246,.35)}
+/* Payment chips */
+.pay-chips{display:flex;flex-wrap:wrap;gap:8px}
+.pay-chip{padding:8px 14px;border-radius:20px;border:1.5px solid var(--bdr2);color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;transition:all .18s;user-select:none}
+.pay-chip.on{border-color:var(--accent);background:rgba(59,130,246,.12);color:var(--accent2)}
+/* Toggle switch */
+.biz-toggle-row{display:flex;align-items:center;gap:12px;margin-bottom:2px}
+.biz-toggle{position:relative;display:inline-block;width:42px;height:24px;flex-shrink:0}
+.biz-toggle input{opacity:0;width:0;height:0}
+.biz-toggle-slider{position:absolute;cursor:pointer;inset:0;background:rgba(255,255,255,.08);border:1px solid var(--bdr2);border-radius:24px;transition:.2s}
+.biz-toggle-slider:before{content:'';position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:var(--muted);border-radius:50%;transition:.2s}
+.biz-toggle input:checked + .biz-toggle-slider{background:rgba(59,130,246,.25);border-color:rgba(59,130,246,.5)}
+.biz-toggle input:checked + .biz-toggle-slider:before{transform:translateX(18px);background:var(--accent2)}
 </style>
 </head>
 <body>
@@ -1592,7 +1604,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <div class="page" id="page-settings">
         <div class="topbar"><div class="page-title">Настройки</div></div>
 
-        <!-- Step indicator -->
+        <!-- Step indicator: 5 steps -->
         <div class="wiz-steps">
           <div class="wiz-step active" id="wizStep1">
             <div class="wiz-step-num">1</div>
@@ -1601,16 +1613,21 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <div class="wiz-connector" id="wizConn1"></div>
           <div class="wiz-step" id="wizStep2">
             <div class="wiz-step-num">2</div>
-            <div class="wiz-step-label">Telegram</div>
+            <div class="wiz-step-label">Бизнес</div>
           </div>
           <div class="wiz-connector" id="wizConn2"></div>
           <div class="wiz-step" id="wizStep3">
             <div class="wiz-step-num">3</div>
-            <div class="wiz-step-label">Тариф</div>
+            <div class="wiz-step-label">TG</div>
           </div>
           <div class="wiz-connector" id="wizConn3"></div>
           <div class="wiz-step" id="wizStep4">
             <div class="wiz-step-num">4</div>
+            <div class="wiz-step-label">Тариф</div>
+          </div>
+          <div class="wiz-connector" id="wizConn4"></div>
+          <div class="wiz-step" id="wizStep5">
+            <div class="wiz-step-num">5</div>
             <div class="wiz-step-label">Касса</div>
           </div>
         </div>
@@ -1651,20 +1668,73 @@ textarea.f-input{resize:vertical;line-height:1.6}
           </div>
         </div>
 
-        <!-- Step 2: Telegram -->
+        <!-- Step 2: Business context -->
         <div class="panel" id="wiz-2" style="display:none">
+          <div class="wiz-title">Ваш бизнес</div>
+          <div class="wiz-hint">ИИ будет знать что именно анализировать — нажмите что подходит</div>
+
+          <div class="f-group">
+            <label class="f-label">Принимаете оплату</label>
+            <div class="pay-chips">
+              <div class="pay-chip" id="pay-kaspi_qr" onclick="togglePay(this,'kaspi_qr')">Kaspi QR</div>
+              <div class="pay-chip" id="pay-halyk_qr" onclick="togglePay(this,'halyk_qr')">Halyk QR</div>
+              <div class="pay-chip" id="pay-kaspi_transfer" onclick="togglePay(this,'kaspi_transfer')">Kaspi перевод</div>
+              <div class="pay-chip" id="pay-cash" onclick="togglePay(this,'cash')">Наличные</div>
+              <div class="pay-chip" id="pay-terminal" onclick="togglePay(this,'terminal')">Терминал</div>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:6px">ИИ будет фиксировать факт оплаты в каждом разговоре</div>
+          </div>
+
+          <div class="f-group">
+            <label class="f-label">Бонусная программа</label>
+            <div class="biz-toggle-row">
+              <label class="biz-toggle">
+                <input type="checkbox" id="hasBonusCard" onchange="toggleBonusCard(this)">
+                <span class="biz-toggle-slider"></span>
+              </label>
+              <span id="bonusCardLabel" style="font-size:14px;color:var(--muted)">Нет</span>
+            </div>
+            <div id="bonusCardNameGroup" style="display:none;margin-top:10px">
+              <input class="f-input" type="text" id="bonusCardName" placeholder="Название: «Накопительная карта клиента»">
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">Кассир будет предлагать её при каждой покупке</div>
+            </div>
+          </div>
+
+          <div class="f-group">
+            <label class="f-label">Что кассир должен предлагать</label>
+            <textarea class="f-input" id="bizUpsell" rows="3" placeholder="Например: к кофе — десерт или сироп, к супу — хлеб, по четвергам акция «2 за 1» на пирожки"></textarea>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">ИИ будет проверять — предлагал ли кассир это в каждом разговоре</div>
+          </div>
+
+          <div class="f-group" style="margin-bottom:4px">
+            <label class="f-label">Скрипт приветствия / прощания</label>
+            <textarea class="f-input" id="bizGreeting" rows="2" placeholder="Например: «Добро пожаловать, что будете?» и «Спасибо, ждём вас снова»"></textarea>
+          </div>
+
+          <div style="padding:10px 12px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.15);border-radius:10px;font-size:12px;color:var(--muted);line-height:1.6;margin-top:2px;margin-bottom:2px">
+            💡 Чем точнее заполните — тем лучше ИИ распознаёт нарушения именно в вашей сфере
+          </div>
+
+          <div class="wiz-nav" style="margin-top:16px">
+            <button class="wiz-back" onclick="wizGo(1)">← Назад</button>
+            <button class="wiz-next" onclick="saveBizStep()">Сохранить и далее →</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Telegram -->
+        <div class="panel" id="wiz-3" style="display:none">
           <div class="wiz-title">Уведомления в Telegram</div>
           <div class="wiz-hint">Ежедневные отчёты и мгновенные тревоги о нарушениях — всё приходит в Telegram. Никаких email и смс.</div>
           <div id="tgStatusBlock" style="margin-top:2px"></div>
           <div id="tgLinkInfo" style="font-size:12px;margin-top:6px;min-height:16px;color:var(--accent2)"></div>
           <div class="wiz-nav" style="margin-top:24px">
-            <button class="wiz-back" onclick="wizGo(1)">← Назад</button>
-            <button class="wiz-next" onclick="wizGo(3)">Далее →</button>
+            <button class="wiz-back" onclick="wizGo(2)">← Назад</button>
+            <button class="wiz-next" onclick="wizGo(4)">Далее →</button>
           </div>
         </div>
 
-        <!-- Step 3: Subscription -->
-        <div class="panel" id="wiz-3" style="display:none">
+        <!-- Step 4: Subscription -->
+        <div class="panel" id="wiz-4" style="display:none">
           <div class="wiz-title">Ваш тариф</div>
           <div class="wiz-hint">Текущий план, лимиты и продление</div>
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
@@ -1675,13 +1745,13 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <div id="sUsageBar" style="display:none;margin-bottom:14px;font-size:13px;color:var(--muted)"></div>
           <button class="upgrade-btn" onclick="showPayInfo()">💳 Оплатить / продлить</button>
           <div class="wiz-nav">
-            <button class="wiz-back" onclick="wizGo(2)">← Назад</button>
-            <button class="wiz-next" onclick="wizGo(4)">Далее →</button>
+            <button class="wiz-back" onclick="wizGo(3)">← Назад</button>
+            <button class="wiz-next" onclick="wizGo(5)">Далее →</button>
           </div>
         </div>
 
-        <!-- Step 4: Register setup -->
-        <div class="panel" id="wiz-4" style="display:none">
+        <!-- Step 5: Register setup -->
+        <div class="panel" id="wiz-5" style="display:none">
           <div class="wiz-title">Подключение кассы</div>
           <div class="wiz-hint">Никакого программиста. Сами справитесь за 10 минут.</div>
           <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:20px">
@@ -1708,7 +1778,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             </div>
           </div>
           <div class="wiz-nav">
-            <button class="wiz-back" onclick="wizGo(3)">← Назад</button>
+            <button class="wiz-back" onclick="wizGo(4)">← Назад</button>
             <button class="wiz-next" onclick="showPage('locations')">Перейти к кассам →</button>
           </div>
         </div>
@@ -2094,7 +2164,7 @@ async function showPayInfo(){
 let _wizStep=1;
 function wizGo(step){
   _wizStep=step;
-  for(let i=1;i<=4;i++){
+  for(let i=1;i<=5;i++){
     const p=document.getElementById('wiz-'+i);
     if(p)p.style.display=i===step?'block':'none';
     const s=document.getElementById('wizStep'+i);
@@ -2102,6 +2172,7 @@ function wizGo(step){
     const c=document.getElementById('wizConn'+i);
     if(c)c.classList.toggle('done',i<step);
   }
+  if(step===2)loadBizStep();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
@@ -2113,6 +2184,75 @@ async function saveSettings(advance){
   const p=val('settingsPassword');if(p)payload.password=p;
   const d=await apiFetch('/auth/me',{method:'PATCH',body:JSON.stringify(payload)});
   if(d){showErr('Сохранено ✓');loadUserInfo();if(advance)wizGo(2);}
+}
+
+/* ── BUSINESS STEP ── */
+let _payMethods=new Set();
+const _payLabels={kaspi_qr:'Kaspi QR',halyk_qr:'Halyk QR',kaspi_transfer:'Kaspi перевод',cash:'Наличные',terminal:'Терминал'};
+
+function togglePay(el,key){
+  if(_payMethods.has(key)){_payMethods.delete(key);el.classList.remove('on');}
+  else{_payMethods.add(key);el.classList.add('on');}
+}
+
+function toggleBonusCard(cb){
+  const on=cb.checked;
+  const g=document.getElementById('bonusCardNameGroup');
+  if(g)g.style.display=on?'':'none';
+  const lbl=document.getElementById('bonusCardLabel');
+  if(lbl)lbl.textContent=on?'Есть':'Нет';
+}
+
+async function loadBizStep(){
+  // Reset chips
+  _payMethods=new Set();
+  Object.keys(_payLabels).forEach(k=>{const c=document.getElementById('pay-'+k);if(c)c.classList.remove('on');});
+  const locs=await apiFetch('/locations',{},true);
+  if(!locs||!locs.length)return;
+  const loc=locs[0];
+  const desc=(loc.business_description||'').toLowerCase();
+  // Detect payment methods from saved description
+  const payKw={kaspi_qr:'kaspi qr',halyk_qr:'halyk qr',kaspi_transfer:'kaspi перевод',cash:'наличн',terminal:'терминал'};
+  for(const[k,kw] of Object.entries(payKw)){
+    if(desc.includes(kw)){
+      _payMethods.add(k);
+      const chip=document.getElementById('pay-'+k);
+      if(chip)chip.classList.add('on');
+    }
+  }
+  // Detect bonus card
+  const hasBonus=desc.includes('бонусн');
+  const cb=document.getElementById('hasBonusCard');
+  if(cb){cb.checked=hasBonus;toggleBonusCard(cb);}
+  if(hasBonus){
+    const m=(loc.business_description||'').match(/[Бб]онусн[^:]*(?:программа|карт[а-я]*)[: ]+([^\n.]+)/);
+    if(m)setVal('bonusCardName',m[1].trim().replace(/^["«]+|["»]+$/g,''));
+  }
+  setVal('bizUpsell',loc.upsell_script||'');
+  setVal('bizGreeting',loc.greeting_script||'');
+}
+
+async function saveBizStep(){
+  const locs=await apiFetch('/locations',{},true);
+  if(!locs||!locs.length){wizGo(3);return;}
+  const locId=locs[0].id;
+  // Build business_description
+  const parts=[];
+  const methods=[..._payMethods].map(k=>_payLabels[k]).filter(Boolean);
+  if(methods.length)parts.push('Принимаем оплату: '+methods.join(', ')+'.');
+  const cb=document.getElementById('hasBonusCard');
+  if(cb&&cb.checked){
+    const name=(val('bonusCardName')||'бонусная карта').trim();
+    parts.push('Бонусная программа: '+name+'. Предлагать при каждой покупке.');
+  }
+  const payload={};
+  if(parts.length)payload.business_description=parts.join('\n');
+  const upsell=val('bizUpsell').trim();if(upsell)payload.upsell_script=upsell;
+  const greeting=val('bizGreeting').trim();if(greeting)payload.greeting_script=greeting;
+  if(Object.keys(payload).length){
+    await apiFetch('/locations/'+locId,{method:'PATCH',body:JSON.stringify(payload)});
+  }
+  wizGo(3);
 }
 
 /* ── OVERVIEW ── */
