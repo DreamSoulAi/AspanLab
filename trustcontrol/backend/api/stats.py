@@ -187,6 +187,8 @@ async def employees_stats(
         avg_score = round(sum(scored) / len(scored)) if scored else None
         sats = [r.customer_satisfaction for r in rows if r.customer_satisfaction]
         avg_sat = round(sum(sats) / len(sats), 1) if sats else None
+        energies = [r.energy_level for r in rows if r.energy_level is not None]
+        avg_energy = round(sum(energies) / len(energies), 1) if energies else None
 
         def cnt(flag):
             return sum(1 for r in rows if getattr(r, flag))
@@ -199,6 +201,7 @@ async def employees_stats(
             "total":          total,
             "avg_score":      avg_score,
             "avg_satisfaction": avg_sat,
+            "avg_energy":     avg_energy,
             "positive_tone":  sum(1 for r in rows if r.tone == "positive"),
             "negative_tone":  sum(1 for r in rows if r.tone == "negative"),
             "neutral_tone":   sum(1 for r in rows if r.tone == "neutral"),

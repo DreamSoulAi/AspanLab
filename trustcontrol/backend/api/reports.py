@@ -257,6 +257,8 @@ async def _process_submission(
         payment_confirmed     = result.get("payment_confirmed")
         upsell_attempt        = result.get("upsell_attempt")
         customer_satisfaction = result.get("customer_satisfaction")
+        raw_energy            = result.get("energy_level")
+        energy_level          = max(1, min(5, int(raw_energy))) if raw_energy is not None else None
 
         # ── Contextual Severity: определяем контекст разговора ──
         # Нужен async-доступ к БД для проверки POS-окна
@@ -359,6 +361,7 @@ async def _process_submission(
                 payment_confirmed=payment_confirmed,
                 upsell_attempt=upsell_attempt,
                 customer_satisfaction=customer_satisfaction,
+                energy_level=energy_level,
                 is_personal_talk=False,
                 is_hidden=False,
                 fraud_status="normal",
@@ -775,6 +778,7 @@ async def get_reports(
             "payment_confirmed":     r.payment_confirmed,
             "upsell_attempt":        r.upsell_attempt,
             "customer_satisfaction": r.customer_satisfaction,
+            "energy_level":          r.energy_level,
             "s3_url":                r.s3_url,
             "audio_sha256":          r.audio_sha256,
         }
