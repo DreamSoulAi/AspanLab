@@ -29,7 +29,10 @@ from backend.models.report import Report
 from backend.models.alert import Alert
 from backend.models.user import User
 from backend.models.failed_job import FailedJob
-from backend.services.analyzer import analyze, get_tone, calculate_score
+from backend.services.analyzer import (
+    analyze, get_tone, calculate_score,
+    FRAUD_HARD_THRESHOLD, FRAUD_SOFT_THRESHOLD,
+)
 from backend.services.audio_analyzer import analyze_audio_with_fallback
 from backend.services.storage import upload_evidence
 from backend.services.pos_matcher import match_report_with_pos
@@ -253,12 +256,17 @@ async def _process_submission(
 
         transcript = transcript_raw.strip()
         word_count = len(transcript.split())
-        if word_count < 4:
+        # Совсем пусто (0-1 слово) — нечего сохранять. Но короткий визит
+        # (клиент молча подал товар/чек, оплатил, ушёл с парой слов) — это
+        # нормальная покупка для магазина/аптеки/АЗС: сохраняем как тихий
+        # визит с нейтральным баллом, фиксируя что сказал кассир.
+        if word_count < 2:
             log.info(
-                f"[loc={location_id}] Транскрипт < 4 слов ({word_count}) — пропущен: {transcript!r}"
+                f"[loc={location_id}] Транскрипт пустой ({word_count} слов) — пропущен: {transcript!r}"
             )
             _mark_job_done(failed_job_id)
             return
+        is_short = word_count < 6 or len(speakers) < 2
 
         # ── Поля GPT ─────────────────────────────────────────────
         speakers              = result.get("speakers", [])
@@ -306,31 +314,41 @@ async def _process_submission(
         # ── Анализ фраз (regex резерв) + GPT events ──────────────
         found = analyze(transcript, business_type=business_type, custom_phrases=custom_phrases or [])
 
+        # ── Фрод с порогом уверенности ───────────────────────────
+        # GPT различает явный фрод (90-100) и косвенный намёк (50-89).
+        # Тревогу и обнуление балла даём только при ВЫСОКОЙ уверенности —
+        # один неуверенный сигнал не должен «разносить» кассира.
+        fraud_confidence = int(result.get("fraud_confidence", 0) or 0)
+        raw_fraud        = bool(events.get("fraud_attempt", False))
+        has_fraud        = bool(raw_fraud and fraud_confidence >= FRAUD_HARD_THRESHOLD)   # явный
+        fraud_suspect    = bool(raw_fraud and FRAUD_SOFT_THRESHOLD <= fraud_confidence < FRAUD_HARD_THRESHOLD)
+
         has_greeting = ("✅ Приветствие"   in found) or events.get("greeting", False)
         has_thanks   = ("✅ Благодарность" in found)
         has_goodbye  = ("✅ Прощание"      in found) or events.get("farewell", False)
         has_bonus    = events.get("upsell", False) or bool(upsell_attempt)
         has_bad      = events.get("rudeness", False)
-        has_fraud    = events.get("fraud_attempt", False)
 
         is_priority_flag = bool(priority == 1 or has_fraud or has_bad)
 
-        # ── Тон и оценка через восстановленные функции ───────────
+        # ── Тон ──────────────────────────────────────────────────
         effective_tone = get_tone(gpt_tone, events)
         tone_score_val = 1.0 if effective_tone == "positive" else 0.0 if effective_tone == "negative" else 0.5
 
+        # ── Единый прозрачный движок оценки ──────────────────────
+        # GPT-события (greeting/upsell/rudeness/…) уже учитывают track_*
+        # на уровне наличия; здесь движок применяет настройки владельца
+        # к итоговому баллу и не штрафует дважды.
         final_score = calculate_score(
-            gpt_score=gpt_score,
             events=events,
-            has_greeting=has_greeting,
-            has_goodbye=has_goodbye,
-            has_bonus=has_bonus,
-            has_bad=has_bad,
-            has_fraud=has_fraud,
             tone=effective_tone,
+            fraud_confidence=fraud_confidence,
+            customer_satisfaction=customer_satisfaction,
+            energy_level=energy_level,
             track_upsell=track_upsell,
             track_greeting=track_greeting,
             track_goodbye=track_goodbye,
+            is_short=is_short,
         )
 
         is_internal_talk = (conversation_context == "internal_talk")
@@ -366,6 +384,7 @@ async def _process_submission(
                 has_bad=has_bad,           has_fraud=has_fraud,
                 tone=effective_tone,       tone_score=tone_score_val,
                 shift_number=shift_number,
+                score=final_score,
                 gpt_score=gpt_score,       gpt_summary=gpt_summary,
                 gpt_details={"positives": result.get("positives", []), "issues": result.get("issues", []), "events": events},
                 speakers=speakers,
@@ -377,7 +396,7 @@ async def _process_submission(
                 energy_level=energy_level,
                 is_personal_talk=False,
                 is_hidden=False,
-                fraud_status="normal",
+                fraud_status="suspected" if fraud_suspect else "normal",
                 conversation_context=conversation_context,
                 context_score=context_score,
             )
@@ -474,7 +493,7 @@ async def _process_submission(
 
         log.info(
             f"[loc={location_id}] Отчёт #{report_id} | "
-            f"score={gpt_score} | tone={effective_tone} | "
+            f"score={final_score} (gpt={gpt_score}) | tone={effective_tone} | "
             f"priority={priority} | payment={payment_confirmed} | "
             f"upsell={upsell_attempt} | sat={customer_satisfaction}"
         )
@@ -777,7 +796,7 @@ async def get_reports(
             "transcript":            (r.transcript or "")[:300],
             "tone":                  r.tone,
             "gpt_score":             r.gpt_score,
-            "score":                 r.gpt_score,
+            "score":                 r.score if r.score is not None else r.gpt_score,
             "employee_name":         r.employee_name,
             "gpt_summary":           r.gpt_summary,
             "has_greeting":          r.has_greeting,

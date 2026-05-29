@@ -430,6 +430,7 @@ async def _fix_schema():
         _rep_cols = [
             ("employee_name", "VARCHAR(100)"),
             ("energy_level",  "INTEGER"),
+            ("score",         "INTEGER"),
         ]
         for _col, _typ in _rep_cols:
             await _run(

@@ -1,18 +1,15 @@
 # ════════════════════════════════════════════════════════════
-#  Сервис: Анализ фраз и тона
+#  Сервис: Анализ фраз + единый движок оценки
 #
-#  Два уровня анализа:
-#    1. Regex — быстрая проверка приветствий/прощаний на ru/kk
-#    2. GPT   — основной анализ тона, грубости, мошенничества,
-#               допродаж на любом языке (через events и score)
-#
-#  BONUS_PHRASES — не regex-детектор, а контекст для GPT:
-#    "Для этого типа бизнеса целевые допродажи — это X, Y, Z.
-#     Предложил ли кассир что-то из этого?"
+#  • analyze()        — regex-резерв приветствий/прощаний (ru/kk),
+#                       срабатывает когда GPT не дал события
+#  • get_tone()       — итоговый тон (GPT-тон → fallback по events)
+#  • calculate_score()— ЕДИНЫЙ прозрачный движок оценки 0-100.
+#                       Источник истины для отчёта, дашборда, аналитики
+#                       и тревог. GPT даёт сигналы — движок считает балл.
 # ════════════════════════════════════════════════════════════
 
 import re
-from typing import Optional
 
 
 # ── Универсальные фразы (резервный слой для ru/kk) ───────────
@@ -45,56 +42,6 @@ GOODBYE = [
 # Тысяча ситуаций, контекст и интонация важнее конкретных слов.
 BAD_LANGUAGE = []
 FRAUD = []
-
-
-# ── Целевые допродажи по типу бизнеса ────────────────────────
-#
-# Это НЕ regex-детектор. Это справочник что владелец хочет
-# отслеживать как upsell для своего типа бизнеса.
-#
-# Используется двумя способами:
-#   1. Передаётся в GPT-промпт как контекст: "для этой точки
-#      целевые допродажи — это [список]. Предложил ли кассир?"
-#   2. Позволяет давать конкретные рекомендации в отчёте:
-#      "Кассир не предложил карту лояльности (целевая допродажа)"
-#
-# GPT всё равно остаётся основным детектором через upsell_attempt —
-# этот список только уточняет ЧТО именно считать upsell для бизнеса.
-
-BONUS_PHRASES = {
-    "coffee": [
-        "сироп", "карта лояльности", "десерт", "круассан",
-        "маффин", "выпечка", "двойной эспрессо", "большой размер",
-    ],
-    "gas": [
-        "масло", "незамерзайка", "омыватель", "клубная карта",
-        "автохимия", "полный бак",
-    ],
-    "fastfood": [
-        "напиток", "соус", "комбо", "картошка фри",
-        "десерт", "увеличенная порция", "что-нибудь ещё",
-    ],
-    "cafe": [
-        "десерт", "гарнир", "закуска", "блюдо дня",
-        "аперитив", "специальное предложение",
-    ],
-    "beauty": [
-        "маска", "уход", "профессиональный шампунь",
-        "следующая запись", "доп. процедура",
-    ],
-    "shop": [
-        "карта скидок", "акция", "новинка", "пакет",
-        "страховка", "расширенная гарантия",
-    ],
-    "fitness": [
-        "персональный тренер", "групповые занятия",
-        "спортивное питание", "продление абонемента", "сауна",
-    ],
-    "hotel": [
-        "завтрак", "ранний заезд", "поздний выезд",
-        "трансфер", "спа", "экскурсия",
-    ],
-}
 
 
 def _compile(patterns: list[str]) -> list[re.Pattern]:
@@ -154,60 +101,84 @@ def get_tone(gpt_tone: str, events: dict = None) -> str:
     return "neutral"
 
 
+# ── Пороги уверенности по фроду ──────────────────────────────
+# GPT в промпте различает явный фрод (90-100) и косвенный намёк (50-89).
+# Балл/тревога должны это уважать, иначе один неуверенный сигнал = разнос.
+FRAUD_HARD_THRESHOLD = 75   # явный фрод → балл в пол, критическая тревога
+FRAUD_SOFT_THRESHOLD = 50   # косвенное подозрение → штраф, но без обнуления
+
+
 def calculate_score(
-    gpt_score: int | None,
     events: dict = None,
-    has_greeting: bool = False,
-    has_goodbye: bool = False,
-    has_bonus: bool = False,
-    has_bad: bool = False,
-    has_fraud: bool = False,
+    *,
     tone: str = "neutral",
-    track_upsell: bool = True,
+    fraud_confidence: int = 0,
+    customer_satisfaction: int | None = None,
+    energy_level: int | None = None,
     track_greeting: bool = True,
     track_goodbye: bool = True,
-) -> float:
+    track_upsell: bool = True,
+    is_short: bool = False,
+) -> int:
     """
-    Итоговая оценка качества обслуживания 0–100.
+    ЕДИНЫЙ прозрачный движок оценки качества обслуживания (0-100).
 
-    track_* флаги: если владелец отключил отслеживание параметра,
-    он не влияет на оценку (ни плюс ни минус).
+    GPT даёт только СИГНАЛЫ (events, tone, fraud_confidence, satisfaction,
+    energy) — здесь из них детерминированно считается финальный балл.
+    Это единственный источник истины: один и тот же балл идёт в отчёт,
+    дашборд, аналитику сотрудников и тревоги.
+
+    Принципы:
+      • База 60 — нормальный визит без эксцессов = крепкая оценка.
+      • Приветствие / прощание / допродажа — БОНУС за наличие, НИКОГДА не
+        штраф за отсутствие (микрофон обрезает начало, тихие визиты — норма).
+      • track_* флаги: отключённый владельцем параметр не влияет вообще.
+      • Грубость штрафуется ОДИН раз (без двойных штрафов).
+      • Фрод критичен только при высокой уверенности (порог confidence).
+      • Короткий / тихий визит → нейтральный балл, без штрафов за краткость.
     """
     events = events or {}
 
-    # Жёсткое бизнес-правило: фрод — всегда критично
-    if has_fraud or events.get("fraud_attempt"):
-        return max(0.0, min(10.0, (gpt_score or 50) * 0.1))
+    greeting = bool(events.get("greeting"))
+    farewell = bool(events.get("farewell"))
+    upsell   = bool(events.get("upsell"))
+    rudeness = bool(events.get("rudeness"))
+    resolved = bool(events.get("issue_resolved"))
+    fraud    = bool(events.get("fraud_attempt"))
 
-    if gpt_score is not None:
-        score = float(gpt_score)
-        if has_bad or events.get("rudeness"):
-            score = max(0.0, score - 10)
-        # База 50 для любого нормального разговора без нарушений
-        if score < 50 and not has_bad and not has_fraud \
-                and not events.get("rudeness") and not events.get("fraud_attempt"):
-            score = 50.0
-        return max(0.0, min(100.0, score))
+    # ── Явный фрод (высокая уверенность) → балл в пол ────────
+    if fraud and fraud_confidence >= FRAUD_HARD_THRESHOLD:
+        return 5
 
-    # Fallback: GPT не ответил, считаем по флагам
-    score = 50.0
-    if track_greeting and has_greeting:                     score += 15
-    if track_goodbye and has_goodbye:                       score += 10
-    if track_upsell and (has_bonus or events.get("upsell")): score += 15
-    if tone == "positive":                                  score += 10
-    if events.get("issue_resolved"):                        score += 10
-    if has_bad or events.get("rudeness"):                   score -= 25
-    if tone == "negative":                                  score -= 10
+    score = 60.0
 
-    return max(0.0, min(100.0, score))
+    # ── Позитивные сигналы — только бонусы за наличие ────────
+    if track_greeting and greeting:   score += 8
+    if track_goodbye and farewell:    score += 6
+    if track_upsell and upsell:       score += 8     # «ещё круче», не обязанность
+    if resolved:                      score += 8
 
+    # ── Тон голоса ───────────────────────────────────────────
+    if tone == "positive":            score += 6
+    elif tone == "negative":          score -= 12
 
-def get_target_upsells(business_type: str, custom_phrases: list[str] = None) -> list[str]:
-    """
-    Возвращает целевые допродажи для типа бизнеса.
-    Используется как контекст для GPT-промпта и для детальных отчётов.
-    """
-    targets = BONUS_PHRASES.get(business_type, [])
-    if custom_phrases:
-        targets = targets + custom_phrases
-    return targets
+    # ── Грубость — один штраф ────────────────────────────────
+    if rudeness:                      score -= 30
+
+    # ── Удовлетворённость клиента ────────────────────────────
+    if customer_satisfaction is not None:
+        score += {1: -15, 2: -8, 3: 0, 4: 4, 5: 8}.get(int(customer_satisfaction), 0)
+
+    # ── Вовлечённость кассира (energy_level) ─────────────────
+    if energy_level is not None:
+        score += {1: -6, 2: -3, 3: 0, 4: 2, 5: 4}.get(int(energy_level), 0)
+
+    # ── Косвенное подозрение на фрод — штраф без обнуления ───
+    if fraud and fraud_confidence >= FRAUD_SOFT_THRESHOLD:
+        score -= 25
+
+    # ── Короткий / тихий визит: нейтрально, не загоняем в минус ──
+    if is_short and not rudeness and not fraud:
+        score = max(score, 55.0)
+
+    return int(max(0, min(100, round(score))))
