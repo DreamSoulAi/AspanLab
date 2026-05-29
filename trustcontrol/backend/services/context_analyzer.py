@@ -84,6 +84,7 @@ def analyze_context(
     has_pos_nearby: bool,
     customer_satisfaction: int | None = None,
     is_personal_talk: bool = False,
+    gpt_is_business: bool = False,
 ) -> dict:
     """
     Определяет контекст разговора по трём слоям сигналов.
@@ -105,6 +106,13 @@ def analyze_context(
 
     score   = 0.0
     reasons = []
+
+    # ── GPT уже определил это как рабочий разговор с клиентом ───────────────
+    # audio-preview/gpt-4o-mini анализирует аудио напрямую и лучше нас знает
+    # контекст — его решение is_business=true сильнее любых регэкспов по маркерам.
+    if gpt_is_business:
+        score += 0.55
+        reasons.append("GPT: is_business=True")
 
     # ── Слой 1: POS-синхронизация (главный сигнал) ──────────────────────────
     if has_pos_nearby:

@@ -268,6 +268,7 @@ async def _process_submission(
             has_pos_nearby=has_pos_nearby,
             customer_satisfaction=result.get("customer_satisfaction"),
             is_personal_talk=result.get("is_personal_talk", False),
+            gpt_is_business=result.get("is_business", False),
         )
         conversation_context = ctx["context"]
         context_score        = ctx["score"]
@@ -752,6 +753,7 @@ async def get_reports(
             "transcript":            (r.transcript or "")[:300],
             "tone":                  r.tone,
             "gpt_score":             r.gpt_score,
+            "score":                 r.gpt_score,
             "gpt_summary":           r.gpt_summary,
             "has_greeting":          r.has_greeting,
             "has_thanks":            r.has_thanks,
