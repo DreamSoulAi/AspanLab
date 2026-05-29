@@ -80,22 +80,38 @@ _parser.add_argument("--rtsp", default=None,
 _args = _parser.parse_args()
 
 # ════════════════════════════════════════════════════════════
-#  НАСТРОЙКИ
+#  НАСТРОЙКИ — аргументы командной строки или config.ini
 # ════════════════════════════════════════════════════════════
 
-SERVER_URL    = _args.api_url.rstrip("/")
-API_KEY       = _args.api_key
+# Читаем config.ini рядом с .exe/.py если API_KEY не задан аргументом
+def _read_config_ini() -> dict:
+    import configparser
+    for candidate in [
+        Path(__file__).parent / "config.ini",
+        Path(sys.executable).parent / "config.ini",
+    ]:
+        if candidate.exists():
+            cfg = configparser.ConfigParser()
+            cfg.read(str(candidate), encoding="utf-8")
+            if cfg.has_section("settings"):
+                return dict(cfg["settings"])
+    return {}
+
+_ini = _read_config_ini() if not _args.api_key else {}
+
+SERVER_URL    = (_args.api_url if _args.api_url != "http://localhost:8000" else _ini.get("api_url", _args.api_url)).rstrip("/")
+API_KEY       = _args.api_key or _ini.get("api_key", "")
 LOCAL_WHISPER = _args.local_whisper
 WHISPER_MODEL = _args.whisper_model
-LANGUAGE      = _args.language
+LANGUAGE      = _args.language or _ini.get("language") or None
 COMPRESS      = _args.compress
 
-VAD_LEVEL        = _args.vad_level
-SILENCE_SECONDS  = _args.silence
+VAD_LEVEL        = int(_ini.get("vad_level", _args.vad_level)) if _ini else _args.vad_level
+SILENCE_SECONDS  = float(_ini.get("silence", _args.silence)) if _ini else _args.silence
 MAX_MINUTES      = _args.max_minutes
 COMPRESS_FORMAT  = _args.compress_format
-DEVICE_ARG       = _args.device      # None = системный по умолчанию
-RTSP_URL         = _args.rtsp        # None = микрофон; URL = RTSP-камера
+DEVICE_ARG       = _args.device
+RTSP_URL         = _args.rtsp
 SAMPLE_RATE      = 16000
 FRAME_DURATION   = 30          # ms
 
