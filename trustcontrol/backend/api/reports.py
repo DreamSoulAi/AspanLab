@@ -303,9 +303,9 @@ async def _process_submission(
             f"score={context_score:.2f} | {ctx['reason']}"
         )
 
-        # ── priority=1: архив S3 + SHA-256 ───────────────────────
+        # ── архив S3: все разговоры (14 дней, авто-удаление через lifecycle политику бакета)
         audio_sha256 = s3_url = None
-        if priority == 1 and wav_bytes:
+        if wav_bytes:
             tmp_id         = int(datetime.utcnow().timestamp())
             storage_result = await upload_evidence(wav_bytes, location_id, tmp_id)
             audio_sha256   = storage_result.get("sha256")
