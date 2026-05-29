@@ -179,6 +179,7 @@ async def _process_submission(
 
         # ── OpenAI не ответил → в очередь повторов ───────────────
         if not result:
+            log.warning(f"[loc={location_id}] GPT вернул пустой результат — в очередь повторов")
             if wav_bytes:
                 await _enqueue_retry(
                     location_id=location_id, wav_bytes=wav_bytes,
@@ -192,6 +193,15 @@ async def _process_submission(
 
         status         = result.get("status", "OK")
         is_personal    = result.get("is_personal_talk", False)
+        transcript_raw = result.get("transcript", "")
+
+        log.info(
+            f"[loc={location_id}] Pipeline | status={status!r} "
+            f"| is_business={result.get('is_business')} "
+            f"| is_personal={is_personal} "
+            f"| transcript_words={len(transcript_raw.split())} "
+            f"| summary={result.get('summary','')[:80]!r}"
+        )
 
         # ── PERSONAL: скрытый личный разговор ────────────────────
         if status == "PERSONAL" or (status == "IGNORE" and is_personal):
@@ -213,18 +223,25 @@ async def _process_submission(
 
         # ── IGNORE: мусор — не сохраняем ─────────────────────────
         if status == "IGNORE" or not result.get("is_business", True):
-            log.info(f"[loc={location_id}] IGNORE — нерабочий контент, пропущен")
+            log.info(
+                f"[loc={location_id}] IGNORE фильтр | status={status!r} "
+                f"is_business={result.get('is_business')} "
+                f"summary={result.get('summary','')[:80]!r}"
+            )
             _mark_job_done(failed_job_id)
             return
 
-        if not result.get("transcript"):
-            log.info(f"[loc={location_id}] Речь не распознана")
+        if not transcript_raw:
+            log.info(f"[loc={location_id}] Речь не распознана — пустой транскрипт")
             _mark_job_done(failed_job_id)
             return
 
-        transcript = result["transcript"].strip()
-        if len(transcript.split()) < 4:
-            log.info(f"[loc={location_id}] Транскрипт < 4 слов — пропущен")
+        transcript = transcript_raw.strip()
+        word_count = len(transcript.split())
+        if word_count < 4:
+            log.info(
+                f"[loc={location_id}] Транскрипт < 4 слов ({word_count}) — пропущен: {transcript!r}"
+            )
             _mark_job_done(failed_job_id)
             return
 
@@ -639,7 +656,9 @@ async def submit_audio(
     if not wav_bytes and not (transcript_text and transcript_text.strip()):
         raise HTTPException(status_code=400, detail="Нужно аудио или transcript_text")
 
-    effective_language = language or location.language or "ru"
+    # language передаётся только в Whisper fallback (если audio-preview упал).
+    # Не форсируем "ru" по умолчанию — пусть будет None, чтобы Whisper тоже авто-детектил.
+    effective_language = language or location.language or None
     telegram_chat      = location.telegram_chat
 
     if not telegram_chat and location.owner_id:

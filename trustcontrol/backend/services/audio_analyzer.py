@@ -135,10 +135,13 @@ def _detect_audio_format(data: bytes) -> str:
     return "wav"
 
 
-async def analyze_audio(wav_bytes: bytes, language: str = None, business_context: str = None) -> dict:
+async def analyze_audio(wav_bytes: bytes, business_context: str = None) -> dict:
     """
     Отправляет аудио в gpt-4o-mini-audio-preview.
     Возвращает полный словарь аналитики или {} при ошибке.
+
+    NOTE: language НЕ передаётся — audio-preview сам определяет язык из звука.
+    Передача language="ru" для казахских/смешанных записей только мешает.
     """
     if not settings.OPENAI_API_KEY:
         log.warning("OPENAI_API_KEY не задан")
@@ -147,7 +150,6 @@ async def analyze_audio(wav_bytes: bytes, language: str = None, business_context
     try:
         audio_b64    = base64.b64encode(wav_bytes).decode()
         audio_format = _detect_audio_format(wav_bytes)
-        lang_hint = f"\nЯзык записи: {language}." if language else ""
         biz_hint  = f"\n\n━━━ КОНТЕКСТ ТОЧКИ ━━━\n{business_context}" if business_context else ""
 
         response = await client.chat.completions.create(
@@ -159,7 +161,7 @@ async def analyze_audio(wav_bytes: bytes, language: str = None, business_context
                         "type": "input_audio",
                         "input_audio": {"data": audio_b64, "format": audio_format},
                     },
-                    {"type": "text", "text": _PROMPT + lang_hint + biz_hint},
+                    {"type": "text", "text": _PROMPT + biz_hint},
                 ],
             }],
             max_tokens=2000,
@@ -167,6 +169,8 @@ async def analyze_audio(wav_bytes: bytes, language: str = None, business_context
         )
 
         raw = response.choices[0].message.content.strip()
+        log.debug(f"GPT audio raw response: {raw[:500]}")
+
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
@@ -174,9 +178,16 @@ async def analyze_audio(wav_bytes: bytes, language: str = None, business_context
 
         result = json.loads(raw.strip())
         status = result.get("status", "OK")
+        transcript = result.get("transcript", "")
+        is_business = result.get("is_business", True)
 
-        if status in ("IGNORE", "PERSONAL") or not result.get("is_business", True):
-            log.info(f"GPT audio | {status} — нерабочий контент")
+        log.info(
+            f"GPT audio | status={status} | is_business={is_business} "
+            f"| transcript_len={len(transcript)} "
+            f"| summary={result.get('summary','')[:80]!r}"
+        )
+
+        if status in ("IGNORE", "PERSONAL") or not is_business:
             return {
                 "status":          status,
                 "is_business":     False,
@@ -197,7 +208,7 @@ async def analyze_audio(wav_bytes: bytes, language: str = None, business_context
         result.setdefault("upsell_attempt", None)
 
         log.info(
-            f"GPT audio | score={result['score']} "
+            f"GPT audio OK | score={result['score']} "
             f"| priority={result['priority']} "
             f"| sat={result['customer_satisfaction']} "
             f"| payment={result['payment_confirmed']} "
@@ -312,7 +323,9 @@ async def analyze_audio_with_fallback(
     if not wav_bytes:
         return {}
 
-    audio_result = await analyze_audio(wav_bytes, language, business_context=business_context)
+    # Язык НЕ передаём в audio-preview — он сам определяет из звука.
+    # "Язык записи: ru" в промпте ломает распознавание казахского/шала-казахского.
+    audio_result = await analyze_audio(wav_bytes, business_context=business_context)
 
     if audio_result:
         status = audio_result.get("status", "OK")
@@ -322,6 +335,7 @@ async def analyze_audio_with_fallback(
         # OK с реальным транскриптом — успех
         if audio_result.get("transcript"):
             return audio_result
+        log.info(f"Audio-preview вернул OK но без транскрипта: {audio_result.get('summary','')!r}")
 
     # ── Фолбэк: Whisper + текстовый GPT (если audio-preview упал) ──────
     log.info("Audio-preview не дал результат — фолбэк на Whisper+text")
