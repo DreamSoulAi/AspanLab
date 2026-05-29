@@ -14,7 +14,7 @@ import logging
 from openai import AsyncOpenAI
 from backend.config import settings
 from backend.services.gpt_analyzer import gpt_analyze
-from backend.services import yandex_stt
+from backend.services import issai_stt, yandex_stt
 
 log = logging.getLogger("audio_analyzer")
 # timeout=90s — режем зависание (с запасом на GPT-4o-mini-audio 5-30s),
@@ -380,19 +380,32 @@ async def analyze_audio_with_fallback(
     if not wav_bytes:
         return {}
 
-    # ── Шаг 1: точный казахский текст от Yandex (если включён) ──
-    yx_text = None
-    if yandex_stt.is_enabled():
+    # ── Шаг 1: точный казахский текст — ISSAI (self-hosted) или Yandex ──
+    # Приоритет: ISSAI → Yandex → без эталона (аудио-модель сама)
+    kz_text = None
+
+    if issai_stt.is_enabled():
+        issai_raw = await issai_stt.transcribe(wav_bytes)
+        if issai_raw and len(issai_raw.split()) >= 2:
+            kz_text = issai_raw
+            log.info(f"ISSAI STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
+        else:
+            log.info("ISSAI STT пусто/коротко — пробуем Yandex")
+
+    if kz_text is None and yandex_stt.is_enabled():
         try:
             yx_raw = await yandex_stt.transcribe(wav_bytes)
         except Exception as e:
             log.warning(f"Yandex STT ошибка: {e}")
             yx_raw = ""
         if yx_raw and len(yx_raw.split()) >= 2:
-            yx_text = yx_raw
-            log.info(f"Yandex STT OK | {len(yx_text)} симв | {yx_text[:80]!r}")
+            kz_text = yx_raw
+            log.info(f"Yandex STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
         else:
             log.info("Yandex STT пусто/коротко — без эталонного транскрипта")
+
+    # Совместимость с кодом ниже (использовал yx_text)
+    yx_text = kz_text
 
     # ── Шаг 2: аудио-модель (с эталонным транскриптом, если он есть) ──
     # Язык НЕ передаём — модель сама определяет из звука.

@@ -1,0 +1,79 @@
+# ════════════════════════════════════════════════════════════
+#  Сервис: ISSAI STT — self-hosted faster-whisper
+#  Модель: abilmansplus/whisper-turbo-ksc2
+#    • 9.16% WER на казахском (лучшая открытая модель)
+#    • обучена на KSC2 (1 200 часов) + code-switching (шала-казахский)
+#
+#  Этот файл — HTTP-клиент к worker/issai_worker.py
+#  Если ISSAI_WORKER_URL не задан — автоматически пропускается,
+#  цепочка деградирует к Yandex SpeechKit / аудио-модели.
+#
+#  Приоритет в audio_analyzer.py:
+#    ISSAI (self-hosted) → Yandex (облако) → аудио-модель OpenAI
+# ════════════════════════════════════════════════════════════
+
+import logging
+import httpx
+from backend.config import settings
+
+log = logging.getLogger("issai_stt")
+
+
+def is_enabled() -> bool:
+    """Включён только если задан URL воркера."""
+    return bool(settings.ISSAI_WORKER_URL)
+
+
+async def transcribe(audio_bytes: bytes, lang: str | None = None) -> str:
+    """
+    Отправляет аудио на self-hosted ISSAI-воркер, возвращает текст.
+
+    Поддерживает WAV, MP3, OGG, WebM — любой формат принимает ffmpeg на воркере.
+    lang: код ISO (ru, kk, en…). Если None — берём из YANDEX_STT_LANG (kk-KZ → kk).
+
+    Никогда не бросает исключение — при ошибке возвращает "",
+    чтобы вызывающий код перешёл к следующему STT в цепочке.
+    """
+    if not is_enabled():
+        return ""
+
+    # whisper-turbo-ksc2 принимает ISO-639-1: "kk", "ru", "en"
+    # YANDEX_STT_LANG может быть "kk-KZ" — обрезаем.
+    language = (lang or settings.YANDEX_STT_LANG or "kk").split("-")[0].lower()
+
+    worker_url = settings.ISSAI_WORKER_URL.rstrip("/")
+
+    headers = {}
+    if settings.ISSAI_WORKER_KEY:
+        headers["X-API-Key"] = settings.ISSAI_WORKER_KEY
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as cli:
+            r = await cli.post(
+                f"{worker_url}/transcribe",
+                files={"audio": ("audio.wav", audio_bytes, "audio/wav")},
+                data={"language": language},
+                headers=headers,
+            )
+
+        if r.status_code != 200:
+            log.warning(f"ISSAI worker HTTP {r.status_code}: {r.text[:200]}")
+            return ""
+
+        data = r.json()
+        text = (data.get("text") or "").strip()
+        if text:
+            log.info(
+                f"ISSAI STT OK | lang={data.get('language', language)} "
+                f"| {len(text)} симв | {text[:80]!r}"
+            )
+        else:
+            log.info("ISSAI STT: пустой ответ")
+        return text
+
+    except httpx.TimeoutException:
+        log.warning("ISSAI STT: таймаут — воркер не ответил за 120с")
+        return ""
+    except Exception as e:
+        log.warning(f"ISSAI STT ошибка: {e}")
+        return ""

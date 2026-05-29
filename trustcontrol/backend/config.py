@@ -68,6 +68,14 @@ class Settings:
     WHISPER_MODEL:    str = "whisper-1"
     WHISPER_LANGUAGE: str = os.getenv("WHISPER_LANGUAGE", "ru")
 
+    # ── ISSAI STT — self-hosted faster-whisper (whisper-turbo-ksc2) ────
+    # Лучшая открытая модель для казахского (9.16% WER, KSC2 + code-switching).
+    # Запустить воркер: docker-compose -f docker-compose.issai.yml up -d
+    # Затем указать URL здесь. Если пусто — пропускается.
+    ISSAI_WORKER_URL: str = os.getenv("ISSAI_WORKER_URL", "")
+    # API-ключ воркера (совпадает с ISSAI_API_KEY на воркере)
+    ISSAI_WORKER_KEY: str = os.getenv("ISSAI_WORKER_KEY", "")
+
     # ── Yandex SpeechKit STT (точное распознавание казахского) ─
     # Если оба значения заданы — включается гибрид: точные казахские
     # слова от Yandex + тон голоса от аудио-модели OpenAI.

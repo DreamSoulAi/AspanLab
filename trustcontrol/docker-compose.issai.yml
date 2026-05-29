@@ -1,0 +1,64 @@
+# ════════════════════════════════════════════════════════════
+#  ISSAI STT Воркер — docker-compose
+#
+#  Запуск:
+#    docker-compose -f docker-compose.issai.yml up -d
+#
+#  Масштабирование (3 воркера):
+#    docker-compose -f docker-compose.issai.yml up -d --scale issai-worker=3
+#  + нужен nginx load balancer (см. пример ниже в комментарии)
+# ════════════════════════════════════════════════════════════
+
+version: "3.9"
+
+services:
+  issai-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.issai
+    restart: always
+    ports:
+      - "8010:8010"
+    environment:
+      ISSAI_MODEL:    ${ISSAI_MODEL:-abilmansplus/whisper-turbo-ksc2}
+      ISSAI_DEVICE:   ${ISSAI_DEVICE:-cpu}
+      ISSAI_COMPUTE:  ${ISSAI_COMPUTE:-int8}
+      ISSAI_PORT:     "8010"
+      ISSAI_WORKERS:  "1"
+      ISSAI_THREADS:  ${ISSAI_THREADS:-4}
+      ISSAI_API_KEY:  ${ISSAI_API_KEY:-}
+      HF_TOKEN:       ${HF_TOKEN:-}
+    volumes:
+      # Кэш модели — не скачивать при каждом рестарте
+      - hf_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        limits:
+          memory: 6G       # whisper-large-v3-turbo: ~2.5GB RAM; с запасом 6G
+        reservations:
+          memory: 3G
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+volumes:
+  hf_cache:
+
+# ── Пример nginx для 2 воркеров (горизонтальное масштабирование) ──────
+# Добавить в nginx.conf:
+#
+#   upstream issai {
+#     least_conn;
+#     server issai-worker-1:8010;
+#     server issai-worker-2:8010;
+#   }
+#   server {
+#     listen 8009;
+#     location / {
+#       proxy_pass http://issai;
+#       proxy_read_timeout 120s;
+#     }
+#   }
