@@ -28,6 +28,7 @@ class Report(Base):
     # Тон
     tone            = Column(String(20), default="neutral")
     tone_score      = Column(Float, default=0.5)
+    energy_level    = Column(Integer, nullable=True)  # 1-5: вовлечённость кассира
 
     # GPT-4o-mini-audio анализ
     gpt_score       = Column(Integer, nullable=True)

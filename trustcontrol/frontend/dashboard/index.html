@@ -2523,6 +2523,8 @@ async function loadStaff(){
       const sc=e.avg_score==null?'—':e.avg_score;
       const scCls=e.avg_score==null?'':e.avg_score>=80?'g':e.avg_score>=60?'y':'r';
       const probl=e.rude_count+e.fraud_count;
+      const enrg=e.avg_energy==null?'—':e.avg_energy.toFixed(1);
+      const enrgClr=e.avg_energy==null?'var(--muted)':e.avg_energy>=4?'#10B981':e.avg_energy>=3?'#F59E0B':'#EF4444';
       return`<div class="shift-card">
         <div class="shift-header">
           <span class="shift-badge">👤 ${esc(e.name)}</span>
@@ -2530,6 +2532,7 @@ async function loadStaff(){
         </div>
         <div class="shift-stats">
           <div class="shift-stat"><div class="shift-stat-val">${e.total}</div><div class="shift-stat-lbl">Разговоров</div></div>
+          <div class="shift-stat"><div class="shift-stat-val" style="color:${enrgClr}">${enrg}</div><div class="shift-stat-lbl">Энергия</div></div>
           <div class="shift-stat"><div class="shift-stat-val" style="color:#10B981">${e.positive_tone}</div><div class="shift-stat-lbl">Позитивных</div></div>
           <div class="shift-stat"><div class="shift-stat-val" style="color:${e.negative_tone>0?'#F59E0B':'var(--muted)'}">${e.negative_tone}</div><div class="shift-stat-lbl">Негативных</div></div>
           <div class="shift-stat"><div class="shift-stat-val" style="color:${probl>0?'#EF4444':'#10B981'}">${probl}</div><div class="shift-stat-lbl">Нарушений</div></div>
