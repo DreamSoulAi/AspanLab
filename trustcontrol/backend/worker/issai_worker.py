@@ -34,6 +34,7 @@ import asyncio
 import io
 import logging
 import os
+import shutil
 import time
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -52,9 +53,115 @@ PORT          = int(os.getenv("ISSAI_PORT",    8010))
 NUM_WORKERS   = int(os.getenv("ISSAI_WORKERS", 1))
 API_KEY       = os.getenv("ISSAI_API_KEY", "")
 
+# Куда складывать сконвертированную CT2-модель (риск №1)
+CT2_CACHE_DIR = os.getenv("ISSAI_CT2_DIR", "/tmp/issai_ct2")
+# Минимум RAM (МБ) для безопасного старта (риск №2)
+MIN_RAM_MB    = int(os.getenv("ISSAI_MIN_RAM_MB", 3500))
+
 # Глобальные объекты модели
 _model        = None
 _model_lock   = asyncio.Lock()    # очередь: один запрос за раз (CPU-режим)
+
+
+# ════════════════════════════════════════════════════════════
+#  PREFLIGHT — проверки перед стартом (закрывают риски №2 и №7)
+# ════════════════════════════════════════════════════════════
+
+def _available_ram_mb() -> Optional[int]:
+    """Свободная RAM в МБ (Linux). None если определить не удалось."""
+    # 1) cgroup-лимит (Docker/Kubernetes ограничивают память контейнера)
+    for p in (
+        "/sys/fs/cgroup/memory.max",                       # cgroup v2
+        "/sys/fs/cgroup/memory/memory.limit_in_bytes",     # cgroup v1
+    ):
+        try:
+            with open(p) as fh:
+                val = fh.read().strip()
+            if val and val != "max":
+                limit = int(val) // (1024 * 1024)
+                if 0 < limit < 1_000_000:   # игнор «безлимита» (огромное число)
+                    return limit
+        except Exception:
+            pass
+    # 2) физическая память хоста
+    try:
+        with open("/proc/meminfo") as fh:
+            for line in fh:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) // 1024
+    except Exception:
+        pass
+    return None
+
+
+def _preflight():
+    """Проверяет окружение. Падает с понятной ошибкой, а не молча в рантайме."""
+    # Риск №7: ffmpeg обязателен для faster-whisper (декодирование аудио)
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError(
+            "❌ ffmpeg не найден в PATH. faster-whisper не сможет читать аудио.\n"
+            "   Установи: apt-get install -y ffmpeg  (или используй Dockerfile.issai)"
+        )
+    log.info("✅ ffmpeg найден")
+
+    # Риск №2: мало RAM → тихий OOM-kill. Лучше упасть сразу с объяснением.
+    ram = _available_ram_mb()
+    if ram is not None:
+        if ram < MIN_RAM_MB:
+            raise RuntimeError(
+                f"❌ Недостаточно RAM: доступно {ram}MB, нужно минимум {MIN_RAM_MB}MB.\n"
+                f"   whisper-large-v3-turbo (int8) ест ~2.5GB. Возьми VPS с 8GB RAM\n"
+                f"   или подними порог: ISSAI_MIN_RAM_MB=<меньше> (рискуешь OOM)."
+            )
+        log.info(f"✅ RAM: {ram}MB доступно (порог {MIN_RAM_MB}MB)")
+    else:
+        log.warning("⚠️  Не удалось определить объём RAM — пропускаю проверку")
+
+
+# ════════════════════════════════════════════════════════════
+#  ЗАГРУЗКА МОДЕЛИ (закрывает риск №1: авто-конвертация в CT2)
+# ════════════════════════════════════════════════════════════
+
+def _is_ct2_dir(path: str) -> bool:
+    """CT2-модель = локальная папка с файлом model.bin."""
+    return os.path.isdir(path) and os.path.exists(os.path.join(path, "model.bin"))
+
+
+def _convert_to_ct2(model_id: str) -> str:
+    """
+    Конвертирует transformers-чекпойнт в формат CTranslate2.
+    faster-whisper умеет грузить только CT2. Многие казахские модели на HF
+    выложены как обычные PyTorch-чекпойнты → конвертим один раз и кэшируем.
+    Возвращает путь к готовой CT2-папке.
+    """
+    safe_name = model_id.replace("/", "__")
+    out_dir   = os.path.join(CT2_CACHE_DIR, safe_name)
+
+    if _is_ct2_dir(out_dir):
+        log.info(f"CT2-модель уже в кэше: {out_dir}")
+        return out_dir
+
+    try:
+        from ctranslate2.converters import TransformersConverter
+    except ImportError:
+        raise RuntimeError(
+            "Модель не в формате CT2, а ctranslate2/transformers не установлены "
+            "для конвертации. Запусти: pip install -r requirements-issai.txt"
+        )
+
+    # Квантование при конвертации: для CPU int8, для GPU float16
+    quant = COMPUTE_TYPE if COMPUTE_TYPE in ("int8", "int8_float16", "float16", "float32") else "int8"
+
+    log.info(f"Конвертация {model_id} → CT2 ({quant}). Это разовая операция, ~1-3 мин...")
+    os.makedirs(CT2_CACHE_DIR, exist_ok=True)
+    t0 = time.time()
+    converter = TransformersConverter(
+        model_id,
+        copy_files=["tokenizer.json", "preprocessor_config.json"],
+    )
+    converter.convert(out_dir, quantization=quant, force=True)
+    log.info(f"Конвертация готова за {time.time()-t0:.1f}с → {out_dir}")
+    return out_dir
 
 
 def _load_model():
@@ -68,22 +175,43 @@ def _load_model():
             "Запусти: pip install -r requirements-issai.txt"
         )
 
-    log.info(f"Загрузка модели {MODEL_ID} (device={DEVICE}, compute={COMPUTE_TYPE})...")
-    t0 = time.time()
-    _model = WhisperModel(
-        MODEL_ID,
+    common = dict(
         device=DEVICE,
         compute_type=COMPUTE_TYPE,
-        download_root=os.getenv("ISSAI_CACHE_DIR", None),
-        # CPU: параллельно по 4 потока на модель (не мешает Lock)
         cpu_threads=int(os.getenv("ISSAI_THREADS", 4)),
         num_workers=1,
     )
-    log.info(f"Модель загружена за {time.time()-t0:.1f}с")
+
+    log.info(f"Загрузка модели {MODEL_ID} (device={DEVICE}, compute={COMPUTE_TYPE})...")
+    t0 = time.time()
+
+    # Если явно указали локальную CT2-папку — грузим напрямую.
+    if _is_ct2_dir(MODEL_ID):
+        _model = WhisperModel(MODEL_ID, **common)
+        log.info(f"Модель (CT2 локально) загружена за {time.time()-t0:.1f}с")
+        return
+
+    # Иначе: пробуем загрузить как есть (вдруг репозиторий уже в CT2-формате),
+    # при неудаче — конвертим из transformers и грузим из кэша.
+    try:
+        _model = WhisperModel(
+            MODEL_ID,
+            download_root=os.getenv("ISSAI_CACHE_DIR", None),
+            **common,
+        )
+        log.info(f"Модель загружена напрямую за {time.time()-t0:.1f}с")
+        return
+    except Exception as e:
+        log.warning(f"Прямая загрузка не удалась ({e}). Пробую конвертацию в CT2...")
+
+    ct2_dir = _convert_to_ct2(MODEL_ID)
+    _model = WhisperModel(ct2_dir, **common)
+    log.info(f"Модель (после конвертации) загружена за {time.time()-t0:.1f}с")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _preflight()
     _load_model()
     yield
     log.info("Воркер остановлен")

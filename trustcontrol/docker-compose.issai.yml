@@ -31,12 +31,14 @@ services:
     volumes:
       # Кэш модели — не скачивать при каждом рестарте
       - hf_cache:/root/.cache/huggingface
+      # Кэш сконвертированной CT2-модели — не конвертить при каждом рестарте
+      - ct2_cache:/root/.cache/issai_ct2
     deploy:
       resources:
         limits:
-          memory: 6G       # whisper-large-v3-turbo: ~2.5GB RAM; с запасом 6G
+          memory: 8G       # turbo (int8) ~2.5GB + конвертация/пики; бери VPS 8GB
         reservations:
-          memory: 3G
+          memory: 4G
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')"]
       interval: 30s
@@ -46,6 +48,7 @@ services:
 
 volumes:
   hf_cache:
+  ct2_cache:
 
 # ── Пример nginx для 2 воркеров (горизонтальное масштабирование) ──────
 # Добавить в nginx.conf:

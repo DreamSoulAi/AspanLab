@@ -28,9 +28,10 @@ RUN pip install --no-cache-dir -r requirements-issai.txt
 
 COPY backend/worker/issai_worker.py .
 
-# Кэш HuggingFace моделей
+# Кэш HuggingFace моделей + сконвертированных CT2 (не качать/не конвертить заново)
 ENV HF_HOME=/root/.cache/huggingface
-VOLUME ["/root/.cache/huggingface"]
+ENV ISSAI_CT2_DIR=/root/.cache/issai_ct2
+VOLUME ["/root/.cache/huggingface", "/root/.cache/issai_ct2"]
 
 ENV ISSAI_MODEL=abilmansplus/whisper-turbo-ksc2
 ENV ISSAI_DEVICE=cpu
