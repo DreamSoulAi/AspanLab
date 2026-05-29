@@ -139,3 +139,77 @@ async def dashboard(
         "week":         week_data,
         "alerts_today": alerts_count,
     }
+
+
+@router.get("/employees")
+async def employees_stats(
+    location_id: int = None,
+    days: int = 30,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Аналитика по сотрудникам за период (по умолчанию 30 дней).
+    Группирует разговоры по employee_name и считает качество каждого.
+    """
+    days = max(1, min(days, 365))
+    user_location_ids = await _get_user_location_ids(user.id, db)
+    if not user_location_ids:
+        return {"employees": [], "days": days}
+
+    if location_id:
+        if location_id not in user_location_ids:
+            raise HTTPException(status_code=403, detail="Нет доступа к этой точке")
+        filter_ids = [location_id]
+    else:
+        filter_ids = user_location_ids
+
+    since = datetime.utcnow() - timedelta(days=days)
+    result = await db.execute(
+        select(Report).where(
+            Report.location_id.in_(filter_ids),
+            Report.timestamp >= since,
+            Report.is_hidden == False,
+            Report.employee_name.isnot(None),
+        )
+    )
+    reports = result.scalars().all()
+
+    # Группируем по имени сотрудника
+    by_emp: dict[str, list] = {}
+    for r in reports:
+        by_emp.setdefault(r.employee_name, []).append(r)
+
+    employees = []
+    for name, rows in by_emp.items():
+        total = len(rows)
+        scored = [r.gpt_score for r in rows if r.gpt_score is not None]
+        avg_score = round(sum(scored) / len(scored)) if scored else None
+        sats = [r.customer_satisfaction for r in rows if r.customer_satisfaction]
+        avg_sat = round(sum(sats) / len(sats), 1) if sats else None
+
+        def cnt(flag):
+            return sum(1 for r in rows if getattr(r, flag))
+
+        def pct(flag):
+            return round(cnt(flag) / total * 100) if total else 0
+
+        employees.append({
+            "name":           name,
+            "total":          total,
+            "avg_score":      avg_score,
+            "avg_satisfaction": avg_sat,
+            "positive_tone":  sum(1 for r in rows if r.tone == "positive"),
+            "negative_tone":  sum(1 for r in rows if r.tone == "negative"),
+            "neutral_tone":   sum(1 for r in rows if r.tone == "neutral"),
+            "rude_count":     cnt("has_bad"),
+            "fraud_count":    cnt("has_fraud"),
+            "greetings_pct":  pct("has_greeting"),
+            "goodbye_pct":    pct("has_goodbye"),
+            "upsell_pct":     pct("has_bonus"),
+        })
+
+    # Сортируем: лучшие по среднему баллу сверху
+    employees.sort(key=lambda e: (e["avg_score"] is not None, e["avg_score"] or 0), reverse=True)
+
+    return {"employees": employees, "days": days}

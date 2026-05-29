@@ -1219,6 +1219,17 @@ textarea.f-input{resize:vertical;line-height:1.6}
         как подозрительные (вероятно кассир переводит деньги мимо кассы).
       </div>
     </div>
+    <hr class="modal-divider">
+    <div class="modal-sec-title">Сотрудники и смены</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">
+      Укажите кто работает на кассе — система определит по времени разговора, кто обслуживал клиента,
+      и покажет качество каждого отдельно на странице «Сотрудники».<br>
+      <b style="color:var(--dim)">Один кассир целый день?</b> Добавьте одного — всё запишется на него.<br>
+      <b style="color:var(--dim)">Есть день и ночь?</b> Добавьте двоих с временем смены (например 10–22 и 22–10).<br>
+      Время — по местному (Казахстан).
+    </div>
+    <div id="editLocEmployees"></div>
+    <button type="button" class="btn btn-ghost" style="width:100%;margin-top:4px" onclick="addEmployeeRow()">＋ Добавить сотрудника</button>
     <button class="f-btn" id="saveLocBtn" onclick="saveLocation()">Сохранить</button>
   </div>
 </div>
@@ -1533,6 +1544,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <select class="loc-select" id="staffDays" onchange="loadStaff()">
               <option value="7" selected>7 дней</option>
               <option value="30">30 дней</option>
+              <option value="90">90 дней</option>
             </select>
             <button class="btn btn-ghost" onclick="exportCSV()">⬇ Экспорт CSV</button>
             <button class="btn btn-a" onclick="loadStaff()">Обновить</button>
@@ -1540,8 +1552,9 @@ textarea.f-input{resize:vertical;line-height:1.6}
         </div>
         <div class="panel" style="margin-bottom:12px;background:rgba(59,130,246,.03);border-color:rgba(59,130,246,.15)">
           <p style="font-size:13px;color:var(--muted);line-height:1.6">
-            Данные разбиты по сменам на основе времени разговора.
-            <b style="color:var(--txt)">Смена 1</b> — утро (06–14), <b style="color:var(--txt)">Смена 2</b> — день (14–22), <b style="color:var(--txt)">Смена 3</b> — ночь (22–06).
+            <b style="color:var(--txt)">По именам</b> — добавьте сотрудников и их смены в настройках кассы (⚙ Настройки),
+            и тут появится качество каждого отдельно: тон, приветствия, нарушения.<br>
+            <b style="color:var(--txt)">По сменам</b> — автоматически по времени суток: утро (06–14), день (14–22), ночь (22–06).
           </p>
         </div>
         <div id="staffContent"></div>
@@ -2353,9 +2366,50 @@ async function openEditLoc(id){
   // Show manual block only if chat_id looks like a group (starts with -)
   const manualBlock=document.getElementById('locTgManualBlock');
   if(manualBlock)manualBlock.style.display=(d.telegram_chat&&d.telegram_chat.startsWith('-'))?'':'none';
+  renderEmployees(d.employees||[]);
   document.getElementById('editLocationModal').style.display='flex';
 }
 function closeEditLocation(){document.getElementById('editLocationModal').style.display='none';}
+
+// ── Сотрудники: строки редактора ──────────────────────────────
+const HOUR_OPTS=Array.from({length:24},(_,h)=>`<option value="${h}">${String(h).padStart(2,'0')}:00</option>`).join('');
+function renderEmployees(list){
+  const el=document.getElementById('editLocEmployees');if(!el)return;
+  el.innerHTML='';
+  (list&&list.length?list:[]).forEach(e=>addEmployeeRow(e));
+}
+function addEmployeeRow(e){
+  const el=document.getElementById('editLocEmployees');if(!el)return;
+  e=e||{};
+  const row=document.createElement('div');
+  row.className='emp-row';
+  row.style.cssText='display:flex;gap:8px;align-items:center;margin-bottom:8px';
+  const hasWindow=(e.start!=null&&e.end!=null);
+  row.innerHTML=`
+    <input class="f-input emp-name" type="text" placeholder="Имя кассира" value="${e.name?esc(e.name):''}" style="flex:2;margin:0">
+    <select class="modal-select emp-start" style="flex:1;margin:0">${HOUR_OPTS}</select>
+    <span style="color:var(--muted);font-size:12px">–</span>
+    <select class="modal-select emp-end" style="flex:1;margin:0">${HOUR_OPTS}</select>
+    <button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:0 6px;line-height:1">×</button>`;
+  el.appendChild(row);
+  if(hasWindow){
+    row.querySelector('.emp-start').value=e.start;
+    row.querySelector('.emp-end').value=e.end;
+  }else{
+    row.querySelector('.emp-start').value=10;
+    row.querySelector('.emp-end').value=22;
+  }
+}
+function collectEmployees(){
+  const rows=document.querySelectorAll('#editLocEmployees .emp-row');
+  const out=[];
+  rows.forEach(r=>{
+    const name=r.querySelector('.emp-name').value.trim();
+    if(!name)return;
+    out.push({name:name,start:parseInt(r.querySelector('.emp-start').value),end:parseInt(r.querySelector('.emp-end').value)});
+  });
+  return out;
+}
 
 async function saveLocation(){
   const id=val('editLocId');if(!id)return;
@@ -2376,6 +2430,8 @@ async function saveLocation(){
   const btn=document.getElementById('saveLocBtn');
   if(btn){btn.disabled=true;btn.textContent='Сохранение...';}
   const d=await apiFetch('/locations/'+id,{method:'PATCH',body:JSON.stringify(payload)});
+  // Сотрудники сохраняются отдельным endpoint
+  await apiFetch('/locations/'+id+'/employees',{method:'PUT',body:JSON.stringify({employees:collectEmployees()})});
   if(btn){btn.disabled=false;btn.textContent='Сохранить';}
   if(d){closeEditLocation();loadLocations();}
 }
@@ -2458,9 +2514,35 @@ async function loadStaff(){
   const days=document.getElementById('staffDays')?.value||'7';
   const el=document.getElementById('staffContent');if(!el)return;
   el.innerHTML='<p style="color:var(--muted);text-align:center;padding:48px">Загрузка...</p>';
+
+  // ── Аналитика по именам сотрудников (если заданы смены) ──
+  let empHtml='';
+  const emp=await apiFetch('/stats/employees?days='+days);
+  if(emp&&emp.employees&&emp.employees.length){
+    empHtml='<div class="modal-sec-title" style="margin:4px 0 12px">По сотрудникам</div>'+emp.employees.map(e=>{
+      const sc=e.avg_score==null?'—':e.avg_score;
+      const scCls=e.avg_score==null?'':e.avg_score>=80?'g':e.avg_score>=60?'y':'r';
+      const probl=e.rude_count+e.fraud_count;
+      return`<div class="shift-card">
+        <div class="shift-header">
+          <span class="shift-badge">👤 ${esc(e.name)}</span>
+          <span class="shift-score ${scCls}">${sc}</span>
+        </div>
+        <div class="shift-stats">
+          <div class="shift-stat"><div class="shift-stat-val">${e.total}</div><div class="shift-stat-lbl">Разговоров</div></div>
+          <div class="shift-stat"><div class="shift-stat-val" style="color:#10B981">${e.positive_tone}</div><div class="shift-stat-lbl">Позитивных</div></div>
+          <div class="shift-stat"><div class="shift-stat-val" style="color:${e.negative_tone>0?'#F59E0B':'var(--muted)'}">${e.negative_tone}</div><div class="shift-stat-lbl">Негативных</div></div>
+          <div class="shift-stat"><div class="shift-stat-val" style="color:${probl>0?'#EF4444':'#10B981'}">${probl}</div><div class="shift-stat-lbl">Нарушений</div></div>
+          <div class="shift-stat"><div class="shift-stat-val" style="color:${e.greetings_pct>=80?'#10B981':e.greetings_pct>=50?'#F59E0B':'#EF4444'}">${e.greetings_pct}%</div><div class="shift-stat-lbl">Приветствий</div></div>
+          <div class="shift-stat"><div class="shift-stat-val">${e.upsell_pct}%</div><div class="shift-stat-lbl">Допродаж</div></div>
+        </div>
+      </div>`;
+    }).join('')+'<div class="modal-sec-title" style="margin:22px 0 12px">По сменам (всё время суток)</div>';
+  }
+
   const d=await apiFetch('/reports/?days='+days+'&limit=500');
   if(!d||!d.length){
-    el.innerHTML='<div class="staff-empty">Нет данных за выбранный период.<br>Данные появятся после первых разговоров на кассе.</div>';
+    el.innerHTML=empHtml||'<div class="staff-empty">Нет данных за выбранный период.<br>Данные появятся после первых разговоров на кассе.<br><br>💡 Чтобы видеть качество по именам — добавьте сотрудников в настройках кассы.</div>';
     return;
   }
   const shifts=[
@@ -2473,7 +2555,7 @@ async function loadStaff(){
     const h=new Date(r.timestamp||r.created_at).getHours();
     groups[h>=6&&h<14?1:h>=14&&h<22?2:3].push(r);
   });
-  el.innerHTML=shifts.map(s=>{
+  el.innerHTML=empHtml+shifts.map(s=>{
     const rows=groups[s.n];
     if(!rows.length)return`<div class="shift-card"><div class="shift-header"><span class="shift-badge">${s.label}</span><span class="shift-time">${s.time}</span><span style="margin-left:auto;font-size:12px;color:var(--muted)">Нет разговоров</span></div></div>`;
     const total=rows.length;
@@ -2504,13 +2586,14 @@ async function exportCSV(){
   showErr('Подготовка экспорта...');
   const d=await apiFetch('/reports/?days='+days+'&limit=2000');
   if(!d||!d.length){showErr('Нет данных для экспорта');return;}
-  const rows=[['Дата','Время','Касса','Тон','Оценка','Приветствие','Допродажа','Нарушение','Мошенничество','Текст разговора']];
+  const rows=[['Дата','Время','Касса','Сотрудник','Тон','Оценка','Приветствие','Допродажа','Нарушение','Мошенничество','Текст разговора']];
   d.forEach(r=>{
     const dt=new Date(r.timestamp||r.created_at);
     rows.push([
       dt.toLocaleDateString('ru-KZ'),
       dt.toLocaleTimeString('ru-KZ',{hour:'2-digit',minute:'2-digit'}),
       r.location_name||r.location_id||'',
+      r.employee_name||'',
       ({positive:'Позитив',neutral:'Нейтральный',negative:'Негатив'})[r.tone]||r.tone||'',
       Math.round(r.score||0),
       r.has_greeting?'Да':'Нет',

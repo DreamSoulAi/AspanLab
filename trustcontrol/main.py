@@ -417,6 +417,7 @@ async def _fix_schema():
             ("track_upsell",            "BOOLEAN DEFAULT TRUE"),
             ("track_greeting",          "BOOLEAN DEFAULT TRUE"),
             ("track_goodbye",           "BOOLEAN DEFAULT TRUE"),
+            ("employees",               "JSONB DEFAULT '[]'::jsonb" if is_pg else "JSON"),
         ]
         for col_name, col_type in _loc_cols:
             await _run(
@@ -424,6 +425,13 @@ async def _fix_schema():
                 f"ALTER TABLE locations ADD COLUMN IF NOT EXISTS {col_name} {col_type}",
                 f"locations.{col_name} ensured",
             )
+
+        # ── reports.employee_name ───────────────────────────────────────────
+        await _run(
+            db,
+            "ALTER TABLE reports ADD COLUMN IF NOT EXISTS employee_name VARCHAR(100)",
+            "reports.employee_name ensured",
+        )
 
         # ── otp_codes.code → VARCHAR(64) ────────────────────────────────────
         if is_pg:
