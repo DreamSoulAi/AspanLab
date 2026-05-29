@@ -163,13 +163,30 @@ async def _process_submission(
     """
     try:
         # Собираем контекст бизнеса для GPT
+        # Чем точнее контекст — тем релевантнее оценка для конкретного бизнеса.
+        _type_hints = {
+            "hotel":    "Тип: Отель/гостиница. Тёплый гостеприимный тон — обязателен. Гость может говорить на любом языке — это норма.",
+            "beauty":   "Тип: Салон красоты. Персональный подход, спокойный внимательный тон.",
+            "fitness":  "Тип: Фитнес-клуб. Мотивирующий энергичный тон приветствуется.",
+            "coffee":   "Тип: Кофейня. Дружелюбный тон, лёгкий small talk — норма.",
+            "cafe":     "Тип: Кафе. Дружелюбный тон, уместен small talk.",
+            "fastfood": "Тип: Фастфуд. Быстрое обслуживание — краткие сделки нормальны.",
+            "gas":      "Тип: Заправка. Быстрые транзакции норма — клиент заплатил и ушёл за 10 секунд: это OK, не штрафовать.",
+            "shop":     "Тип: Магазин/ритейл. Клиент показал товар/чек/карту и сказал пару слов — нормальная покупка, не штрафовать.",
+        }
         business_context_parts = []
         if business_description:
             business_context_parts.append(f"О точке: {business_description}")
+        if business_type and business_type in _type_hints:
+            business_context_parts.append(_type_hints[business_type])
         if greeting_script:
-            business_context_parts.append(f"Скрипт приветствия: {greeting_script}")
+            business_context_parts.append(
+                f"ОБЯЗАТЕЛЬНО (штраф если кассир не сделал в полном диалоге): {greeting_script}"
+            )
         if upsell_script:
-            business_context_parts.append(f"Что предлагать: {upsell_script}")
+            business_context_parts.append(
+                f"ЖЕЛАТЕЛЬНО — даёт +бонус к оценке, НЕ штраф если пропустил: {upsell_script}"
+            )
         business_context = "\n".join(business_context_parts) or None
 
         result = await analyze_audio_with_fallback(

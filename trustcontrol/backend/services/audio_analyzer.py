@@ -352,7 +352,7 @@ async def analyze_audio_with_fallback(
     """
     # ── Режим 1: уже есть транскрипт (local-whisper на кассе) ───
     if transcript_text and transcript_text.strip():
-        gpt = await gpt_analyze(transcript_text)
+        gpt = await gpt_analyze(transcript_text, business_context=business_context)
         if not gpt:
             return {}
         if gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk"):
@@ -427,7 +427,7 @@ async def analyze_audio_with_fallback(
     # Анализируем по точному казахскому тексту (тон — по словам, без голоса).
     if yx_text:
         log.info("Аудио-модель без результата — анализ по тексту Yandex")
-        gpt = await gpt_analyze(yx_text)
+        gpt = await gpt_analyze(yx_text, business_context=business_context)
         if gpt:
             if gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk"):
                 return {
@@ -449,7 +449,7 @@ async def analyze_audio_with_fallback(
         log.info("Whisper не распознал речь — пропуск")
         return {}
 
-    gpt = await gpt_analyze(text)
+    gpt = await gpt_analyze(text, business_context=business_context)
     if not gpt:
         return {}
 
