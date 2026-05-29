@@ -28,8 +28,13 @@ class Report(Base):
     # Тон
     tone            = Column(String(20), default="neutral")
     tone_score      = Column(Float, default=0.5)
+    energy_level    = Column(Integer, nullable=True)  # 1-5: вовлечённость кассира
 
-    # GPT-4o-mini-audio анализ
+    # Финальный балл — единый прозрачный движок (calculate_score).
+    # Источник истины для дашборда, аналитики и тревог.
+    score           = Column(Integer, nullable=True)
+
+    # GPT-4o-mini-audio анализ (сырые сигналы, для справки)
     gpt_score       = Column(Integer, nullable=True)
     gpt_summary     = Column(Text,    nullable=True)
     gpt_details     = Column(JSON,    nullable=True)

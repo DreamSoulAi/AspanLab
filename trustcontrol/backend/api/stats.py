@@ -81,15 +81,14 @@ async def dashboard(
     def pct(lst, flag):
         return round(sum(1 for r in lst if getattr(r, flag)) / len(lst) * 100) if lst else 0
 
-    # ── Оценка за день ───────────────────────────────────────
-    score = (
-        pct(qualified_reports, "has_greeting") * 0.25 +
-        pct(qualified_reports, "has_thanks")   * 0.20 +
-        pct(qualified_reports, "has_goodbye")  * 0.15 +
-        pct(qualified_reports, "has_bonus")    * 0.25 +
-        (sum(1 for r in qualified_reports if r.tone == "positive") / qualified * 100 * 0.15 if qualified else 0) -
-        sum(1 for r in qualified_reports if r.has_bad or r.has_fraud) * 10
-    )
+    def _report_score(r):
+        # Единый источник истины: финальный балл движка.
+        # Старые отчёты (до движка) — fallback на gpt_score.
+        return r.score if r.score is not None else r.gpt_score
+
+    # ── Оценка за день — среднее по единому движку ───────────
+    _day_scores = [s for r in qualified_reports if (s := _report_score(r)) is not None]
+    score = sum(_day_scores) / len(_day_scores) if _day_scores else 0
 
     # ── Тревоги за сегодня ───────────────────────────────────
     alerts_result = await db.execute(
@@ -183,10 +182,14 @@ async def employees_stats(
     employees = []
     for name, rows in by_emp.items():
         total = len(rows)
-        scored = [r.gpt_score for r in rows if r.gpt_score is not None]
+        # Единый источник истины: финальный балл движка (fallback gpt_score для старых).
+        scored = [(r.score if r.score is not None else r.gpt_score) for r in rows
+                  if (r.score if r.score is not None else r.gpt_score) is not None]
         avg_score = round(sum(scored) / len(scored)) if scored else None
         sats = [r.customer_satisfaction for r in rows if r.customer_satisfaction]
         avg_sat = round(sum(sats) / len(sats), 1) if sats else None
+        energies = [r.energy_level for r in rows if r.energy_level is not None]
+        avg_energy = round(sum(energies) / len(energies), 1) if energies else None
 
         def cnt(flag):
             return sum(1 for r in rows if getattr(r, flag))
@@ -199,6 +202,7 @@ async def employees_stats(
             "total":          total,
             "avg_score":      avg_score,
             "avg_satisfaction": avg_sat,
+            "avg_energy":     avg_energy,
             "positive_tone":  sum(1 for r in rows if r.tone == "positive"),
             "negative_tone":  sum(1 for r in rows if r.tone == "negative"),
             "neutral_tone":   sum(1 for r in rows if r.tone == "neutral"),

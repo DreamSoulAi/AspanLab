@@ -18,7 +18,8 @@ from backend.models.user import User
 
 router = APIRouter()
 
-VALID_BUSINESS_TYPES = {"coffee", "gas", "fastfood", "cafe", "beauty", "shop", "fitness", "hotel"}
+VALID_BUSINESS_TYPES = {"coffee", "gas", "fastfood", "cafe", "beauty", "shop", "fitness", "hotel",
+                        "pharmacy", "clinic", "auto", "service", "other"}
 VALID_LANGUAGES      = {"ru", "kk", "mixed"}
 
 

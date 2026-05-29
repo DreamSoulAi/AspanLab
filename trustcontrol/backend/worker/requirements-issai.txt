@@ -1,0 +1,20 @@
+# ════════════════════════════════════════════════════════════
+#  ISSAI STT Воркер — зависимости
+#  Установка: pip install -r requirements-issai.txt
+# ════════════════════════════════════════════════════════════
+
+# Inference
+faster-whisper>=1.0.3
+
+# Авто-конвертация модели в CT2 (если на HF лежит обычный transformers-чекпойнт)
+ctranslate2>=4.0.0
+transformers>=4.40.0
+torch>=2.0.0          # нужен transformers для загрузки весов перед конвертацией
+
+# API-сервер
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+
+# Для GPU (раскомментируй нужную CUDA-версию и убери строку выше):
+# torch==2.3.0+cu121 --extra-index-url https://download.pytorch.org/whl/cu121

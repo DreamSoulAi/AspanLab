@@ -68,6 +68,24 @@ class Settings:
     WHISPER_MODEL:    str = "whisper-1"
     WHISPER_LANGUAGE: str = os.getenv("WHISPER_LANGUAGE", "ru")
 
+    # ── ISSAI STT — self-hosted faster-whisper (whisper-turbo-ksc2) ────
+    # Лучшая открытая модель для казахского (9.16% WER, KSC2 + code-switching).
+    # Запустить воркер: docker-compose -f docker-compose.issai.yml up -d
+    # Затем указать URL здесь. Если пусто — пропускается.
+    ISSAI_WORKER_URL: str = os.getenv("ISSAI_WORKER_URL", "")
+    # API-ключ воркера (совпадает с ISSAI_API_KEY на воркере)
+    ISSAI_WORKER_KEY: str = os.getenv("ISSAI_WORKER_KEY", "")
+
+    # ── Yandex SpeechKit STT (точное распознавание казахского) ─
+    # Если оба значения заданы — включается гибрид: точные казахские
+    # слова от Yandex + тон голоса от аудио-модели OpenAI.
+    # Получить: Yandex Cloud → сервисный аккаунт → API-ключ + folder id.
+    YANDEX_STT_API_KEY:   str = os.getenv("YANDEX_STT_API_KEY", "")
+    YANDEX_STT_FOLDER_ID: str = os.getenv("YANDEX_STT_FOLDER_ID", "")
+    # Язык распознавания. По умолчанию kk-KZ — модель обучена на казахском
+    # и нормально тянет шала-казахский (казахский + русские слова).
+    YANDEX_STT_LANG:      str = os.getenv("YANDEX_STT_LANG", "kk-KZ")
+
     # ── S3 / Supabase Storage (архив приоритетных записей) ───
     S3_BUCKET:             str = os.getenv("S3_BUCKET", "")
     S3_REGION:             str = os.getenv("S3_REGION", "us-east-1")

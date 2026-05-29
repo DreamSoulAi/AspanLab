@@ -426,12 +426,18 @@ async def _fix_schema():
                 f"locations.{col_name} ensured",
             )
 
-        # ── reports.employee_name ───────────────────────────────────────────
-        await _run(
-            db,
-            "ALTER TABLE reports ADD COLUMN IF NOT EXISTS employee_name VARCHAR(100)",
-            "reports.employee_name ensured",
-        )
+        # ── reports columns ────────────────────────────────────────────────
+        _rep_cols = [
+            ("employee_name", "VARCHAR(100)"),
+            ("energy_level",  "INTEGER"),
+            ("score",         "INTEGER"),
+        ]
+        for _col, _typ in _rep_cols:
+            await _run(
+                db,
+                f"ALTER TABLE reports ADD COLUMN IF NOT EXISTS {_col} {_typ}",
+                f"reports.{_col} ensured",
+            )
 
         # ── otp_codes.code → VARCHAR(64) ────────────────────────────────────
         if is_pg:

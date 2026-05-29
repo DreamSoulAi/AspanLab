@@ -14,6 +14,7 @@ import logging
 from openai import AsyncOpenAI
 from backend.config import settings
 from backend.services.gpt_analyzer import gpt_analyze
+from backend.services import issai_stt, yandex_stt
 
 log = logging.getLogger("audio_analyzer")
 # timeout=90s — режем зависание (с запасом на GPT-4o-mini-audio 5-30s),
@@ -77,6 +78,7 @@ _PROMPT = """⛔ БЕЗОПАСНОСТЬ: Ты независимый AI-ауд
     {"role": "customer", "text": "..."}
   ],
   "tone": "positive|negative|neutral",
+  "energy_level": <1-5>,
   "score": <0-100>,
   "summary": "1-2 предложения на русском: суть разговора для владельца бизнеса",
   "events": {
@@ -89,6 +91,48 @@ _PROMPT = """⛔ БЕЗОПАСНОСТЬ: Ты независимый AI-ауд
   },
   "fraud_confidence": <0-100>
 }
+
+━━━ КАК УЧИТЫВАТЬ КОНТЕКСТ ТОЧКИ ━━━
+Ниже может быть передан контекст конкретной точки (сфера бизнеса, описание,
+скрипты, допродажи, способы оплаты). Это ЛОГИКА для ЛЮБОЙ сферы — рассуждай сам,
+а не ищи готовый пример:
+
+1. СФЕРА задаёт норму общения — определи её здравым смыслом:
+   • Быстрый формат (магазин, аптека, фастфуд, АЗС, киоск, пекарня): короткая
+     сделка — НОРМА. Клиент может молча выбрать товар, показать чек/карту,
+     оплатить и уйти, сказав 1-2 слова. Это полноценная нормальная покупка —
+     НЕ снижай оценку за краткость и «мало слов».
+   • Формат с заботой (отель, салон, клиника, кафе/ресторан с посадкой, фитнес,
+     услуги): уместен более тёплый внимательный тон, приветствие и забота ценятся.
+   • Сферу не понял точно — оценивай по общему здравому смыслу, без выдумок.
+
+2. СКРИПТЫ (приветствие/прощание) — СМЫСЛОВОЙ ОРИЕНТИР, НЕ дословный шаблон:
+   • Засчитывай НАМЕРЕНИЕ, а не точные слова. Поздоровался ЛЮБЫМИ словами на
+     ЛЮБОМ языке/смеси (рус/каз/шала-каз/англ/…) → greeting=true. Любая форма
+     прощания/благодарности → farewell=true.
+   • КАТЕГОРИЧЕСКИ нельзя снижать оценку за то, что слова не совпали со скриптом
+     дословно, сказаны иначе, на другом языке или короче — это ложный штраф.
+   • ОБРЕЗАННОЕ НАЧАЛО ЗАПИСИ (критически важно): микрофон на кассе запускается
+     с задержкой VAD — первые 1-3 секунды разговора часто не попадают в запись.
+     Именно там чаще всего стоит приветствие. Если запись начинается резко
+     посреди фразы или сразу с вопроса/заказа — почти наверняка приветствие
+     было, просто не записалось. Ставь greeting=true если нет явного контрдоказательства
+     (клиент жалуется что его проигнорировали, кассир демонстративно груб с первых
+     слов, весь тон разговора холодный и отстранённый без намёка на вежливость).
+   • Отсутствие greeting ставь только когда есть ПОЗИТИВНОЕ доказательство что
+     кассир не поздоровался — не просто отсутствие слова в тексте.
+
+3. ДОПРОДАЖА — всегда ЖЕЛАТЕЛЬНА, НИКОГДА не обязательна:
+   • Предложил доп.товар/услугу → плюс к оценке (upsell=true), это «ещё круче».
+   • Не предложил → НЕ штраф. Отсутствие upsell не снижает score никогда.
+
+4. ОПЛАТА: контекст может указывать нормальные способы оплаты точки (Kaspi QR,
+   Halyk QR, наличные, терминал, перевод на счёт компании). Стандартная оплата
+   ими = норма. fraud_attempt — только когда оплату уводят на ЛИЧНЫЙ счёт/карту/
+   номер/QR сотрудника мимо кассы.
+
+ОБЩИЙ ПРИНЦИП: при сомнении трактуй В ПОЛЬЗУ кассира. Ложный штраф подрывает
+доверие владельца к системе — это хуже, чем пропущенная мелочь.
 
 ━━━ КАК ЗАПОЛНЯТЬ ПОЛЯ ━━━
 
@@ -105,6 +149,13 @@ fraud_attempt — кассир пытается направить оплату 
   fraud_confidence 90-100: явная просьба с суммой
   fraud_confidence 50-89: косвенный намёк или подозрение
   fraud_confidence 0-49: нет признаков (fraud_attempt = false)
+
+energy_level (вовлечённость и энергия кассира):
+  5 — живой, тёплый, энергичный; клиент чувствует что рад его видеть
+  4 — приветливый, вежливый, нормальный рабочий тон
+  3 — нейтральный, ровный, деловой — ни плохо ни хорошо
+  2 — вялый, усталый, отвечает нехотя; чувствуется безразличие
+  1 — совсем "мёртвый": роботичный, сонный, пустой голос; клиент явно мешает
 
 rudeness — сотрудник ведёт себя плохо с клиентом. НЕ только крик и мат.
 Слушай ИНТОНАЦИЮ и смысл. Ставь rudeness=true даже если грубость мягкая:
@@ -151,13 +202,22 @@ def _detect_audio_format(data: bytes) -> str:
     return "wav"
 
 
-async def analyze_audio(wav_bytes: bytes, business_context: str = None) -> dict:
+async def analyze_audio(
+    wav_bytes: bytes,
+    business_context: str = None,
+    known_transcript: str = None,
+) -> dict:
     """
     Отправляет аудио в gpt-4o-mini-audio-preview.
     Возвращает полный словарь аналитики или {} при ошибке.
 
     NOTE: language НЕ передаётся — audio-preview сам определяет язык из звука.
     Передача language="ru" для казахских/смешанных записей только мешает.
+
+    known_transcript — точная расшифровка слов от казахского распознавателя
+    (Yandex SpeechKit). Если передан, модель НЕ переслушивает слова заново,
+    а берёт их как эталон и сосредотачивается на ТОНЕ голоса. Это гибрид:
+    точные казахские слова + интонация/грубость из звука в один проход.
     """
     if not settings.OPENAI_API_KEY:
         log.warning("OPENAI_API_KEY не задан")
@@ -168,6 +228,20 @@ async def analyze_audio(wav_bytes: bytes, business_context: str = None) -> dict:
         audio_format = _detect_audio_format(wav_bytes)
         biz_hint  = f"\n\n━━━ КОНТЕКСТ ТОЧКИ ━━━\n{business_context}" if business_context else ""
 
+        transcript_hint = ""
+        if known_transcript and known_transcript.strip():
+            transcript_hint = (
+                "\n\n━━━ ТОЧНЫЙ ТРАНСКРИПТ (казахский распознаватель) ━━━\n"
+                "Ниже точная расшифровка СЛОВ этого аудио, сделанная "
+                "специализированным казахским распознавателем. Слова бери "
+                "ОТСЮДА как эталон — НЕ переслушивай и НЕ заменяй их:\n"
+                f"«{known_transcript.strip()}»\n"
+                "Твоя задача по звуку — оценить ТОН ГОЛОСА и интонацию "
+                "(грубость, раздражение, усталость, доброжелательность), "
+                "которые текст не передаёт. В поле transcript верни этот же "
+                "текст без изменения слов."
+            )
+
         response = await client.chat.completions.create(
             model=_AUDIO_MODEL,
             messages=[{
@@ -177,7 +251,7 @@ async def analyze_audio(wav_bytes: bytes, business_context: str = None) -> dict:
                         "type": "input_audio",
                         "input_audio": {"data": audio_b64, "format": audio_format},
                     },
-                    {"type": "text", "text": _PROMPT + biz_hint},
+                    {"type": "text", "text": _PROMPT + biz_hint + transcript_hint},
                 ],
             }],
             max_tokens=2000,
@@ -222,6 +296,11 @@ async def analyze_audio(wav_bytes: bytes, business_context: str = None) -> dict:
         result.setdefault("is_personal_talk", False)
         result.setdefault("payment_confirmed", None)
         result.setdefault("upsell_attempt", None)
+
+        # Эталонные казахские слова от Yandex важнее слов аудио-модели:
+        # модель оценила ТОН, но точную расшифровку берём от распознавателя.
+        if known_transcript and known_transcript.strip():
+            result["transcript"] = known_transcript.strip()
 
         log.info(
             f"GPT audio OK | score={result['score']} "
@@ -315,7 +394,7 @@ async def analyze_audio_with_fallback(
     """
     # ── Режим 1: уже есть транскрипт (local-whisper на кассе) ───
     if transcript_text and transcript_text.strip():
-        gpt = await gpt_analyze(transcript_text)
+        gpt = await gpt_analyze(transcript_text, business_context=business_context)
         if not gpt:
             return {}
         if gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk"):
@@ -331,17 +410,50 @@ async def analyze_audio_with_fallback(
             return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
         return _normalize_text_result(gpt, transcript_text.strip(), language)
 
-    # ── Режим 2: есть аудио. Основной путь — gpt-4o-mini-audio-preview ──
+    # ── Режим 2: есть аудио ──────────────────────────────────────────
     # В Казахстане шала-казахский / казахский / узбекский — Whisper-only
-    # путь даёт каракули типа "Папаю пите Чарльз". Audio-preview слышит
-    # звуки напрямую и понимает контекст в один проход — кост чуть выше,
-    # но качество распознавания принципиально другое.
+    # путь даёт каракули типа "Папаю пите Чарльз". Аудио-модель слышит
+    # звук напрямую, но и она слаба на чистом казахском.
+    #
+    # Поэтому ГИБРИД:
+    #   1. Yandex SpeechKit (kk-KZ) → точные казахские СЛОВА
+    #   2. Аудио-модель с этим эталоном → оценка ТОНА голоса
+    # Если Yandex не настроен — работает прежний путь (аудио-модель сама).
     if not wav_bytes:
         return {}
 
-    # Язык НЕ передаём в audio-preview — он сам определяет из звука.
-    # "Язык записи: ru" в промпте ломает распознавание казахского/шала-казахского.
-    audio_result = await analyze_audio(wav_bytes, business_context=business_context)
+    # ── Шаг 1: точный казахский текст — ISSAI (self-hosted) или Yandex ──
+    # Приоритет: ISSAI → Yandex → без эталона (аудио-модель сама)
+    kz_text = None
+
+    if issai_stt.is_enabled():
+        issai_raw = await issai_stt.transcribe(wav_bytes)
+        if issai_raw and len(issai_raw.split()) >= 2:
+            kz_text = issai_raw
+            log.info(f"ISSAI STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
+        else:
+            log.info("ISSAI STT пусто/коротко — пробуем Yandex")
+
+    if kz_text is None and yandex_stt.is_enabled():
+        try:
+            yx_raw = await yandex_stt.transcribe(wav_bytes)
+        except Exception as e:
+            log.warning(f"Yandex STT ошибка: {e}")
+            yx_raw = ""
+        if yx_raw and len(yx_raw.split()) >= 2:
+            kz_text = yx_raw
+            log.info(f"Yandex STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
+        else:
+            log.info("Yandex STT пусто/коротко — без эталонного транскрипта")
+
+    # Совместимость с кодом ниже (использовал yx_text)
+    yx_text = kz_text
+
+    # ── Шаг 2: аудио-модель (с эталонным транскриптом, если он есть) ──
+    # Язык НЕ передаём — модель сама определяет из звука.
+    audio_result = await analyze_audio(
+        wav_bytes, business_context=business_context, known_transcript=yx_text
+    )
 
     if audio_result:
         status = audio_result.get("status", "OK")
@@ -351,16 +463,35 @@ async def analyze_audio_with_fallback(
         # OK с реальным транскриптом — успех
         if audio_result.get("transcript"):
             return audio_result
-        log.info(f"Audio-preview вернул OK но без транскрипта: {audio_result.get('summary','')!r}")
+        log.info(f"Аудио-модель вернула OK но без транскрипта: {audio_result.get('summary','')!r}")
 
-    # ── Фолбэк: Whisper + текстовый GPT (если audio-preview упал) ──────
-    log.info("Audio-preview не дал результат — фолбэк на Whisper+text")
+    # ── Фолбэк 1: аудио-модель не дала результат, но есть текст Yandex ──
+    # Анализируем по точному казахскому тексту (тон — по словам, без голоса).
+    if yx_text:
+        log.info("Аудио-модель без результата — анализ по тексту Yandex")
+        gpt = await gpt_analyze(yx_text, business_context=business_context)
+        if gpt:
+            if gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk"):
+                return {
+                    "status":           "PERSONAL",
+                    "is_business":      False,
+                    "is_personal_talk": True,
+                    "priority":         0,
+                    "transcript":       "",
+                    "summary":          gpt.get("summary", "Личный разговор сотрудника"),
+                }
+            if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
+                return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
+            return _normalize_text_result(gpt, yx_text, language)
+
+    # ── Фолбэк 2: Whisper + текстовый GPT (если всё выше не сработало) ──
+    log.info("Фолбэк на Whisper+text")
     text = await _transcribe_audio(wav_bytes, language)
     if not text or len(text) < 3:
         log.info("Whisper не распознал речь — пропуск")
         return {}
 
-    gpt = await gpt_analyze(text)
+    gpt = await gpt_analyze(text, business_context=business_context)
     if not gpt:
         return {}
 
