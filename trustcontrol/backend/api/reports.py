@@ -36,6 +36,7 @@ from backend.services.pos_matcher import match_report_with_pos
 from backend.services.kaspi_detector import check_kaspi_fraud
 from backend.services.evidence import create_evidence_clip
 from backend.services.context_analyzer import analyze_context, check_pos_window
+from backend.services.employee_matcher import match_employee
 from backend.models.incident import Incident
 from backend.services import notifier
 from backend.services.subscription import get_status as get_sub_status
@@ -155,6 +156,7 @@ async def _process_submission(
     track_upsell: bool = True,
     track_greeting: bool = True,
     track_goodbye: bool = True,
+    employees: Optional[list] = None,
 ) -> None:
     """
     Полный цикл обработки одного аудио-сегмента.
@@ -329,14 +331,19 @@ async def _process_submission(
                 f"(ignore_internal_profanity=True). Записано в БД тихо."
             )
 
-        hour = datetime.utcnow().hour
+        now_utc = datetime.utcnow()
+        hour = now_utc.hour
         shift_number = 1 if 6 <= hour < 14 else 2 if 14 <= hour < 22 else 3
+
+        # Кто был на кассе в это время (по сменам сотрудников)
+        employee_name = match_employee(employees, now_utc)
 
         # ── Сохраняем в БД ────────────────────────────────────────
         async with AsyncSessionLocal() as db:
             report = Report(
                 location_id=location_id,
                 transcript=transcript,
+                employee_name=employee_name,
                 audio_size_kb=audio_size_kb,
                 found_categories=found,
                 has_greeting=has_greeting, has_thanks=has_thanks,
@@ -687,6 +694,7 @@ async def submit_audio(
         track_upsell=bool(getattr(location, 'track_upsell', True)),
         track_greeting=bool(getattr(location, 'track_greeting', True)),
         track_goodbye=bool(getattr(location, 'track_goodbye', True)),
+        employees=getattr(location, 'employees', None) or [],
     )
 
     return {"status": "ok", "message": "Обработано"}
@@ -754,6 +762,7 @@ async def get_reports(
             "tone":                  r.tone,
             "gpt_score":             r.gpt_score,
             "score":                 r.gpt_score,
+            "employee_name":         r.employee_name,
             "gpt_summary":           r.gpt_summary,
             "has_greeting":          r.has_greeting,
             "has_thanks":            r.has_thanks,

@@ -87,6 +87,23 @@ class LocationUpdate(BaseModel):
         return v
 
 
+class EmployeeSlot(BaseModel):
+    name:  str = Field(..., min_length=1, max_length=100)
+    start: Optional[int] = Field(None, ge=0, le=23)   # час начала смены (местное время)
+    end:   Optional[int] = Field(None, ge=0, le=23)   # час конца смены
+
+
+class EmployeesSettings(BaseModel):
+    employees: list[EmployeeSlot] = Field(default_factory=list)
+
+    @field_validator("employees")
+    @classmethod
+    def validate_employees(cls, v):
+        if len(v) > 20:
+            raise ValueError("Максимум 20 сотрудников на точку")
+        return v
+
+
 class AntifraudSettings(BaseModel):
     allowed_phones:   Optional[list[str]] = None
     required_upsells: Optional[list[str]] = None
@@ -137,6 +154,7 @@ async def list_locations(
             "last_seen":     loc.last_seen.isoformat() if loc.last_seen else None,
             "allowed_phones":            loc.allowed_phones or [],
             "required_upsells":          loc.required_upsells or [],
+            "employees":                 getattr(loc, "employees", None) or [],
             "ignore_internal_profanity": bool(loc.ignore_internal_profanity),
             "ignore_background_media":   bool(getattr(loc, "ignore_background_media", True)),
             "notify_ok_conversations":   bool(getattr(loc, "notify_ok_conversations", False)),
@@ -171,6 +189,7 @@ async def get_location(
         "api_key":       loc.api_key,
         "telegram_chat": loc.telegram_chat,
         "allowed_phones":            loc.allowed_phones or [],
+        "employees":                 getattr(loc, "employees", None) or [],
         "ignore_internal_profanity": bool(loc.ignore_internal_profanity),
         "ignore_background_media":   bool(getattr(loc, "ignore_background_media", True)),
         "notify_ok_conversations":   bool(getattr(loc, "notify_ok_conversations", False)),
@@ -269,6 +288,22 @@ async def update_location(
 
     await db.commit()
     return {"message": "Точка обновлена", "id": loc.id}
+
+
+@router.put("/{location_id}/employees")
+async def update_employees(
+    location_id: int,
+    data: EmployeesSettings,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    loc = await db.get(Location, location_id)
+    if not loc or loc.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Точка не найдена")
+
+    loc.employees = [e.model_dump() for e in data.employees]
+    await db.commit()
+    return {"message": "Сотрудники обновлены", "employees": loc.employees}
 
 
 @router.put("/{location_id}/antifraud")

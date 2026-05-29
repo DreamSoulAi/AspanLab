@@ -39,6 +39,7 @@ class Report(Base):
 
     # Смена
     shift_number    = Column(Integer)
+    employee_name   = Column(String(100), nullable=True, index=True)  # кто был на кассе (по времени смены)
 
     # Приоритет и архив
     is_priority     = Column(Boolean, default=False, index=True)
