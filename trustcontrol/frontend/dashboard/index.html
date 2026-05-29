@@ -2209,7 +2209,7 @@ async function saveSettings(advance){
 let _payMethods=new Set();
 const _payLabels={kaspi_qr:'Kaspi QR',halyk_qr:'Halyk QR',bck_qr:'БЦК QR',freedom:'Freedom Pay',kaspi_transfer:'Kaspi перевод',card:'Картой',cash:'Наличные'};
 let _greetLang=new Set();
-const _langLabels={kk:'казахский',shala:'шала-казахский',ru:'русский',mix:'смешанный'};
+const _langLabels={kk:'казахский',shala:'шала-казахский (казахско-русский микс, код-свитчинг)',ru:'русский',mix:'смешанный (несколько языков в одном разговоре)'};
 
 function togglePay(el,key){
   if(_payMethods.has(key)){_payMethods.delete(key);el.classList.remove('on');}
