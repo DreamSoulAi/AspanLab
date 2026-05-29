@@ -1688,9 +1688,11 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <div class="pay-chips">
               <div class="pay-chip" id="pay-kaspi_qr" onclick="togglePay(this,'kaspi_qr')">Kaspi QR</div>
               <div class="pay-chip" id="pay-halyk_qr" onclick="togglePay(this,'halyk_qr')">Halyk QR</div>
+              <div class="pay-chip" id="pay-bck_qr" onclick="togglePay(this,'bck_qr')">БЦК QR</div>
+              <div class="pay-chip" id="pay-freedom" onclick="togglePay(this,'freedom')">Freedom Pay</div>
               <div class="pay-chip" id="pay-kaspi_transfer" onclick="togglePay(this,'kaspi_transfer')">Kaspi перевод</div>
+              <div class="pay-chip" id="pay-card" onclick="togglePay(this,'card')">Картой</div>
               <div class="pay-chip" id="pay-cash" onclick="togglePay(this,'cash')">Наличные</div>
-              <div class="pay-chip" id="pay-terminal" onclick="togglePay(this,'terminal')">Терминал</div>
             </div>
             <div style="font-size:11px;color:var(--muted);margin-top:6px">ИИ будет фиксировать факт оплаты в каждом разговоре</div>
           </div>
@@ -1717,8 +1719,15 @@ textarea.f-input{resize:vertical;line-height:1.6}
           </div>
 
           <div class="f-group" style="margin-bottom:4px">
-            <label class="f-label">Скрипт приветствия / прощания</label>
-            <textarea class="f-input" id="bizGreeting" rows="2" placeholder="Например: «Добро пожаловать, что будете?» и «Спасибо, ждём вас снова»"></textarea>
+            <label class="f-label">На каком языке говорят кассиры</label>
+            <div class="pay-chips" style="margin-bottom:8px">
+              <div class="pay-chip" id="lang-kk" onclick="toggleLang(this,'kk')">Казахский</div>
+              <div class="pay-chip" id="lang-shala" onclick="toggleLang(this,'shala')">Шала-казахский</div>
+              <div class="pay-chip" id="lang-ru" onclick="toggleLang(this,'ru')">Русский</div>
+              <div class="pay-chip" id="lang-mix" onclick="toggleLang(this,'mix')">Смешанный</div>
+            </div>
+            <textarea class="f-input" id="bizGreeting" rows="2" placeholder="Конкретные фразы — необязательно. Например: «Рахмет, сау болыңыз» или «Спасибо, ждём вас снова»"></textarea>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Если нет конкретного скрипта — просто выберите язык или оставьте пустым</div>
           </div>
 
           <div style="padding:10px 12px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.15);border-radius:10px;font-size:12px;color:var(--muted);line-height:1.6;margin-top:2px;margin-bottom:2px">
@@ -2198,11 +2207,18 @@ async function saveSettings(advance){
 
 /* ── BUSINESS STEP ── */
 let _payMethods=new Set();
-const _payLabels={kaspi_qr:'Kaspi QR',halyk_qr:'Halyk QR',kaspi_transfer:'Kaspi перевод',cash:'Наличные',terminal:'Терминал'};
+const _payLabels={kaspi_qr:'Kaspi QR',halyk_qr:'Halyk QR',bck_qr:'БЦК QR',freedom:'Freedom Pay',kaspi_transfer:'Kaspi перевод',card:'Картой',cash:'Наличные'};
+let _greetLang=new Set();
+const _langLabels={kk:'казахский',shala:'шала-казахский',ru:'русский',mix:'смешанный'};
 
 function togglePay(el,key){
   if(_payMethods.has(key)){_payMethods.delete(key);el.classList.remove('on');}
   else{_payMethods.add(key);el.classList.add('on');}
+}
+
+function toggleLang(el,key){
+  if(_greetLang.has(key)){_greetLang.delete(key);el.classList.remove('on');}
+  else{_greetLang.add(key);el.classList.add('on');}
 }
 
 function toggleBonusCard(cb){
@@ -2214,15 +2230,18 @@ function toggleBonusCard(cb){
 }
 
 async function loadBizStep(){
-  // Reset chips
+  // Reset pay chips
   _payMethods=new Set();
   Object.keys(_payLabels).forEach(k=>{const c=document.getElementById('pay-'+k);if(c)c.classList.remove('on');});
+  // Reset lang chips
+  _greetLang=new Set();
+  Object.keys(_langLabels).forEach(k=>{const c=document.getElementById('lang-'+k);if(c)c.classList.remove('on');});
   const locs=await apiFetch('/locations',{},true);
   if(!locs||!locs.length)return;
   const loc=locs[0];
   const desc=(loc.business_description||'').toLowerCase();
-  // Detect payment methods from saved description
-  const payKw={kaspi_qr:'kaspi qr',halyk_qr:'halyk qr',kaspi_transfer:'kaspi перевод',cash:'наличн',terminal:'терминал'};
+  // Detect payment methods
+  const payKw={kaspi_qr:'kaspi qr',halyk_qr:'halyk qr',bck_qr:'бцк qr',freedom:'freedom',kaspi_transfer:'kaspi перевод',card:'картой',cash:'наличн'};
   for(const[k,kw] of Object.entries(payKw)){
     if(desc.includes(kw)){
       _payMethods.add(k);
@@ -2239,7 +2258,23 @@ async function loadBizStep(){
     if(m)setVal('bonusCardName',m[1].trim().replace(/^["«]+|["»]+$/g,''));
   }
   setVal('bizUpsell',loc.upsell_script||'');
-  setVal('bizGreeting',loc.greeting_script||'');
+  // Parse saved greeting_script: first line may be "Язык: X, Y", rest is custom text
+  const raw=loc.greeting_script||'';
+  const langLine=raw.match(/^Язык:\s*([^\n]+)/i);
+  if(langLine){
+    langLine[1].split(',').forEach(l=>{
+      const t=l.trim().toLowerCase();
+      const found=Object.entries(_langLabels).find(([,v])=>v===t);
+      if(found){
+        _greetLang.add(found[0]);
+        const c=document.getElementById('lang-'+found[0]);
+        if(c)c.classList.add('on');
+      }
+    });
+    setVal('bizGreeting',raw.replace(/^Язык:[^\n]*\n?/i,'').trim());
+  } else {
+    setVal('bizGreeting',raw);
+  }
 }
 
 async function saveBizStep(){
@@ -2258,7 +2293,13 @@ async function saveBizStep(){
   const payload={};
   if(parts.length)payload.business_description=parts.join('\n');
   const upsell=val('bizUpsell').trim();if(upsell)payload.upsell_script=upsell;
-  const greeting=val('bizGreeting').trim();if(greeting)payload.greeting_script=greeting;
+  // Build greeting_script: "Язык: X, Y\nФразы: ..."
+  const langParts=[..._greetLang].map(k=>_langLabels[k]).filter(Boolean);
+  const customGreeting=val('bizGreeting').trim();
+  let greetingScript='';
+  if(langParts.length)greetingScript='Язык: '+langParts.join(', ');
+  if(customGreeting)greetingScript=(greetingScript?greetingScript+'\n':'')+customGreeting;
+  if(greetingScript)payload.greeting_script=greetingScript;
   if(Object.keys(payload).length){
     await apiFetch('/locations/'+locId,{method:'PATCH',body:JSON.stringify(payload)});
   }
