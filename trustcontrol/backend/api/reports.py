@@ -223,21 +223,26 @@ async def _process_submission(
         # stage=lrr_http_error/disabled/... → почему Yandex не сработал
         stt_diag = result.get("_stt_diag") or {}
         log.info(f"[loc={location_id}] STT diag: {stt_diag}")
-        # Диагностику в Telegram шлём только на ОРИГИНАЛЬНОЙ обработке,
-        # не на повторах из очереди (иначе одно и то же сообщение ×3).
-        if telegram_chat and stt_diag and failed_job_id is None:
+        # Диагностику в Telegram шлём ВСЕГДА на оригинальной обработке (не на
+        # повторах из очереди). Даже если диагностики нет — показываем включён
+        # ли вообще Yandex/ISSAI, чтобы сразу видеть выставлены ли ключи в проде.
+        if telegram_chat and failed_job_id is None:
             try:
                 from backend.services.notifier import _send
-                _eng = stt_diag.get("engine", "?")
-                _stg = stt_diag.get("stage", "?")
-                _extra = stt_diag.get("error") or f"{stt_diag.get('http','')}"
+                from backend.services import yandex_stt, issai_stt
+                _y = "on" if yandex_stt.is_enabled() else "OFF"
+                _i = "on" if issai_stt.is_enabled() else "OFF"
                 _preview = (transcript_raw or "")[:80]
-                await _send(
-                    telegram_chat,
-                    f"🔧 STT: `{_eng}` / `{_stg}` {_extra}\n{_preview}",
-                )
-            except Exception:
-                pass
+                if stt_diag:
+                    _eng = stt_diag.get("engine", "?")
+                    _stg = stt_diag.get("stage", "?")
+                    _extra = stt_diag.get("error") or f"{stt_diag.get('http','')}"
+                    msg = f"🔧 STT: `{_eng}` / `{_stg}` {_extra}\n[yx={_y} issai={_i}]\n{_preview}"
+                else:
+                    msg = f"🔧 STT: нет диагностики [yx={_y} issai={_i}]\n{_preview}"
+                await _send(telegram_chat, msg)
+            except Exception as _de:
+                log.warning(f"[loc={location_id}] STT diag send failed: {_de}")
 
         log.info(
             f"[loc={location_id}] Pipeline | status={status!r} "
