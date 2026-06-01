@@ -87,11 +87,49 @@ async def debug_s3(token: str = ""):
            + b"fmt " + struct.pack("<IHHIIHH", 16, 1, 1, sr, sr * 2, 2, 16)
            + b"data" + struct.pack("<I", len(data)) + data)
 
-    res = await upload_evidence(wav, location_id=0, report_id=999999)
-    url = res.get("s3_url")
-    out["upload"] = {"ok": bool(url), "url": url}
+    # Прямая загрузка через boto3 с захватом РЕАЛЬНОЙ ошибки + перебор
+    # вариантов checksum-конфига (botocore 1.36+ ломает Yandex).
+    import boto3
+    from botocore.config import Config
+    import botocore
+
+    _endpoint = (settings.S3_ENDPOINT_URL or "").strip() or None
+    _region = "ru-central1" if (_endpoint and "yandexcloud" in _endpoint) else (settings.S3_REGION or "us-east-1")
+    out["upload"]["botocore_version"] = botocore.__version__
+
+    key = "evidence/_debug/test.wav"
+    attempts = []
+    configs = {
+        "when_required": dict(signature_version="s3v4",
+                              request_checksum_calculation="when_required",
+                              response_checksum_validation="when_required"),
+        "plain_s3v4":    dict(signature_version="s3v4"),
+    }
+    url = None
+    for name, cfg_kwargs in configs.items():
+        try:
+            cfg = Config(**cfg_kwargs)
+        except TypeError as te:
+            attempts.append({"config": name, "error": f"Config не принял параметры: {te}"})
+            continue
+        try:
+            s3 = boto3.client(
+                "s3", endpoint_url=_endpoint,
+                aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
+                aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
+                region_name=_region, config=cfg,
+            )
+            s3.put_object(Bucket=settings.S3_BUCKET, Key=key, Body=wav, ContentType="audio/wav")
+            url = f"{_endpoint.rstrip('/')}/{settings.S3_BUCKET}/{key}" if _endpoint \
+                  else f"https://{settings.S3_BUCKET}.s3.{_region}.amazonaws.com/{key}"
+            attempts.append({"config": name, "ok": True})
+            break
+        except Exception as e:
+            attempts.append({"config": name, "error": f"{type(e).__name__}: {str(e)[:300]}"})
+
+    out["upload"] = {"ok": bool(url), "url": url, "attempts": attempts,
+                     "botocore_version": botocore.__version__}
     if not url:
-        out["upload"]["hint"] = "s3_url=None — смотри логи Render (SignatureDoesNotMatch / AccessDenied)"
         return out
 
     try:
