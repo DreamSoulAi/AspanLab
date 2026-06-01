@@ -53,6 +53,19 @@ PORT          = int(os.getenv("ISSAI_PORT",    8010))
 NUM_WORKERS   = int(os.getenv("ISSAI_WORKERS", 1))
 API_KEY       = os.getenv("ISSAI_API_KEY", "")
 
+# initial_prompt — «подсказка» декодеру: типовой казахский диалог обслуживания.
+# Whisper смещает распознавание к этим словам/написаниям. Это резко чинит
+# самые частые слова кассы ("Сәлеметсіз бе", "донер", "картамен", "дайын болады"),
+# которые модель вслепую слышала как "салмақсызда" и т.п.
+# Можно переопределить под конкретный бизнес через ISSAI_INITIAL_PROMPT.
+DEFAULT_KK_PROMPT = (
+    "Сәлеметсіз бе! Қош келдіңіз. Не аласыз? Тағы не қосамыз? "
+    "Бір донер, екі бургер, кофе, лаваш, шаурма. Үлкен ме, кіші ме? "
+    "Соусы қандай? Ащы ма? Жалпы сомасы. Наличными ма, әлде картамен бе? "
+    "Қазір дайын болады, біраз күте тұрыңыз. Рақмет, сау болыңыз, келе жатыңыз!"
+)
+INITIAL_PROMPT = os.getenv("ISSAI_INITIAL_PROMPT", DEFAULT_KK_PROMPT)
+
 # Куда складывать сконвертированную CT2-модель (риск №1)
 CT2_CACHE_DIR = os.getenv("ISSAI_CT2_DIR", "/tmp/issai_ct2")
 # Минимум RAM (МБ) для безопасного старта (риск №2)
@@ -343,11 +356,18 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
     """
     audio_buf = io.BytesIO(audio_bytes)
 
+    # initial_prompt подсказываем ТОЛЬКО для казахского — для ru/en/auto он
+    # сместит распознавание не туда.
+    init_prompt = INITIAL_PROMPT if (language or "").lower() == "kk" else None
+
     segments, info = _model.transcribe(
         audio_buf,
         language=language,
         task="transcribe",
         beam_size=5,
+        # Подсказка декодеру: типовая лексика казахской кассы → правильные
+        # написания частых слов ("Сәлеметсіз бе", "донер", "картамен").
+        initial_prompt=init_prompt,
         # Не «зацикливать» модель на предыдущем тексте — на диалоге двух
         # говорящих это вызывает коллапс/обрыв (теряется половина речи).
         condition_on_previous_text=False,

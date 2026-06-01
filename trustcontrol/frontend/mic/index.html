@@ -309,11 +309,16 @@ async function start() {
   localStorage.setItem("tc_server", srv);
 
   try {
+    // noiseSuppression / autoGainControl ВЫКЛЮЧЕНЫ намеренно: это телефонные
+    // алгоритмы (RNNoise), которые размазывают тихие казахские согласные
+    // (с, з, т — как в «Сәлеметсіз бе») и задирают шум в паузах. Whisper
+    // обучен на сыром звуке и сам глушит шум лучше → сырое аудио распознаётся
+    // точнее. echoCancellation оставляем: гасит звук из колонок/динамиков.
     stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        noiseSuppression: false,
+        autoGainControl: false,
         channelCount: 1,
       },
     });
