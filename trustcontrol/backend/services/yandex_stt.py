@@ -109,20 +109,20 @@ async def transcribe(wav_bytes: bytes, lang: str | None = None, diag: dict | Non
     content_b64 = base64.b64encode(pcm).decode("ascii")
 
     headers = {"Authorization": f"Api-Key {settings.YANDEX_STT_API_KEY}"}
-    body: dict = {
-        "config": {
-            "specification": {
-                "languageCode":      language,
-                "model":             "general",
-                "audioEncoding":     "LINEAR16_PCM",
-                "sampleRateHertz":   sample_rate,
-                "audioChannelCount": 1,
-            }
-        },
-        "audio": {"content": content_b64},
+    config: dict = {
+        "specification": {
+            "languageCode":      language,
+            "model":             "general",
+            "audioEncoding":     "LINEAR16_PCM",
+            "sampleRateHertz":   sample_rate,
+            "audioChannelCount": 1,
+        }
     }
+    # folderId — внутри config (RecognitionConfig). С Api-Key каталог обычно
+    # берётся из сервисного аккаунта, но если задан — указываем явно.
     if settings.YANDEX_STT_FOLDER_ID:
-        body["folderId"] = settings.YANDEX_STT_FOLDER_ID
+        config["folderId"] = settings.YANDEX_STT_FOLDER_ID
+    body: dict = {"config": config, "audio": {"content": content_b64}}
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as cli:
