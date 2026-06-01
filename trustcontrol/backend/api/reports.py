@@ -99,6 +99,22 @@ async def debug_s3(token: str = ""):
 
     key = "evidence/_debug/test.wav"
     attempts = []
+
+    # СНАЧАЛА проверка ключей на операции БЕЗ тела (нет checksum-фактора).
+    # Если list падает с SignatureDoesNotMatch → виноваты КЛЮЧИ.
+    # Если list проходит, а put падает → виноват checksum-баг botocore 1.36+.
+    try:
+        _probe = boto3.client(
+            "s3", endpoint_url=_endpoint,
+            aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
+            aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
+            region_name=_region, config=Config(signature_version="s3v4"),
+        )
+        _probe.list_objects_v2(Bucket=settings.S3_BUCKET, MaxKeys=1)
+        out["creds_check"] = {"list_objects": "OK — ключи и подпись валидны"}
+    except Exception as e:
+        out["creds_check"] = {"list_objects": f"{type(e).__name__}: {str(e)[:300]}"}
+
     configs = {
         "when_required": dict(signature_version="s3v4",
                               request_checksum_calculation="when_required",
