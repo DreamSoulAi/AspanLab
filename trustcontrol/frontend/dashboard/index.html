@@ -2477,35 +2477,51 @@ async function resolveAlert(id,btn){
 }
 
 /* ── REPORTS ── */
+let _reportsCache=[];
+function showReportModal(idx){
+  const r=_reportsCache[idx];if(!r)return;
+  document.getElementById('rmTranscript').textContent=r.transcript||'Нет транскрипта';
+  const meta=[];
+  if(r.employee_name)meta.push('Сотрудник: '+r.employee_name);
+  if(r.gpt_summary)meta.push(r.gpt_summary);
+  document.getElementById('rmMeta').textContent=meta.join(' · ');
+  const sc=Math.round(r.score||0);
+  document.getElementById('rmScore').textContent=sc+'/100';
+  document.getElementById('rmScore').style.color=sc>=80?'#10B981':sc>=60?'#F59E0B':'#EF4444';
+  document.getElementById('rmTime').textContent=fmt(r.timestamp||r.created_at);
+  document.getElementById('rmFlags').innerHTML=statusFlags(r);
+  document.getElementById('reportModal').style.display='flex';
+}
 async function loadReportsPage(){
   const days=document.getElementById('reportDays')?.value||'7';
   const d=await apiFetch('/reports/?days='+days+'&limit=50');
+  _reportsCache=d||[];
   const mobile=window.innerWidth<768;
   if(mobile){
     const el=document.getElementById('reportsCards');if(!el)return;
     el.style.display='';
     document.getElementById('reportsDesktop').style.display='none';
     if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет отчётов за период</p>';return;}
-    el.innerHTML=d.map(r=>`
-      <div class="rc">
+    el.innerHTML=d.map((r,i)=>`
+      <div class="rc" onclick="showReportModal(${i})" style="cursor:pointer">
         <div class="rc-top"><span class="rc-time">${fmt(r.timestamp||r.created_at)}</span>
           <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:${r.score>=80?'#10B981':r.score>=60?'#F59E0B':'#EF4444'}">${Math.round(r.score||0)}</span>
         </div>
         <p class="rc-quote">${esc((r.transcript||'Нет текста разговора').slice(0,200))}</p>
-        <div class="rc-footer">${statusFlags(r)}</div>
+        <div class="rc-footer">${statusFlags(r)}<span style="margin-left:auto;font-size:11px;color:var(--muted)">читать →</span></div>
       </div>`).join('');
   }else{
     const el=document.getElementById('reportsDesktop');if(!el)return;
     el.style.display='';
     document.getElementById('reportsCards').style.display='none';
     if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет отчётов за период</p>';return;}
-    el.innerHTML=d.map(r=>`
-      <div class="rep-row">
+    el.innerHTML=d.map((r,i)=>`
+      <div class="rep-row" onclick="showReportModal(${i})" style="cursor:pointer" title="Нажмите для просмотра полного транскрипта">
         <span class="rep-time">${fmt(r.timestamp||r.created_at)}</span>
         <span class="rep-score ${r.score>=80?'g':r.score>=60?'y':'r'}">${Math.round(r.score||0)}</span>
         <span class="rep-tone">${toneName(r.tone)}</span>
         <span class="rep-flags">${statusFlags(r)}</span>
-        <span class="rep-text">${esc((r.transcript||'').slice(0,100))}</span>
+        <span class="rep-text">${esc((r.transcript||'').slice(0,120))}</span>
       </div>`).join('');
   }
 }
@@ -2984,5 +3000,23 @@ async function unlinkTelegram(){
   }
 })();
 </script>
+
+<!-- ── Модальное окно: полный транскрипт разговора ── -->
+<div id="reportModal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.75);align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)this.style.display='none'">
+  <div style="background:#12122a;border:1px solid rgba(255,255,255,.12);border-radius:14px;max-width:640px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <span id="rmTime" style="font-size:13px;color:var(--muted)"></span>
+        <span id="rmScore" style="margin-left:12px;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:15px"></span>
+        <span id="rmFlags" style="margin-left:10px"></span>
+      </div>
+      <button onclick="document.getElementById('reportModal').style.display='none'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:22px;line-height:1;padding:0 4px">✕</button>
+    </div>
+    <div style="padding:20px;overflow-y:auto;flex:1">
+      <p id="rmTranscript" style="font-size:14px;line-height:1.75;color:#e2e8f0;white-space:pre-wrap;margin:0"></p>
+    </div>
+    <div id="rmMeta" style="padding:12px 20px;border-top:1px solid rgba(255,255,255,.08);font-size:12px;color:var(--muted)"></div>
+  </div>
+</div>
 </body>
 </html>

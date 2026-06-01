@@ -841,7 +841,7 @@ async def get_reports(
             "location_id":           r.location_id,
             "location_name":         loc_names.get(r.location_id, ""),
             "timestamp":             r.timestamp.isoformat(),
-            "transcript":            (r.transcript or "")[:300],
+            "transcript":            r.transcript or "",
             "tone":                  r.tone,
             "gpt_score":             r.gpt_score,
             "score":                 r.score if r.score is not None else r.gpt_score,
