@@ -127,6 +127,43 @@ def _is_ct2_dir(path: str) -> bool:
     return os.path.isdir(path) and os.path.exists(os.path.join(path, "model.bin"))
 
 
+def _ensure_local_model(model_id: str) -> str:
+    """
+    Скачивает модель локально и гарантирует наличие tokenizer.json.
+
+    whisper-turbo-ksc2 (и многие казахские файнтюны) выложены БЕЗ
+    tokenizer.json, а ctranslate2 при конвертации требует именно его.
+    Поэтому скачиваем модель в кэш и, если файла нет, генерим fast-токенизатор
+    из имеющихся файлов (vocab.json/merges.txt + спец-токены). Если у модели
+    вообще нет токенизатора — берём идентичный от базового whisper-large-v3-turbo
+    (ksc2 — это его файнтюн, токенизатор тот же).
+
+    Возвращает путь к локальной папке модели (готовой к конвертации).
+    """
+    from huggingface_hub import snapshot_download
+
+    local = snapshot_download(model_id)
+
+    if os.path.exists(os.path.join(local, "tokenizer.json")):
+        return local
+
+    log.info("tokenizer.json отсутствует — генерирую fast-токенизатор...")
+    from transformers import WhisperTokenizerFast
+
+    try:
+        tok = WhisperTokenizerFast.from_pretrained(model_id)
+    except Exception as e:
+        log.warning(
+            f"Токенизатор не загрузился из {model_id} ({e}); "
+            f"беру базовый openai/whisper-large-v3-turbo."
+        )
+        tok = WhisperTokenizerFast.from_pretrained("openai/whisper-large-v3-turbo")
+
+    tok.save_pretrained(local)   # создаёт tokenizer.json в папке модели
+    log.info(f"tokenizer.json сгенерирован → {local}")
+    return local
+
+
 def _convert_to_ct2(model_id: str) -> str:
     """
     Конвертирует transformers-чекпойнт в формат CTranslate2.
@@ -152,12 +189,15 @@ def _convert_to_ct2(model_id: str) -> str:
     # Квантование при конвертации: для CPU int8, для GPU float16
     quant = COMPUTE_TYPE if COMPUTE_TYPE in ("int8", "int8_float16", "float16", "float32") else "int8"
 
+    # Гарантируем наличие tokenizer.json (иначе ctranslate2 падает на ksc2)
+    model_src = _ensure_local_model(model_id)
+
     log.info(f"Конвертация {model_id} → CT2 ({quant}). Это разовая операция, ~1-3 мин...")
     os.makedirs(CT2_CACHE_DIR, exist_ok=True)
     t0 = time.time()
     converter = TransformersConverter(
-        model_id,
-        copy_files=["preprocessor_config.json"],
+        model_src,
+        copy_files=["tokenizer.json", "preprocessor_config.json"],
     )
     converter.convert(out_dir, quantization=quant, force=True)
     log.info(f"Конвертация готова за {time.time()-t0:.1f}с → {out_dir}")
