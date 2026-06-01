@@ -390,6 +390,7 @@ def _normalize_text_result(gpt: dict, transcript: str, language: str = None) -> 
         "payment_confirmed":    None,
         "upsell_attempt":       events.get("upsell"),
         "customer_satisfaction": int(gpt.get("customer_satisfaction", 3)),
+        "energy_level":         int(gpt.get("energy_level", 3)),
         "positives":            gpt.get("positives", []),
         "issues":               gpt.get("issues", []),
     }
@@ -486,30 +487,11 @@ async def analyze_audio_with_fallback(
     # Совместимость с кодом ниже (использовал yx_text)
     yx_text = kz_text
 
-    # ── Шаг 2: аудио-модель (с эталонным транскриптом, если он есть) ──
-    # Язык НЕ передаём — модель сама определяет из звука.
-    audio_result = await analyze_audio(
-        wav_bytes, business_context=business_context, known_transcript=yx_text
-    )
-
-    if audio_result:
-        status = audio_result.get("status", "OK")
-        # PERSONAL / IGNORE — возвращаем как есть
-        if status in ("PERSONAL", "IGNORE"):
-            audio_result["_stt_diag"] = stt_diag
-            return audio_result
-        # OK с реальным транскриптом — успех
-        if audio_result.get("transcript"):
-            # Если Yandex дал казахский эталон — помечаем источник как yandex,
-            # иначе слова от самой аудио-модели (может переводить казахский в рус).
-            audio_result["_stt_diag"] = stt_diag or {"engine": "audio_model", "stage": "no_kz_reference"}
-            return audio_result
-        log.info(f"Аудио-модель вернула OK но без транскрипта: {audio_result.get('summary','')!r}")
-
-    # ── Фолбэк 1: аудио-модель не дала результат, но есть текст Yandex ──
-    # Анализируем по точному казахскому тексту (тон — по словам, без голоса).
+    # ── Шаг 2: есть текст от ISSAI/Yandex → text-GPT (в 50-100 раз дешевле аудио-модели) ──
+    # Аудио-модель оставляем ТОЛЬКО как последний фолбэк когда STT не сработал.
+    # Тон и энергию определяем из текста — промпт gpt_analyzer настроен на это.
     if yx_text:
-        log.info("Аудио-модель без результата — анализ по тексту Yandex")
+        log.info(f"STT текст получен ({len(yx_text)} симв) — анализ через text-GPT (экономия ~$0.12)")
         gpt = await gpt_analyze(yx_text, business_context=business_context)
         if gpt:
             if gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk"):
@@ -527,6 +509,23 @@ async def analyze_audio_with_fallback(
             _r = _normalize_text_result(gpt, yx_text, language)
             _r["_stt_diag"] = stt_diag
             return _r
+
+    # ── Шаг 3: нет казахского текста → аудио-модель как фолбэк ──
+    # Это путь когда и ISSAI, и Yandex не сработали (туннель мёртв, ключи нет).
+    log.info("STT текст недоступен — фолбэк на аудио-модель")
+    audio_result = await analyze_audio(
+        wav_bytes, business_context=business_context, known_transcript=None
+    )
+
+    if audio_result:
+        status = audio_result.get("status", "OK")
+        if status in ("PERSONAL", "IGNORE"):
+            audio_result["_stt_diag"] = stt_diag
+            return audio_result
+        if audio_result.get("transcript"):
+            audio_result["_stt_diag"] = stt_diag or {"engine": "audio_model", "stage": "no_kz_reference"}
+            return audio_result
+        log.info(f"Аудио-модель вернула OK но без транскрипта: {audio_result.get('summary','')!r}")
 
     # ── Фолбэк 2: Whisper + текстовый GPT (если всё выше не сработало) ──
     log.info("Фолбэк на Whisper+text")
