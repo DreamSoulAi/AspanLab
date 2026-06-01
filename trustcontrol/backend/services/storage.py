@@ -46,12 +46,15 @@ async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) 
         log.error("boto3 не установлен: pip install boto3")
         return {"sha256": sha256, "s3_url": None}
 
+    from botocore.config import Config
+    # .strip() — частая причина SignatureDoesNotMatch: пробел/перенос в секрете.
     s3 = boto3.client(
         "s3",
-        endpoint_url=settings.S3_ENDPOINT_URL or None,
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        region_name=settings.S3_REGION or "us-east-1",
+        endpoint_url=(settings.S3_ENDPOINT_URL or "").strip() or None,
+        aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
+        aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
+        region_name=(settings.S3_REGION or "us-east-1").strip(),
+        config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
     )
 
     ts  = datetime.utcnow().strftime("%Y/%m/%d")

@@ -97,12 +97,16 @@ def _parse_wav(wav_bytes: bytes):
 
 def _s3_client():
     import boto3
+    from botocore.config import Config
+    # .strip() — частая причина SignatureDoesNotMatch: лишний пробел/перенос
+    # строки в значении секрета при копировании в переменные окружения.
     return boto3.client(
         "s3",
-        endpoint_url=settings.S3_ENDPOINT_URL or None,
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        region_name=settings.S3_REGION or "ru-central1",
+        endpoint_url=(settings.S3_ENDPOINT_URL or "").strip() or None,
+        aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
+        aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
+        region_name=(settings.S3_REGION or "ru-central1").strip(),
+        config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
     )
 
 
