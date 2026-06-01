@@ -545,7 +545,9 @@ async def _process_submission(
 
         _mark_job_done(failed_job_id)
 
-    except Exception:
+    except Exception as _exc:
+        import traceback as _tb
+        _err_text = _tb.format_exc()[-800:]
         log.exception(f"[loc={location_id}] Ошибка фоновой обработки")
         if wav_bytes and not failed_job_id:
             await _enqueue_retry(
@@ -555,14 +557,13 @@ async def _process_submission(
                 telegram_chat=telegram_chat, location_name=location_name,
                 error="Необработанное исключение",
             )
-        # Уведомляем владельца об ошибке обработки чтобы он знал
         if telegram_chat:
             try:
                 from backend.services.notifier import _send
                 await _send(
                     telegram_chat,
-                    f"⚠️ *{location_name}* — ошибка обработки разговора\\.\n"
-                    f"Запись сохранена в очередь повторов\\.",
+                    f"⚠️ *{location_name}* — ошибка обработки\\.\n"
+                    f"```\n{_err_text}\n```",
                 )
             except Exception:
                 pass
