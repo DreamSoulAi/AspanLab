@@ -2490,6 +2490,14 @@ function showReportModal(idx){
   document.getElementById('rmScore').style.color=sc>=80?'#10B981':sc>=60?'#F59E0B':'#EF4444';
   document.getElementById('rmTime').textContent=fmt(r.timestamp||r.created_at);
   document.getElementById('rmFlags').innerHTML=statusFlags(r);
+  const audioWrap=document.getElementById('rmAudio');
+  if(r.s3_url){
+    audioWrap.innerHTML=`<audio controls style="width:100%;margin-bottom:4px"><source src="${esc(r.s3_url)}" type="audio/wav"></audio>`
+      +`<a href="${esc(r.s3_url)}" download style="font-size:12px;color:var(--accent2)">⬇ Скачать запись</a>`;
+    audioWrap.style.display='';
+  }else{
+    audioWrap.style.display='none';
+  }
   document.getElementById('reportModal').style.display='flex';
 }
 async function loadReportsPage(){
@@ -3013,6 +3021,7 @@ async function unlinkTelegram(){
       <button onclick="document.getElementById('reportModal').style.display='none'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:22px;line-height:1;padding:0 4px">✕</button>
     </div>
     <div style="padding:20px;overflow-y:auto;flex:1">
+      <div id="rmAudio" style="display:none;margin-bottom:16px;padding:12px;background:rgba(255,255,255,.04);border-radius:8px"></div>
       <p id="rmTranscript" style="font-size:14px;line-height:1.75;color:#e2e8f0;white-space:pre-wrap;margin:0"></p>
     </div>
     <div id="rmMeta" style="padding:12px 20px;border-top:1px solid rgba(255,255,255,.08);font-size:12px;color:var(--muted)"></div>
