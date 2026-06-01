@@ -52,6 +52,74 @@ router = APIRouter()
 MAX_AUDIO_SIZE_MB    = 10
 MAX_TRANSCRIPT_CHARS = 10_000
 
+
+# ── Диагностика S3 / аудио-архива (для бесплатного Render без Shell) ──────────
+@router.get("/_debug/s3")
+async def debug_s3(token: str = ""):
+    """Проверка S3 из браузера. Открыть:
+       https://<домен>/api/reports/_debug/s3?token=<первые 12 симв SECRET_KEY>
+
+    Грузит тестовый файл, проверяет публичную ссылку, смотрит s3_url
+    у последних отчётов. Защищено префиксом SECRET_KEY.
+    """
+    from backend.config import settings
+    if not token or not settings.SECRET_KEY or token != settings.SECRET_KEY[:12]:
+        raise HTTPException(status_code=403, detail="Неверный токен (первые 12 символов SECRET_KEY)")
+
+    out: dict = {"env": {}, "upload": {}, "public_url": {}, "recent_reports": []}
+
+    out["env"] = {
+        "S3_BUCKET":         settings.S3_BUCKET or None,
+        "S3_ENDPOINT_URL":   settings.S3_ENDPOINT_URL or None,
+        "S3_REGION":         settings.S3_REGION or None,
+        "AWS_ACCESS_KEY_ID": (settings.AWS_ACCESS_KEY_ID[:6] + "…") if settings.AWS_ACCESS_KEY_ID else None,
+        "AWS_SECRET_set":    bool(settings.AWS_SECRET_ACCESS_KEY),
+    }
+    if not (settings.S3_BUCKET and settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY):
+        out["error"] = "Не хватает ключей S3 в Environment"
+        return out
+
+    # Тестовый WAV: 1 секунда тишины
+    import struct
+    sr = 16000
+    data = b"\x00\x00" * sr
+    wav = (b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVE"
+           + b"fmt " + struct.pack("<IHHIIHH", 16, 1, 1, sr, sr * 2, 2, 16)
+           + b"data" + struct.pack("<I", len(data)) + data)
+
+    res = await upload_evidence(wav, location_id=0, report_id=999999)
+    url = res.get("s3_url")
+    out["upload"] = {"ok": bool(url), "url": url}
+    if not url:
+        out["upload"]["hint"] = "s3_url=None — смотри логи Render (SignatureDoesNotMatch / AccessDenied)"
+        return out
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=15.0) as cli:
+            r = await cli.get(url)
+        out["public_url"] = {"status": r.status_code, "bytes": len(r.content)}
+        if r.status_code == 403:
+            out["public_url"]["hint"] = "Файл загружен, но бакет НЕ публичный → браузер не откроет"
+        elif r.status_code == 200:
+            out["public_url"]["hint"] = "OK — аудио будет играть в браузере"
+    except Exception as e:
+        out["public_url"] = {"error": str(e)[:200]}
+
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = (await db.execute(
+                select(Report).order_by(Report.timestamp.desc()).limit(5)
+            )).scalars().all()
+        out["recent_reports"] = [
+            {"id": r.id, "time": r.timestamp.isoformat(), "has_s3_url": bool(r.s3_url)}
+            for r in rows
+        ]
+    except Exception as e:
+        out["recent_reports"] = {"error": str(e)[:200]}
+
+    return out
+
 # Per-API-key rate limits:
 #   * 60 запросов / минуту  → защита от пиковых атак
 #   * 1500 запросов / сутки → защита от runaway-кошелька OpenAI
