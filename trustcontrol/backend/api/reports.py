@@ -164,6 +164,10 @@ async def _process_submission(
     """
     Полный цикл обработки одного аудио-сегмента.
     """
+    # Флаг: отчёт уже сохранён в БД. Если упадёт код ПОСЛЕ сохранения
+    # (уведомления/email/диагностика) — НЕ ставим в очередь повторов,
+    # иначе retry-воркер создаст идентичный дубль отчёта.
+    report_saved = False
     try:
         # Собираем контекст бизнеса для GPT.
         # ВАЖНО: здесь только ДАННЫЕ точки. Вся ЛОГИКА как их трактовать
@@ -495,6 +499,7 @@ async def _process_submission(
 
             await db.commit()
             report_id = report.id
+            report_saved = True   # отчёт в БД — повтор больше не нужен
 
             # ── POS-матчинг если оплата подтверждена ─────────────
             if payment_confirmed:
@@ -568,7 +573,9 @@ async def _process_submission(
         import traceback as _tb
         _err_text = _tb.format_exc()[-800:]
         log.exception(f"[loc={location_id}] Ошибка фоновой обработки")
-        if wav_bytes and not failed_job_id:
+        # Если отчёт уже сохранён — НЕ повторяем (иначе дубль).
+        # Повтор нужен только когда упали ДО сохранения (STT/GPT/БД).
+        if wav_bytes and not failed_job_id and not report_saved:
             await _enqueue_retry(
                 location_id=location_id, wav_bytes=wav_bytes,
                 language=language, audio_size_kb=audio_size_kb,
