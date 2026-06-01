@@ -266,10 +266,9 @@ async def _process_submission(
             )
             _mark_job_done(failed_job_id)
             return
-        is_short = word_count < 6 or len(speakers) < 2
-
         # ── Поля GPT ─────────────────────────────────────────────
         speakers              = result.get("speakers", [])
+        is_short = word_count < 6 or len(speakers) < 2
         gpt_score             = result.get("score")
         gpt_summary           = result.get("summary", "")
         gpt_tone              = result.get("tone", "neutral")
