@@ -108,7 +108,14 @@ async def transcribe(wav_bytes: bytes, lang: str | None = None, diag: dict | Non
     language = (lang or settings.YANDEX_STT_LANG or "kk-KZ").strip()
     content_b64 = base64.b64encode(pcm).decode("ascii")
 
-    headers = {"Authorization": f"Api-Key {settings.YANDEX_STT_API_KEY}"}
+    _raw_key = settings.YANDEX_STT_API_KEY or ""
+    _key = _raw_key.strip()
+    # Диагностика ключа: длина и был ли вокруг мусор (пробел/перенос). Сам ключ
+    # НЕ светим — только длину и факт обрезки, чтобы поймать кривую вставку.
+    d["keylen"] = len(_key)
+    if _key != _raw_key:
+        d["key_had_ws"] = True
+    headers = {"Authorization": f"Api-Key {_key}"}
     config: dict = {
         "specification": {
             "languageCode":      language,

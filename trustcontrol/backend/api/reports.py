@@ -237,7 +237,10 @@ async def _process_submission(
                     _eng = stt_diag.get("engine", "?")
                     _stg = stt_diag.get("stage", "?")
                     _extra = stt_diag.get("error") or f"{stt_diag.get('http','')}"
-                    msg = f"🔧 STT: `{_eng}` / `{_stg}` {_extra}\n[yx={_y} issai={_i}]\n{_preview}"
+                    _kl = stt_diag.get("keylen")
+                    _ws = " +WS!" if stt_diag.get("key_had_ws") else ""
+                    _kinfo = f" keylen={_kl}{_ws}" if _kl is not None else ""
+                    msg = f"🔧 STT: `{_eng}` / `{_stg}` {_extra}\n[yx={_y} issai={_i}{_kinfo}]\n{_preview}"
                 else:
                     msg = f"🔧 STT: нет диагностики [yx={_y} issai={_i}]\n{_preview}"
                 await _send(telegram_chat, msg)
