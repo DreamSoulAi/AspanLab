@@ -561,6 +561,7 @@ async def _process_submission(
                 score=final_score,
                 upsell=upsell_attempt,
                 greeting=has_greeting,
+                audio_url=s3_url,
             )
 
         # Email for fraud incidents

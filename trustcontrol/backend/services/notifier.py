@@ -198,6 +198,7 @@ async def send_ok_report(
     score: float,
     upsell: bool,
     greeting: bool,
+    audio_url: str | None = None,
 ):
     score_icon = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
     tone_ru = {"positive": "позитивный", "neutral": "нейтральный", "negative": "негативный"}.get(tone, "нейтральный")
@@ -216,7 +217,7 @@ async def send_ok_report(
         f"{flags_line}"
         f"{transcript_line}"
     )
-    await _send(chat_id, text)
+    await _send(chat_id, text, reply_markup=_listen_button(audio_url) if audio_url else None)
 
 
 async def send_shift_summary(chat_id: str, location_name: str, shift_data: dict):
