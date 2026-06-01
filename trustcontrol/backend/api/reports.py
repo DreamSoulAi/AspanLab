@@ -213,6 +213,26 @@ async def _process_submission(
         is_personal    = result.get("is_personal_talk", False)
         transcript_raw = result.get("transcript", "")
 
+        # ── Диагностика STT (временно): видно каким движком распознан текст ──
+        # engine=yandex stage=ok → казахский распознан Yandex (правильно)
+        # engine=audio_model      → казахского эталона не было, слова от OpenAI
+        # stage=lrr_http_error/disabled/... → почему Yandex не сработал
+        stt_diag = result.get("_stt_diag") or {}
+        log.info(f"[loc={location_id}] STT diag: {stt_diag}")
+        if telegram_chat and stt_diag:
+            try:
+                from backend.services.notifier import _send
+                _eng = stt_diag.get("engine", "?")
+                _stg = stt_diag.get("stage", "?")
+                _extra = stt_diag.get("error") or f"{stt_diag.get('http','')}"
+                _preview = (transcript_raw or "")[:80]
+                await _send(
+                    telegram_chat,
+                    f"🔧 STT: `{_eng}` / `{_stg}` {_extra}\n{_preview}",
+                )
+            except Exception:
+                pass
+
         log.info(
             f"[loc={location_id}] Pipeline | status={status!r} "
             f"| is_business={result.get('is_business')} "

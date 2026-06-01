@@ -444,26 +444,31 @@ async def analyze_audio_with_fallback(
     # ── Шаг 1: точный казахский текст — ISSAI (self-hosted) или Yandex ──
     # Приоритет: ISSAI → Yandex → без эталона (аудио-модель сама)
     kz_text = None
+    stt_diag = {}   # диагностика STT для отображения (видно сработал ли казахский)
 
     if issai_stt.is_enabled():
         issai_raw = await issai_stt.transcribe(wav_bytes)
         if issai_raw and len(issai_raw.split()) >= 2:
             kz_text = issai_raw
+            stt_diag = {"engine": "issai", "stage": "ok", "chars": len(kz_text)}
             log.info(f"ISSAI STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
         else:
             log.info("ISSAI STT пусто/коротко — пробуем Yandex")
 
     if kz_text is None and yandex_stt.is_enabled():
+        yx_diag = {}
         try:
-            yx_raw = await yandex_stt.transcribe(wav_bytes)
+            yx_raw = await yandex_stt.transcribe(wav_bytes, diag=yx_diag)
         except Exception as e:
             log.warning(f"Yandex STT ошибка: {e}")
             yx_raw = ""
+            yx_diag = {"engine": "yandex", "stage": "exception", "error": str(e)[:200]}
+        stt_diag = yx_diag
         if yx_raw and len(yx_raw.split()) >= 2:
             kz_text = yx_raw
             log.info(f"Yandex STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
         else:
-            log.info("Yandex STT пусто/коротко — без эталонного транскрипта")
+            log.info(f"Yandex STT не дал текст | diag={yx_diag}")
 
     # Совместимость с кодом ниже (использовал yx_text)
     yx_text = kz_text
@@ -478,9 +483,13 @@ async def analyze_audio_with_fallback(
         status = audio_result.get("status", "OK")
         # PERSONAL / IGNORE — возвращаем как есть
         if status in ("PERSONAL", "IGNORE"):
+            audio_result["_stt_diag"] = stt_diag
             return audio_result
         # OK с реальным транскриптом — успех
         if audio_result.get("transcript"):
+            # Если Yandex дал казахский эталон — помечаем источник как yandex,
+            # иначе слова от самой аудио-модели (может переводить казахский в рус).
+            audio_result["_stt_diag"] = stt_diag or {"engine": "audio_model", "stage": "no_kz_reference"}
             return audio_result
         log.info(f"Аудио-модель вернула OK но без транскрипта: {audio_result.get('summary','')!r}")
 
@@ -501,7 +510,9 @@ async def analyze_audio_with_fallback(
                 }
             if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
                 return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
-            return _normalize_text_result(gpt, yx_text, language)
+            _r = _normalize_text_result(gpt, yx_text, language)
+            _r["_stt_diag"] = stt_diag
+            return _r
 
     # ── Фолбэк 2: Whisper + текстовый GPT (если всё выше не сработало) ──
     log.info("Фолбэк на Whisper+text")
@@ -529,4 +540,6 @@ async def analyze_audio_with_fallback(
     if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
         return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
 
-    return _normalize_text_result(gpt, text, language)
+    _r = _normalize_text_result(gpt, text, language)
+    _r["_stt_diag"] = stt_diag or {"engine": "whisper", "stage": "fallback"}
+    return _r
