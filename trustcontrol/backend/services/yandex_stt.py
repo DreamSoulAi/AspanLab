@@ -95,25 +95,41 @@ def _parse_wav(wav_bytes: bytes):
     return pcm, sample_rate
 
 
+def _build_s3_config():
+    """
+    Config для S3-совместимых хранилищ (Yandex/MinIO/Backblaze).
+
+    botocore >= 1.36 по умолчанию добавляет CRC32-чексуммы к запросам,
+    что НЕ-AWS хранилища не принимают → SignatureDoesNotMatch. Отключаем
+    их (when_required). Старый botocore этих ключей не знает — фолбэк.
+    """
+    from botocore.config import Config
+    base = {"signature_version": "s3v4"}
+    try:
+        return Config(
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+            **base,
+        )
+    except TypeError:
+        return Config(**base)
+
+
 def _s3_client():
     import boto3
-    from botocore.config import Config
     endpoint = (settings.S3_ENDPOINT_URL or "").strip() or None
     # Регион ОБЯЗАН совпадать с тем, что ждёт хранилище — иначе подпись s3v4
-    # не сходится (SignatureDoesNotMatch). Для Yandex это всегда ru-central1,
-    # независимо от значения S3_REGION в окружении.
+    # не сходится (SignatureDoesNotMatch). Для Yandex это всегда ru-central1.
     region = (settings.S3_REGION or "").strip() or "ru-central1"
     if endpoint and "yandexcloud" in endpoint:
         region = "ru-central1"
-    # .strip() — частая причина SignatureDoesNotMatch: лишний пробел/перенос
-    # строки в значении секрета при копировании в переменные окружения.
     return boto3.client(
         "s3",
         endpoint_url=endpoint,
         aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
         aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
         region_name=region,
-        config=Config(signature_version="s3v4"),
+        config=_build_s3_config(),
     )
 
 

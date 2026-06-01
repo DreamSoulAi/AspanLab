@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header, Form, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -661,13 +661,19 @@ async def _delete_job(job_id: int):
 
 @router.post("/submit")
 async def submit_audio(
+    background_tasks: BackgroundTasks,
     audio:           Optional[UploadFile] = File(None),
     x_api_key:       Optional[str]        = Header(None),
     transcript_text: Optional[str]        = Form(None),
     language:        Optional[str]        = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Принимает аудио и синхронно обрабатывает (GPT + DB + Telegram)."""
+    """Принимает аудио, отвечает сразу и обрабатывает в фоне (GPT + DB + Telegram).
+
+    Обработка может занять 10-120с (асинхронный Yandex STT), поэтому НЕ держим
+    HTTP-соединение открытым — иначе кнопка «Стоп» в PWA висит и пользователь
+    шлёт повторный запрос (дубль). Возвращаем ok сразу, работаем фоном.
+    """
     effective_key = (x_api_key or "").strip()
     if not effective_key:
         raise HTTPException(status_code=401, detail="API ключ обязателен (X-API-Key заголовок)")
@@ -737,7 +743,8 @@ async def submit_audio(
         owner = await db.execute(select(User.telegram_chat).where(User.id == location.owner_id))
         telegram_chat = owner.scalar()
 
-    await _process_submission(
+    background_tasks.add_task(
+        _process_submission,
         location_id=location.id,
         wav_bytes=wav_bytes,
         transcript_text=transcript_text,
@@ -761,7 +768,7 @@ async def submit_audio(
         employees=getattr(location, 'employees', None) or [],
     )
 
-    return {"status": "ok", "message": "Обработано"}
+    return {"status": "ok", "message": "Принято в обработку"}
 
 
 # ── Endpoint: список отчётов ──────────────────────────────────────────────────
