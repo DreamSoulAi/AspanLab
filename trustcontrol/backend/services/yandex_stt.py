@@ -98,15 +98,22 @@ def _parse_wav(wav_bytes: bytes):
 def _s3_client():
     import boto3
     from botocore.config import Config
+    endpoint = (settings.S3_ENDPOINT_URL or "").strip() or None
+    # Регион ОБЯЗАН совпадать с тем, что ждёт хранилище — иначе подпись s3v4
+    # не сходится (SignatureDoesNotMatch). Для Yandex это всегда ru-central1,
+    # независимо от значения S3_REGION в окружении.
+    region = (settings.S3_REGION or "").strip() or "ru-central1"
+    if endpoint and "yandexcloud" in endpoint:
+        region = "ru-central1"
     # .strip() — частая причина SignatureDoesNotMatch: лишний пробел/перенос
     # строки в значении секрета при копировании в переменные окружения.
     return boto3.client(
         "s3",
-        endpoint_url=(settings.S3_ENDPOINT_URL or "").strip() or None,
+        endpoint_url=endpoint,
         aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
         aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
-        region_name=(settings.S3_REGION or "ru-central1").strip(),
-        config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+        region_name=region,
+        config=Config(signature_version="s3v4"),
     )
 
 

@@ -223,7 +223,9 @@ async def _process_submission(
         # stage=lrr_http_error/disabled/... → почему Yandex не сработал
         stt_diag = result.get("_stt_diag") or {}
         log.info(f"[loc={location_id}] STT diag: {stt_diag}")
-        if telegram_chat and stt_diag:
+        # Диагностику в Telegram шлём только на ОРИГИНАЛЬНОЙ обработке,
+        # не на повторах из очереди (иначе одно и то же сообщение ×3).
+        if telegram_chat and stt_diag and failed_job_id is None:
             try:
                 from backend.services.notifier import _send
                 _eng = stt_diag.get("engine", "?")

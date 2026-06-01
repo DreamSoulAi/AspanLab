@@ -47,14 +47,18 @@ async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) 
         return {"sha256": sha256, "s3_url": None}
 
     from botocore.config import Config
+    _endpoint = (settings.S3_ENDPOINT_URL or "").strip() or None
+    _region = (settings.S3_REGION or "").strip() or "us-east-1"
+    if _endpoint and "yandexcloud" in _endpoint:
+        _region = "ru-central1"   # подпись s3v4 требует точный регион
     # .strip() — частая причина SignatureDoesNotMatch: пробел/перенос в секрете.
     s3 = boto3.client(
         "s3",
-        endpoint_url=(settings.S3_ENDPOINT_URL or "").strip() or None,
+        endpoint_url=_endpoint,
         aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
         aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
-        region_name=(settings.S3_REGION or "us-east-1").strip(),
-        config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+        region_name=_region,
+        config=Config(signature_version="s3v4"),
     )
 
     ts  = datetime.utcnow().strftime("%Y/%m/%d")
