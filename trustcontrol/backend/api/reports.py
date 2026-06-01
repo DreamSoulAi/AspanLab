@@ -232,7 +232,11 @@ async def _process_submission(
                 from backend.services import yandex_stt, issai_stt
                 _y = "on" if yandex_stt.is_enabled() else "OFF"
                 _i = "on" if issai_stt.is_enabled() else "OFF"
-                _preview = (transcript_raw or "")[:80]
+                # Текст для превью: сначала из сохранённого транскрипта, иначе
+                # из диагностики STT (на IGNORE отчёта нет, но что распозналось —
+                # видно). Так понятно ЧТО услышал движок и почему отфильтровано.
+                _preview = (transcript_raw or "").strip()[:120] or (stt_diag.get("text") or "")[:120]
+                _status_line = f"status={status}" if status else ""
                 if stt_diag:
                     _eng = stt_diag.get("engine", "?")
                     _stg = stt_diag.get("stage", "?")
@@ -240,9 +244,9 @@ async def _process_submission(
                     _kl = stt_diag.get("keylen")
                     _ws = " +WS!" if stt_diag.get("key_had_ws") else ""
                     _kinfo = f" keylen={_kl}{_ws}" if _kl is not None else ""
-                    msg = f"🔧 STT: `{_eng}` / `{_stg}` {_extra}\n[yx={_y} issai={_i}{_kinfo}]\n{_preview}"
+                    msg = f"🔧 STT: `{_eng}` / `{_stg}` {_extra}\n[yx={_y} issai={_i}{_kinfo}] {_status_line}\n{_preview}"
                 else:
-                    msg = f"🔧 STT: нет диагностики [yx={_y} issai={_i}]\n{_preview}"
+                    msg = f"🔧 STT: нет диагностики [yx={_y} issai={_i}] {_status_line}\n{_preview}"
                 await _send(telegram_chat, msg)
             except Exception as _de:
                 log.warning(f"[loc={location_id}] STT diag send failed: {_de}")

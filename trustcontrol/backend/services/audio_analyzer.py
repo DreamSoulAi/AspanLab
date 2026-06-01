@@ -450,10 +450,11 @@ async def analyze_audio_with_fallback(
         issai_raw = await issai_stt.transcribe(wav_bytes)
         if issai_raw and len(issai_raw.split()) >= 2:
             kz_text = issai_raw
-            stt_diag = {"engine": "issai", "stage": "ok", "chars": len(kz_text)}
+            stt_diag = {"engine": "issai", "stage": "ok", "chars": len(kz_text), "text": kz_text[:160]}
             log.info(f"ISSAI STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
         else:
-            log.info("ISSAI STT пусто/коротко — пробуем Yandex")
+            stt_diag = {"engine": "issai", "stage": "empty_or_short", "chars": len(issai_raw or ""), "text": (issai_raw or "")[:160]}
+            log.info(f"ISSAI STT пусто/коротко ({len(issai_raw or '')} симв) — пробуем Yandex")
 
     if kz_text is None and yandex_stt.is_enabled():
         yx_diag = {}
@@ -507,9 +508,10 @@ async def analyze_audio_with_fallback(
                     "priority":         0,
                     "transcript":       "",
                     "summary":          gpt.get("summary", "Личный разговор сотрудника"),
+                    "_stt_diag":        stt_diag,
                 }
             if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
-                return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
+                return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", ""), "_stt_diag": stt_diag}
             _r = _normalize_text_result(gpt, yx_text, language)
             _r["_stt_diag"] = stt_diag
             return _r
@@ -534,11 +536,12 @@ async def analyze_audio_with_fallback(
             "priority":         0,
             "transcript":       "",
             "summary":          gpt.get("summary", "Личный разговор сотрудника"),
+            "_stt_diag":        stt_diag or {"engine": "whisper", "stage": "fallback", "text": text[:160]},
         }
 
     # IGNORE: мусор
     if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
-        return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
+        return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", ""), "_stt_diag": stt_diag or {"engine": "whisper", "stage": "fallback", "text": text[:160]}}
 
     _r = _normalize_text_result(gpt, text, language)
     _r["_stt_diag"] = stt_diag or {"engine": "whisper", "stage": "fallback"}
