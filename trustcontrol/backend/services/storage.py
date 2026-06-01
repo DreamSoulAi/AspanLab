@@ -86,7 +86,13 @@ async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) 
                 },
             )
 
-            if settings.S3_ENDPOINT_URL:
+            # Публичная ссылка для прослушивания:
+            #  • R2: задан S3_PUBLIC_URL (pub-xxxx.r2.dev) → bucket в путь НЕ входит
+            #  • Supabase/MinIO: из S3_ENDPOINT_URL + bucket
+            #  • AWS: virtual-hosted style
+            if settings.S3_PUBLIC_URL:
+                url = f"{settings.S3_PUBLIC_URL.rstrip('/')}/{key}"
+            elif settings.S3_ENDPOINT_URL:
                 url = f"{settings.S3_ENDPOINT_URL.rstrip('/')}/{settings.S3_BUCKET}/{key}"
             else:
                 url = f"https://{settings.S3_BUCKET}.s3.{settings.S3_REGION}.amazonaws.com/{key}"

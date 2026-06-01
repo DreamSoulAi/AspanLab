@@ -71,6 +71,7 @@ async def debug_s3(token: str = ""):
     out["env"] = {
         "S3_BUCKET":         settings.S3_BUCKET or None,
         "S3_ENDPOINT_URL":   settings.S3_ENDPOINT_URL or None,
+        "S3_PUBLIC_URL":     settings.S3_PUBLIC_URL or None,
         "S3_REGION":         settings.S3_REGION or None,
         "AWS_ACCESS_KEY_ID": (settings.AWS_ACCESS_KEY_ID[:6] + "…") if settings.AWS_ACCESS_KEY_ID else None,
         "AWS_SECRET_set":    bool(settings.AWS_SECRET_ACCESS_KEY),
@@ -136,8 +137,12 @@ async def debug_s3(token: str = ""):
                 region_name=_region, config=cfg,
             )
             s3.put_object(Bucket=settings.S3_BUCKET, Key=key, Body=wav, ContentType="audio/wav")
-            url = f"{_endpoint.rstrip('/')}/{settings.S3_BUCKET}/{key}" if _endpoint \
-                  else f"https://{settings.S3_BUCKET}.s3.{_region}.amazonaws.com/{key}"
+            if settings.S3_PUBLIC_URL:
+                url = f"{settings.S3_PUBLIC_URL.rstrip('/')}/{key}"
+            elif _endpoint:
+                url = f"{_endpoint.rstrip('/')}/{settings.S3_BUCKET}/{key}"
+            else:
+                url = f"https://{settings.S3_BUCKET}.s3.{_region}.amazonaws.com/{key}"
             attempts.append({"config": name, "ok": True})
             break
         except Exception as e:
