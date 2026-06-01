@@ -24,7 +24,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY backend/worker/requirements-issai.txt .
-RUN pip install --no-cache-dir -r requirements-issai.txt
+# CPU-only torch ставим ОТДЕЛЬНО с CPU-индекса (иначе тянется 2GB CUDA).
+# torch нужен для разовой конвертации transformers-чекпойнта → CT2.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements-issai.txt
 
 COPY backend/worker/issai_worker.py .
 
