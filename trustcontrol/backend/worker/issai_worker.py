@@ -157,7 +157,7 @@ def _convert_to_ct2(model_id: str) -> str:
     t0 = time.time()
     converter = TransformersConverter(
         model_id,
-        copy_files=["tokenizer.json", "preprocessor_config.json"],
+        copy_files=["preprocessor_config.json"],
     )
     converter.convert(out_dir, quantization=quant, force=True)
     log.info(f"Конвертация готова за {time.time()-t0:.1f}с → {out_dir}")
