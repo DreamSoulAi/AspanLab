@@ -28,3 +28,8 @@ scripts/windows/dist/
 scripts/windows/*.spec
 scripts/windows/__pycache__/
 
+
+# Маркетинг — лиды и WhatsApp-сессия (приватные данные)
+marketing/leads.csv
+marketing/sent.csv
+marketing/wa_profile/
