@@ -269,8 +269,9 @@ def _check_auth(x_api_key: Optional[str]):
 # ── Эндпоинты ────────────────────────────────────────────────
 
 @app.get("/health")
-async def health(x_api_key: Optional[str] = Header(default=None)):
-    _check_auth(x_api_key)
+async def health():
+    # БЕЗ ключа: иначе Docker HEALTHCHECK и cloudflared не могут пинговать
+    # воркер и он помечается unhealthy. /transcribe остаётся под ключом.
     return {
         "status":  "ok",
         "model":   MODEL_ID,
