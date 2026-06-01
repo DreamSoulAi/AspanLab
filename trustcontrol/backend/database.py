@@ -3,17 +3,76 @@
 #  SQLAlchemy async + aiosqlite/asyncpg
 # ════════════════════════════════════════════════════════════
 
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from backend.config import settings
 
+
+# ── Нормализация DATABASE_URL ────────────────────────────────
+def _normalize_db_url(raw: str) -> tuple[str, dict]:
+    """
+    Приводит строку подключения к виду, который понимает async-движок,
+    и собирает connect_args. Закрывает 3 грабли хостингов Postgres
+    (Supabase / Neon / Render), на которых иначе падает с первого раза:
+
+      1. Схема `postgres://` или `postgresql://` → `postgresql+asyncpg://`
+         (async-движок работает только через asyncpg-драйвер).
+      2. Параметр `?sslmode=...` (и `channel_binding`) asyncpg НЕ понимает —
+         вырезаем из URL и переводим в connect_args ssl="require".
+      3. Облачный Postgres требует SSL — включаем явно для не-localhost.
+
+    Возвращает (нормализованный_url, connect_args).
+    """
+    url = (raw or "").strip()
+
+    # SQLite — как было, ничего не трогаем кроме check_same_thread.
+    if "sqlite" in url:
+        return url, {"check_same_thread": False}
+
+    # 1) Схема → asyncpg
+    if url.startswith("postgres://"):
+        url = "postgresql+asyncpg://" + url[len("postgres://"):]
+    elif url.startswith("postgresql://"):
+        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+
+    if not url.startswith("postgresql+asyncpg://"):
+        # Неизвестная СУБД (например MySQL) — отдаём как есть, без connect_args.
+        return url, {}
+
+    # 2) Вырезаем libpq-параметры, которые asyncpg не переваривает
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query))
+    sslmode = query.pop("sslmode", None)
+    query.pop("channel_binding", None)
+    clean_url = urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
+    )
+
+    # 3) SSL для облака + отключаем кэш prepared statements
+    #    (statement_cache_size=0 нужен если подключение идёт через
+    #     pgbouncer в transaction-режиме — иначе ловим ошибки кэша).
+    host = parts.hostname or ""
+    is_local = host in ("localhost", "127.0.0.1", "::1", "")
+    connect_args: dict = {"statement_cache_size": 0}
+    if not is_local and sslmode != "disable":
+        # ssl="require" = шифруем без строгой проверки сертификата —
+        # работает на Supabase/Neon/Render с первого раза.
+        connect_args["ssl"] = "require"
+
+    return clean_url, connect_args
+
+
+_DB_URL, _CONNECT_ARGS = _normalize_db_url(settings.DATABASE_URL)
+
 # ── Движок ───────────────────────────────────────────────────
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    _DB_URL,
     echo=settings.DEBUG,   # SQL логи только в dev
     future=True,
-    # Для SQLite — нужен check_same_thread=False
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    pool_pre_ping=True,    # проверяем живость соединения (облако рвёт idle-коннекты)
+    connect_args=_CONNECT_ARGS,
 )
 
 # ── Фабрика сессий ───────────────────────────────────────────
