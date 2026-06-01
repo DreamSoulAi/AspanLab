@@ -7,26 +7,17 @@
 #  НЕ поддерживает — он молча возвращает пусто/ошибку, и тогда казахская
 #  речь уходит в аудио-модель OpenAI, которая её ПЕРЕВОДИТ на русский
 #  вместо расшифровки. Поэтому здесь используется АСИНХРОННОЕ
-#  распознавание (longRunningRecognize v2):
+#  распознавание (longRunningRecognize v2) с inline base64-аудио.
 #
-#    1. PCM из WAV заливаем во временный объект Object Storage
-#    2. генерим presigned-ссылку (бакет приватный)
-#    3. POST longRunningRecognize {uri, languageCode=kk-KZ}
-#    4. опрашиваем операцию до done
-#    5. склеиваем текст из chunks → alternatives
-#    6. удаляем временный объект
-#
-#  Авторизация — API-ключ сервисного аккаунта (Api-Key).
-#  Нужны переменные окружения:
+#  Нужные переменные окружения:
 #    YANDEX_STT_API_KEY   — API-ключ сервисного аккаунта (роль speechkit-stt)
+#    YANDEX_STT_FOLDER_ID — id каталога (необязателен если аккаунт в одном каталоге)
 #    YANDEX_STT_LANG      — kk-KZ (по умолчанию)
-#    S3_BUCKET / S3_ENDPOINT_URL / AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
-#      — тот же бакет Object Storage что и для архива (заливка временного аудио)
 # ════════════════════════════════════════════════════════════
 
 import io
 import wave
-import uuid
+import base64
 import asyncio
 import logging
 
@@ -47,21 +38,13 @@ _ALLOWED_RATES = (8000, 16000, 48000)
 _POLL_INTERVAL_SEC = 2.0
 _POLL_TIMEOUT_SEC  = 120.0
 
-# Время жизни presigned-ссылки на временное аудио
-_PRESIGN_TTL_SEC = 1800
+# Максимальный PCM для inline-загрузки (8 МБ ≈ 4 мин @ 16кГц 16бит моно)
+_MAX_PCM_BYTES = 8 * 1024 * 1024
 
 
 def is_enabled() -> bool:
-    """
-    Yandex STT включён только если есть API-ключ И настроен Object Storage
-    (асинхронному распознаванию нужна заливка аудио в бакет).
-    """
-    return bool(
-        settings.YANDEX_STT_API_KEY
-        and settings.S3_BUCKET
-        and settings.AWS_ACCESS_KEY_ID
-        and settings.AWS_SECRET_ACCESS_KEY
-    )
+    """Yandex STT включён если задан API-ключ."""
+    return bool(settings.YANDEX_STT_API_KEY)
 
 
 def _parse_wav(wav_bytes: bytes):
@@ -95,69 +78,13 @@ def _parse_wav(wav_bytes: bytes):
     return pcm, sample_rate
 
 
-def _build_s3_config():
-    """
-    Config для S3-совместимых хранилищ (Yandex/MinIO/Backblaze).
-
-    botocore >= 1.36 по умолчанию добавляет CRC32-чексуммы к запросам,
-    что НЕ-AWS хранилища не принимают → SignatureDoesNotMatch. Отключаем
-    их (when_required). Старый botocore этих ключей не знает — фолбэк.
-    """
-    from botocore.config import Config
-    base = {"signature_version": "s3v4"}
-    try:
-        return Config(
-            request_checksum_calculation="when_required",
-            response_checksum_validation="when_required",
-            **base,
-        )
-    except TypeError:
-        return Config(**base)
-
-
-def _s3_client():
-    import boto3
-    endpoint = (settings.S3_ENDPOINT_URL or "").strip() or None
-    # Регион ОБЯЗАН совпадать с тем, что ждёт хранилище — иначе подпись s3v4
-    # не сходится (SignatureDoesNotMatch). Для Yandex это всегда ru-central1.
-    region = (settings.S3_REGION or "").strip() or "ru-central1"
-    if endpoint and "yandexcloud" in endpoint:
-        region = "ru-central1"
-    return boto3.client(
-        "s3",
-        endpoint_url=endpoint,
-        aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
-        aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
-        region_name=region,
-        config=_build_s3_config(),
-    )
-
-
-def _upload_and_presign(pcm: bytes, key: str) -> str:
-    """Заливает PCM во временный объект и возвращает presigned GET-ссылку. (sync — звать через to_thread)"""
-    s3 = _s3_client()
-    s3.put_object(Bucket=settings.S3_BUCKET, Key=key, Body=pcm, ContentType="audio/x-pcm")
-    return s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": settings.S3_BUCKET, "Key": key},
-        ExpiresIn=_PRESIGN_TTL_SEC,
-    )
-
-
-def _delete_object(key: str) -> None:
-    """Удаляет временный объект (sync — звать через to_thread). Ошибку глушим."""
-    try:
-        _s3_client().delete_object(Bucket=settings.S3_BUCKET, Key=key)
-    except Exception:
-        pass
-
-
 async def transcribe(wav_bytes: bytes, lang: str | None = None, diag: dict | None = None) -> str:
     """
     Распознаёт речь (в т.ч. казахскую) через АСИНХРОННЫЙ Yandex SpeechKit.
-    Возвращает текст или "" при любой ошибке/неподдержке (пайплайн уйдёт в фолбэк).
+    Аудио передаётся как base64 inline — без загрузки в Object Storage.
+    Возвращает текст или "" при любой ошибке/неподдержке.
 
-    diag — необязательный словарь для диагностики (заполняется по ходу):
+    diag — необязательный словарь для диагностики:
       {"engine":"yandex","stage":..., "http":..., "error":..., "chars":...}
     """
     d = diag if diag is not None else {}
@@ -173,20 +100,16 @@ async def transcribe(wav_bytes: bytes, lang: str | None = None, diag: dict | Non
         return ""
     pcm, sample_rate = parsed
 
-    language = (lang or settings.YANDEX_STT_LANG or "kk-KZ").strip()
-    key = f"stt-temp/{uuid.uuid4().hex}.pcm"
-
-    # ── 1. Заливаем PCM в Object Storage и берём presigned-ссылку ──
-    try:
-        uri = await asyncio.to_thread(_upload_and_presign, pcm, key)
-    except Exception as e:
-        d["stage"] = "upload_failed"
-        d["error"] = str(e)[:200]
-        log.warning(f"Yandex STT: заливка в Object Storage не удалась: {e}")
+    if len(pcm) > _MAX_PCM_BYTES:
+        d["stage"] = "pcm_too_large"
+        log.warning(f"Yandex STT: PCM {len(pcm)//1024}KB > {_MAX_PCM_BYTES//1024//1024}MB — пропуск")
         return ""
 
+    language = (lang or settings.YANDEX_STT_LANG or "kk-KZ").strip()
+    content_b64 = base64.b64encode(pcm).decode("ascii")
+
     headers = {"Authorization": f"Api-Key {settings.YANDEX_STT_API_KEY}"}
-    body = {
+    body: dict = {
         "config": {
             "specification": {
                 "languageCode":      language,
@@ -196,12 +119,14 @@ async def transcribe(wav_bytes: bytes, lang: str | None = None, diag: dict | Non
                 "audioChannelCount": 1,
             }
         },
-        "audio": {"uri": uri},
+        "audio": {"content": content_b64},
     }
+    if settings.YANDEX_STT_FOLDER_ID:
+        body["folderId"] = settings.YANDEX_STT_FOLDER_ID
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as cli:
-            # ── 2. Стартуем асинхронное распознавание ──
+            # ── 1. Стартуем асинхронное распознавание ──
             r = await cli.post(_LRR_URL, headers=headers, json=body)
             if r.status_code != 200:
                 d["stage"] = "lrr_http_error"
@@ -215,7 +140,7 @@ async def transcribe(wav_bytes: bytes, lang: str | None = None, diag: dict | Non
                 d["error"] = r.text[:200]
                 return ""
 
-            # ── 3. Опрашиваем операцию до done ──
+            # ── 2. Опрашиваем операцию до done ──
             waited = 0.0
             op = {}
             while waited < _POLL_TIMEOUT_SEC:
@@ -243,7 +168,7 @@ async def transcribe(wav_bytes: bytes, lang: str | None = None, diag: dict | Non
                 log.warning(f"Yandex STT operation error: {op['error']}")
                 return ""
 
-            # ── 4. Склеиваем текст из chunks → alternatives ──
+            # ── 3. Склеиваем текст из chunks → alternatives ──
             chunks = ((op.get("response") or {}).get("chunks") or [])
             parts: list[str] = []
             for ch in chunks:
@@ -261,9 +186,3 @@ async def transcribe(wav_bytes: bytes, lang: str | None = None, diag: dict | Non
         d["error"] = str(e)[:200]
         log.warning(f"Yandex STT запрос не удался: {e}")
         return ""
-    finally:
-        # ── 5. Чистим временный объект ──
-        try:
-            await asyncio.to_thread(_delete_object, key)
-        except Exception:
-            pass
