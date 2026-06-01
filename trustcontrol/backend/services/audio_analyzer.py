@@ -446,15 +446,22 @@ async def analyze_audio_with_fallback(
     kz_text = None
     stt_diag = {}   # диагностика STT для отображения (видно сработал ли казахский)
 
+    issai_failed_diag = None   # причина сбоя ISSAI — не теряем её при фолбэке на Yandex
     if issai_stt.is_enabled():
-        issai_raw = await issai_stt.transcribe(wav_bytes)
+        issai_diag = {}
+        issai_raw = await issai_stt.transcribe(wav_bytes, diag=issai_diag)
         if issai_raw and len(issai_raw.split()) >= 2:
             kz_text = issai_raw
             stt_diag = {"engine": "issai", "stage": "ok", "chars": len(kz_text), "text": kz_text[:160]}
             log.info(f"ISSAI STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
         else:
-            stt_diag = {"engine": "issai", "stage": "empty_or_short", "chars": len(issai_raw or ""), "text": (issai_raw or "")[:160]}
-            log.info(f"ISSAI STT пусто/коротко ({len(issai_raw or '')} симв) — пробуем Yandex")
+            # ISSAI — главный движок для казахского. Если он не сработал,
+            # сохраняем ТОЧНУЮ причину (timeout/connect_error/http) — без неё
+            # Yandex затирает диагностику и не видно что туннель мёртв.
+            issai_failed_diag = issai_diag or {"engine": "issai", "stage": "empty_or_short",
+                                               "chars": len(issai_raw or ""), "text": (issai_raw or "")[:160]}
+            stt_diag = issai_failed_diag
+            log.info(f"ISSAI STT не сработал ({issai_diag}) — пробуем Yandex")
 
     if kz_text is None and yandex_stt.is_enabled():
         yx_diag = {}
@@ -464,12 +471,17 @@ async def analyze_audio_with_fallback(
             log.warning(f"Yandex STT ошибка: {e}")
             yx_raw = ""
             yx_diag = {"engine": "yandex", "stage": "exception", "error": str(e)[:200]}
-        stt_diag = yx_diag
         if yx_raw and len(yx_raw.split()) >= 2:
             kz_text = yx_raw
+            stt_diag = yx_diag
             log.info(f"Yandex STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
         else:
-            log.info(f"Yandex STT не дал текст | diag={yx_diag}")
+            # И ISSAI, и Yandex молчат. Показываем причину ISSAI (он главный),
+            # а ошибку Yandex добавляем для справки.
+            stt_diag = issai_failed_diag or yx_diag
+            if issai_failed_diag:
+                stt_diag = {**issai_failed_diag, "yandex": yx_diag.get("stage") or yx_diag.get("error", "")}
+            log.info(f"Yandex STT не дал текст | diag={yx_diag} | issai={issai_failed_diag}")
 
     # Совместимость с кодом ниже (использовал yx_text)
     yx_text = kz_text

@@ -24,17 +24,22 @@ def is_enabled() -> bool:
     return bool(settings.ISSAI_WORKER_URL)
 
 
-async def transcribe(audio_bytes: bytes, lang: str | None = None) -> str:
+async def transcribe(audio_bytes: bytes, lang: str | None = None, diag: dict | None = None) -> str:
     """
     Отправляет аудио на self-hosted ISSAI-воркер, возвращает текст.
 
     Поддерживает WAV, MP3, OGG, WebM — любой формат принимает ffmpeg на воркере.
     lang: код ISO (ru, kk, en…). Если None — берём из YANDEX_STT_LANG (kk-KZ → kk).
+    diag: если передан dict — заполняется причиной ошибки (для Telegram-диагностики),
+          чтобы было видно ПОЧЕМУ ISSAI не ответил (туннель мёртв / таймаут / HTTP).
 
     Никогда не бросает исключение — при ошибке возвращает "",
     чтобы вызывающий код перешёл к следующему STT в цепочке.
     """
+    if diag is None:
+        diag = {}
     if not is_enabled():
+        diag.update({"engine": "issai", "stage": "disabled"})
         return ""
 
     # whisper-turbo-ksc2 принимает ISO-639-1: "kk", "ru", "en"
@@ -58,6 +63,8 @@ async def transcribe(audio_bytes: bytes, lang: str | None = None) -> str:
 
         if r.status_code != 200:
             log.warning(f"ISSAI worker HTTP {r.status_code}: {r.text[:200]}")
+            diag.update({"engine": "issai", "stage": "http_error",
+                         "http": r.status_code, "error": r.text[:160]})
             return ""
 
         data = r.json()
@@ -67,13 +74,19 @@ async def transcribe(audio_bytes: bytes, lang: str | None = None) -> str:
                 f"ISSAI STT OK | lang={data.get('language', language)} "
                 f"| {len(text)} симв | {text[:80]!r}"
             )
+            diag.update({"engine": "issai", "stage": "ok", "text": text[:160]})
         else:
             log.info("ISSAI STT: пустой ответ")
+            diag.update({"engine": "issai", "stage": "empty"})
         return text
 
     except httpx.TimeoutException:
         log.warning("ISSAI STT: таймаут — воркер не ответил за 120с")
+        diag.update({"engine": "issai", "stage": "timeout",
+                     "error": "воркер не ответил за 120с"})
         return ""
     except Exception as e:
         log.warning(f"ISSAI STT ошибка: {e}")
+        diag.update({"engine": "issai", "stage": "connect_error",
+                     "error": f"{type(e).__name__}: {str(e)[:160]}"})
         return ""
