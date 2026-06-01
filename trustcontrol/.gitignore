@@ -33,3 +33,5 @@ scripts/windows/__pycache__/
 marketing/leads.csv
 marketing/sent.csv
 marketing/wa_profile/
+marketing/conversations.json
+marketing/hot_leads.csv
