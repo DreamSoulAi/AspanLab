@@ -209,10 +209,12 @@ async def send_ok_report(
         flags.append("нет допродажи")
     flags_line = f"\n_{', '.join(flags)}_" if flags else ""
 
+    transcript_line = f"\n_{transcript[:300]}_" if transcript and transcript.strip() else ""
     text = (
         f"{score_icon} *{location_name}* — {score:.0f}/100\n"
         f"Тон: {tone_ru}"
         f"{flags_line}"
+        f"{transcript_line}"
     )
     await _send(chat_id, text)
 

@@ -235,7 +235,7 @@ async def _process_submission(
                 # Текст для превью: сначала из сохранённого транскрипта, иначе
                 # из диагностики STT (на IGNORE отчёта нет, но что распозналось —
                 # видно). Так понятно ЧТО услышал движок и почему отфильтровано.
-                _preview = (transcript_raw or "").strip()[:120] or (stt_diag.get("text") or "")[:120]
+                _preview = (transcript_raw or "").strip()[:400] or (stt_diag.get("text") or "")[:400]
                 _status_line = f"status={status}" if status else ""
                 if stt_diag:
                     _eng = stt_diag.get("engine", "?")
