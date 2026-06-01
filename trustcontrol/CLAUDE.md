@@ -42,24 +42,33 @@
 - Реальные тесты с казахскими диалогами дают плохой результат
 - Клиентов пока нет — именно из-за языковой проблемы
 
-**Решение которое реализовано в коде (но ещё не включено в проде):**
+**Решение которое реализовано в коде:**
 Цепочка STT: **ISSAI (self-hosted) → Yandex SpeechKit → OpenAI аудио-модель**
 - `backend/services/issai_stt.py` — клиент к self-hosted воркеру
 - `backend/worker/issai_worker.py` — FastAPI сервер с faster-whisper (whisper-turbo-ksc2)
 - `backend/services/yandex_stt.py` — Yandex SpeechKit клиент
-- Ключи Yandex (`YANDEX_STT_API_KEY`, `YANDEX_STT_FOLDER_ID`) в проде **не выставлены**
-- Это главный незакрытый шаг для решения казахской проблемы
 
-**Env-переменные которые нужно добавить в прод для казахского:**
+**ЯНДЕКС — ТУПИК (июнь 2026):** аккаунт Данила переведён на новый формат
+ключей со «скоупами» (префикс `AQWJ...`, поле «Область действия» обязательно).
+Старый REST-эндпоинт `transcribe...v2` такие ключи НЕ принимает →
+`code 16 Unknown api key`. Перепробовали кучу ключей — бесполезно.
+Чтобы поддержать новые ключи, надо переписывать на gRPC API v3 (с неясным
+выхлопом). Решили завязать с Яндексом и идти на ISSAI. Яндекс остаётся в коде
+как фолбэк — если когда-нибудь появится рабочий `AQVN...` ключ, подставится сам.
+Код Яндекса теперь шлёт аудио inline base64 (S3 убран — он ломался на
+SignatureDoesNotMatch из-за CRC32 botocore).
+
+**ТЕКУЩИЙ ПЛАН (июнь 2026): ISSAI локально на ПК Данила для проверки качества.**
+- `docker-compose.issai-local.yml` — поднимает воркер + бесплатный туннель
+  cloudflared одной командой (прод на Render → туннель → ПК Данила).
+- `scripts/run-issai-local.bat` / `run-issai-stop.bat` — запуск/стоп в один клик.
+- `ISSAI_LOCAL.md` — гайд для Данила.
+- После проверки качества → переносим воркер на Hetzner VPS (~€4/мес).
+
+**Env-переменные для ISSAI (выставить в Render когда поднимет воркер):**
 ```
-YANDEX_STT_API_KEY=...        # из Yandex Cloud → IAM → сервисный аккаунт
-YANDEX_STT_FOLDER_ID=...      # id каталога в Yandex Cloud
-YANDEX_STT_LANG=kk-KZ
-```
-Или для ISSAI воркера (self-hosted, дороже в настройке но бесплатно потом):
-```
-ISSAI_WORKER_URL=http://vps-ip:8010
-ISSAI_WORKER_KEY=секрет
+ISSAI_WORKER_URL=https://xxxx.trycloudflare.com   # адрес туннеля из логов cloudflared
+ISSAI_WORKER_KEY=trustlocal2026                    # = ISSAI_API_KEY воркера
 ```
 
 ---
