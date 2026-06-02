@@ -86,10 +86,13 @@ class Settings:
     # и нормально тянет шала-казахский (казахский + русские слова).
     YANDEX_STT_LANG:      str = os.getenv("YANDEX_STT_LANG", "kk-KZ")
 
-    # ── S3 / Supabase Storage (архив приоритетных записей) ───
+    # ── S3 / Cloudflare R2 (архив аудио для прослушки) ───────
     S3_BUCKET:             str = os.getenv("S3_BUCKET", "")
-    S3_REGION:             str = os.getenv("S3_REGION", "us-east-1")
-    S3_ENDPOINT_URL:       str = os.getenv("S3_ENDPOINT_URL", "")   # пусто = AWS, иначе Supabase/MinIO
+    S3_REGION:             str = os.getenv("S3_REGION", "auto")        # R2 = auto
+    S3_ENDPOINT_URL:       str = os.getenv("S3_ENDPOINT_URL", "")      # R2 S3-API эндпоинт (для загрузки)
+    # Публичный базовый URL бакета (R2 r2.dev / свой домен). Если задан —
+    # прослушка идёт по прямой публичной ссылке вместо presigned.
+    S3_PUBLIC_URL:         str = os.getenv("S3_PUBLIC_URL", "")
     AWS_ACCESS_KEY_ID:     str = os.getenv("AWS_ACCESS_KEY_ID", "")
     AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
 

@@ -848,7 +848,12 @@ async def get_report_audio(
     if not report.s3_key:
         raise HTTPException(status_code=404, detail="Аудио для этого разговора не сохранено")
 
-    url = presigned_get_url(report.s3_key, expires=3600)
+    # Публичный бакет (R2 r2.dev) → прямая ссылка; иначе presigned на 1 час.
+    from backend.config import settings
+    if settings.S3_PUBLIC_URL:
+        url = f"{settings.S3_PUBLIC_URL.rstrip('/')}/{report.s3_key}"
+    else:
+        url = presigned_get_url(report.s3_key, expires=3600)
     if not url:
         raise HTTPException(status_code=503, detail="Хранилище аудио не настроено")
     return {"url": url}
