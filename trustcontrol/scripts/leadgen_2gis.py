@@ -48,6 +48,21 @@ CATALOG = "https://catalog.api.2gis.com/3.0/items"
 # и передай через --key или переменную DGIS_API_KEY.
 DEFAULT_WEB_KEY = "c7f1a769-c8a5-4636-b14d-d8c987808a12"
 
+# Веб-ключ привязан к домену 2gis.kz и проверяет заголовки.
+# Притворяемся, что запрос идёт со страницы сайта — иначе ключ "blocked".
+HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/126.0.0.0 Safari/537.36"),
+    "Referer": "https://2gis.kz/",
+    "Origin":  "https://2gis.kz",
+    "Accept":  "application/json, text/plain, */*",
+    "Accept-Language": "ru,kk;q=0.9,en;q=0.8",
+}
+
+SESSION = requests.Session()
+SESSION.headers.update(HEADERS)
+
 # Координаты центра городов (lon, lat) — как в адресной строке 2gis.kz (m=lon,lat).
 # Веб-ключ не пускает в справочник регионов, поэтому ищем по точке + городу в запросе.
 CITY_COORDS = {
@@ -124,7 +139,7 @@ def fetch_leads(query: str, city: str, key: str, limit: int) -> list[Lead]:
         }
         if coords:
             params["location"] = f"{coords[0]},{coords[1]}"
-        r = requests.get(CATALOG, params=params, timeout=30)
+        r = SESSION.get(CATALOG, params=params, timeout=30)
         if r.status_code == 404:
             break  # 2ГИС отдаёт 404 когда страницы кончились
         r.raise_for_status()
@@ -238,7 +253,7 @@ def fetch_reviews_text(dgis_id: str, key: str, limit: int = 8) -> list[str]:
     и анализ деградирует до оценки по рейтингу.
     """
     try:
-        r = requests.get(
+        r = SESSION.get(
             CATALOG,
             params={
                 "id":     dgis_id,
