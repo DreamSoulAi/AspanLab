@@ -27,7 +27,7 @@
 
 Это единственный способ чтобы следующая сессия не тратила время на объяснения.
 
-### Текущий статус проекта (май 2026)
+### Текущий статус проекта (июнь 2026)
 
 **Что работает:**
 - Авторизация, дашборд, Telegram-уведомления
@@ -36,30 +36,46 @@
 - Аналитика по сотрудникам с energy_level (1-5)
 - Гибкие смены (дневная/ночная, владелец настраивает время)
 - Win7-совместимая сборка .exe для кассового ПК
+- **Казахский STT через ISSAI — РАЗВЁРНУТО В ПРОДЕ (июнь 2026) ✅**
 
-**Что НЕ работает / главная проблема:**
-- Казахский и шала-казахский плохо распознаётся через OpenAI
-- Реальные тесты с казахскими диалогами дают плохой результат
-- Клиентов пока нет — именно из-за языковой проблемы
+**ИНФРАСТРУКТУРА ПРОДА (поднята 02.06.2026) — НЕ ПЕРЕНАСТРАИВАТЬ:**
+- **Бэкенд:** Render → `https://aspanlab.onrender.com` (free tier, спит при простое
+  → первый запрос после паузы +50с — это нормально, не баг).
+- **БД:** Neon PostgreSQL (free, регион AWS Frankfurt). `DATABASE_URL` выставлен
+  в Render. `database.py` сам нормализует URL (postgres:// → asyncpg, режет
+  sslmode/channel_binding, добавляет ssl=require). Данные больше НЕ теряются
+  (раньше был SQLite на Render → стирался при каждом редеплое).
+- **ISSAI воркер:** VPS ps.kz (Basic-3, 4GB RAM / 4 CPU, Алматы kz-ala-1),
+  IPv4 `213.155.21.25`, порт 8010. Запущен через `bash scripts/deploy-issai.sh`
+  (Docker, модель whisper-turbo-ksc2, int8 на CPU). Добавлен 4GB swap.
+  `/health` проверен — отдаёт `{"status":"ok",...}` с заголовком X-API-Key.
+- **Env в Render (выставлены):** `ISSAI_WORKER_URL=http://213.155.21.25:8010`,
+  `ISSAI_WORKER_KEY=<ключ из issai.env воркера>`, `DATABASE_URL`,
+  `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`.
+- Цена: VPS ~14 450 тг/мес (реальная цена ps.kz, НЕ выдумывать прикидки),
+  домен trustcontrol.kz ~9 590 тг/год, Neon+Render = 0 тг.
 
-**Решение которое реализовано в коде (но ещё не включено в проде):**
-Цепочка STT: **ISSAI (self-hosted) → Yandex SpeechKit → OpenAI аудио-модель**
-- `backend/services/issai_stt.py` — клиент к self-hosted воркеру
-- `backend/worker/issai_worker.py` — FastAPI сервер с faster-whisper (whisper-turbo-ksc2)
-- `backend/services/yandex_stt.py` — Yandex SpeechKit клиент
-- Ключи Yandex (`YANDEX_STT_API_KEY`, `YANDEX_STT_FOLDER_ID`) в проде **не выставлены**
-- Это главный незакрытый шаг для решения казахской проблемы
+**STT цепочка сейчас:** ISSAI (213.155.21.25:8010) → Yandex (тупик, фолбэк)
+→ OpenAI аудио-модель (фолбэк тона). Если ISSAI дал текст → анализ через
+дешёвый text-GPT (gpt-4o-mini, ~$0.001/разговор) вместо дорогого аудио (~$0.12).
 
-**Env-переменные которые нужно добавить в прод для казахского:**
+**Обслуживание VPS:**
+- Логи: `docker compose -f docker-compose.issai.yml logs -f`
+- Рестарт: `docker compose -f docker-compose.issai.yml restart`
+- Если воркер недоступен снаружи — открыть порт: `ufw allow 8010/tcp`
+- Подключение: PuTTY/VNC, логин `ubuntu`, потом `sudo -i`. VNC ломает
+  copy-paste пароля → проще PuTTY (правый клик = вставка).
+
+**Что осталось проверить:**
+- Реальный казахский разговор на кассе через ISSAI (качество транскрипции).
+- Зарегистрировать ADMIN_PHONE=+77071030818 как юзера на сайте (иначе нет
+  админских уведомлений — некритично).
+
+**Env-переменные Yandex (остаются как фолбэк, в проде НЕ выставлены — тупик):**
 ```
-YANDEX_STT_API_KEY=...        # из Yandex Cloud → IAM → сервисный аккаунт
-YANDEX_STT_FOLDER_ID=...      # id каталога в Yandex Cloud
+YANDEX_STT_API_KEY=...   # новые AQWJ-ключи не работают на REST v2 (нужен gRPC v3)
+YANDEX_STT_FOLDER_ID=...
 YANDEX_STT_LANG=kk-KZ
-```
-Или для ISSAI воркера (self-hosted, дороже в настройке но бесплатно потом):
-```
-ISSAI_WORKER_URL=http://vps-ip:8010
-ISSAI_WORKER_KEY=секрет
 ```
 
 ---
