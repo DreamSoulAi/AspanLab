@@ -360,7 +360,7 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
 
     # initial_prompt подсказываем ТОЛЬКО для казахского — для ru/en/auto он
     # сместит распознавание не туда.
-    init_prompt = INITIAL_PROMPT if (language or "").lower() == "kk" else None
+    init_prompt = INITIAL_PROMPT if language in (None, "kk") else None
 
     segments, info = _model.transcribe(
         audio_buf,

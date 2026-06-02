@@ -255,7 +255,7 @@ async def gpt_analyze(transcript: str, business_context: str = None) -> dict:
                 {"role": "user",   "content": user_content},
             ],
             response_format={"type": "json_object"},
-            max_tokens=800,
+            max_tokens=1200,
             temperature=0.2,
         )
 

@@ -393,8 +393,8 @@ def _normalize_text_result(gpt: dict, transcript: str, language: str = None) -> 
         "language":             gpt.get("language") or language or "ru",
         "payment_confirmed":    None,
         "upsell_attempt":       events.get("upsell"),
-        "customer_satisfaction": int(gpt.get("customer_satisfaction", 3)),
-        "energy_level":         int(gpt.get("energy_level", 3)),
+        "customer_satisfaction": int(gpt.get("customer_satisfaction") or 3),
+        "energy_level":         int(gpt.get("energy_level") or 3),
         "positives":            gpt.get("positives", []),
         "issues":               gpt.get("issues", []),
     }
