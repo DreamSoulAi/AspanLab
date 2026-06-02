@@ -43,8 +43,9 @@ async def transcribe(audio_bytes: bytes, lang: str | None = None, diag: dict | N
         return ""
 
     # whisper-turbo-ksc2 принимает ISO-639-1: "kk", "ru", "en"
-    # ISSAI — казахская модель, дефолт всегда kk (не тянем YANDEX_STT_LANG).
-    language = (lang or "kk").split("-")[0].lower()
+    # Используем "auto" чтобы модель сама определила язык —
+    # в Алматы ~60% говорят на русском, принудительный kk ломал русскую речь.
+    language = lang.split("-")[0].lower() if lang else "auto"
 
     worker_url = settings.ISSAI_WORKER_URL.rstrip("/")
 

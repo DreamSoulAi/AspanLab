@@ -322,9 +322,9 @@ async def transcribe(
         raise HTTPException(status_code=400, detail="Пустой файл")
 
     # Нормализуем код языка
-    lang = (language or "kk").split("-")[0].lower()
-    # whisper-turbo-ksc2 лучше всего работает с kk; для шала-казахского тоже kk
-    # Для явно русских файлов → ru; для остальных → None (auto-detect)
+    lang = (language or "auto").split("-")[0].lower()
+    # "auto" или неизвестный код → None (Whisper сам определит язык)
+    # Это важно для шала-казахского: в Алматы ~60% говорят на русском.
     whisper_lang = lang if lang in ("kk", "ru", "en") else None
 
     t0 = time.time()
