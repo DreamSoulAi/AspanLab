@@ -36,9 +36,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 8G       # turbo (int8) ~2.5GB + конвертация/пики; бери VPS 8GB
+          memory: 3500M    # turbo int8 ~2.5GB + пики; подходит на VPS 4GB
         reservations:
-          memory: 4G
+          memory: 2G
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')"]
       interval: 30s
