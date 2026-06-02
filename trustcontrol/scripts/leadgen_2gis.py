@@ -42,12 +42,32 @@ except ImportError:
     sys.exit("Нужен модуль requests:  pip install requests")
 
 CATALOG = "https://catalog.api.2gis.com/3.0/items"
-REGION  = "https://catalog.api.2gis.com/2.0/region/search"
 
 # Публичный ключ, которым пользуется сам сайт 2gis.kz (достаётся из DevTools).
 # Может смениться или ограничиться по IP — тогда возьми новый из Network
 # и передай через --key или переменную DGIS_API_KEY.
 DEFAULT_WEB_KEY = "c7f1a769-c8a5-4636-b14d-d8c987808a12"
+
+# Координаты центра городов (lon, lat) — как в адресной строке 2gis.kz (m=lon,lat).
+# Веб-ключ не пускает в справочник регионов, поэтому ищем по точке + городу в запросе.
+CITY_COORDS = {
+    "алматы":     (76.889709, 43.238949),
+    "астана":     (71.430411, 51.128422),
+    "нур-султан": (71.430411, 51.128422),
+    "шымкент":    (69.596500, 42.317000),
+    "караганда":  (73.087500, 49.806400),
+    "актобе":     (57.166000, 50.283900),
+    "тараз":      (71.378900, 42.901600),
+    "павлодар":   (76.967100, 52.287300),
+    "усть-каменогорск": (82.617800, 49.948600),
+    "семей":      (80.227500, 50.411100),
+    "атырау":     (51.923900, 47.094500),
+    "костанай":   (63.624200, 53.214400),
+    "кызылорда":  (65.509500, 44.842800),
+    "уральск":    (51.366800, 51.227700),
+    "петропавловск": (69.146100, 54.872800),
+    "актау":      (51.158900, 43.651100),
+}
 
 # Ниши → поисковые запросы 2ГИС (рубрики).
 NICHES = {
@@ -78,17 +98,12 @@ class Lead:
 
 # ── 2ГИС API ──────────────────────────────────────────────────────────────────
 
-def get_region_id(city: str, key: str) -> str:
-    r = requests.get(REGION, params={"q": city, "key": key}, timeout=30)
-    r.raise_for_status()
-    items = (r.json().get("result") or {}).get("items") or []
-    if not items:
-        sys.exit(f"Город «{city}» не найден в 2ГИС")
-    return str(items[0]["id"])
-
-
-def fetch_leads(query: str, region_id: str, key: str, limit: int) -> list[Lead]:
-    """Тянет заведения по одному поисковому запросу с пагинацией."""
+def fetch_leads(query: str, city: str, key: str, limit: int) -> list[Lead]:
+    """
+    Тянет заведения по одному запросу с пагинацией.
+    Ищем по координатам центра города (как сам сайт) + город в тексте запроса,
+    т.к. веб-ключ не пускает в справочник регионов.
+    """
     out: list[Lead] = []
     page = 1
     page_size = 50  # максимум 2ГИС
@@ -96,21 +111,29 @@ def fetch_leads(query: str, region_id: str, key: str, limit: int) -> list[Lead]:
         "items.point,items.address,items.contact_groups,"
         "items.reviews,items.rubrics,items.org"
     )
+    coords = CITY_COORDS.get(city.strip().lower())
+    full_query = f"{query} {city}"
 
     while len(out) < limit:
         params = {
-            "q":         query,
-            "region_id": region_id,
+            "q":         full_query,
             "page":      page,
             "page_size": page_size,
             "fields":    fields,
             "key":       key,
         }
+        if coords:
+            params["location"] = f"{coords[0]},{coords[1]}"
         r = requests.get(CATALOG, params=params, timeout=30)
         if r.status_code == 404:
             break  # 2ГИС отдаёт 404 когда страницы кончились
         r.raise_for_status()
-        result = r.json().get("result") or {}
+        payload = r.json()
+        meta = payload.get("meta") or {}
+        if meta.get("code") not in (200, None):
+            print(f"    [2ГИС] {meta.get('code')}: {meta.get('error', {})}", file=sys.stderr)
+            break
+        result = payload.get("result") or {}
         items = result.get("items") or []
         if not items:
             break
@@ -303,14 +326,15 @@ def main():
     key = args.key or os.getenv("DGIS_API_KEY") or DEFAULT_WEB_KEY
 
     print(f"Город: {args.city} | Ниша: {args.niche}")
-    region_id = get_region_id(args.city, key)
-    print(f"region_id={region_id}")
+    if args.city.strip().lower() not in CITY_COORDS:
+        print(f"  (центр города «{args.city}» неизвестен — ищу только по тексту, "
+              f"результаты могут быть менее точными)")
 
     # Собираем по всем запросам ниши, дедупим по dgis_id
     seen: dict[str, Lead] = {}
     for q in NICHES[args.niche]:
         print(f"  Запрос: {q} ...")
-        for lead in fetch_leads(q, region_id, key, args.limit):
+        for lead in fetch_leads(q, args.city, key, args.limit):
             if lead.dgis_id and lead.dgis_id not in seen:
                 seen[lead.dgis_id] = lead
 
