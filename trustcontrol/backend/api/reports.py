@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header,
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from backend.config import settings
 from backend.database import get_db, AsyncSessionLocal
 from backend.models.location import Location
 from backend.models.report import Report
@@ -350,10 +351,10 @@ async def _process_submission(
         # stage=lrr_http_error/disabled/... → почему Yandex не сработал
         stt_diag = result.get("_stt_diag") or {}
         log.info(f"[loc={location_id}] STT diag: {stt_diag}")
-        # Диагностику в Telegram шлём ВСЕГДА на оригинальной обработке (не на
-        # повторах из очереди). Даже если диагностики нет — показываем включён
-        # ли вообще Yandex/ISSAI, чтобы сразу видеть выставлены ли ключи в проде.
-        if telegram_chat and failed_job_id is None:
+        # Техническую диагностику STT в Telegram шлём ТОЛЬКО в DEBUG-режиме.
+        # В проде клиент не должен видеть "🔧 STT: issai / timeout [yx=on...]" —
+        # это спамило на каждый IGNORE. STT работает, отладка больше не нужна.
+        if settings.DEBUG and telegram_chat and failed_job_id is None:
             try:
                 from backend.services.notifier import _send
                 from backend.services import yandex_stt, issai_stt

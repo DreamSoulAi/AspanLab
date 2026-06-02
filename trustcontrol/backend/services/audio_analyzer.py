@@ -374,12 +374,16 @@ async def _transcribe_audio(wav_bytes: bytes, language: str = None) -> str:
 def _normalize_text_result(gpt: dict, transcript: str, language: str = None) -> dict:
     """Приводит результат gpt_analyze (текстовый путь) к формату аудио-модели."""
     events = gpt.get("events", {}) or {}
+    # Если GPT вернул размеченный по ролям диалог — показываем его (красивее),
+    # иначе сырой транскрипт от STT.
+    dialogue = (gpt.get("dialogue") or "").strip()
+    display_transcript = dialogue if len(dialogue) >= len(transcript) // 2 else transcript
     return {
         "status":               "OK",
         "is_business":          True,
         "is_personal_talk":     bool(gpt.get("is_personal_talk", False)),
         "priority":             int(gpt.get("priority", 0)) if gpt.get("priority") else (1 if events.get("fraud_attempt") or events.get("rudeness") else 0),
-        "transcript":           transcript,
+        "transcript":           display_transcript,
         "tone":                 gpt.get("tone", "neutral"),
         "score":                gpt.get("score", 50),
         "summary":              gpt.get("summary", ""),
