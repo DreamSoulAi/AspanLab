@@ -27,49 +27,53 @@
 
 Это единственный способ чтобы следующая сессия не тратила время на объяснения.
 
-### Текущий статус проекта (май 2026)
+### Текущий статус проекта (ОБНОВЛЕНО 02.06.2026 — инфраструктура в проде)
 
 **Что работает:**
-- Авторизация, дашборд, Telegram-уведомления
-- Запись аудио через PWA (браузер на кассе)
-- Анализ через GPT-4o-mini-audio-preview (тон, грубость, fraud)
+- Авторизация (OTP), дашборд, Telegram-уведомления
+- Запись аудио через PWA (браузер/телефон на кассе) — сырое аудио (noiseSuppression off)
+- Анализ: ISSAI даёт казахский текст → text-GPT (gpt-4o-mini) считает тон/события (дёшево)
 - Аналитика по сотрудникам с energy_level (1-5)
-- Гибкие смены (дневная/ночная, владелец настраивает время)
-- Win7-совместимая сборка .exe для кассового ПК
+- Гибкие смены, Win7-совместимая сборка .exe
+- **Прослушка записей: аудио-плеер + кнопка скачать в модалке отчёта (R2)**
+- **Полный транскрипт по клику в дашборде + в Telegram**
+- **Казахский STT через ISSAI — РАЗВЁРНУТ В ПРОДЕ ✅**
 
-**Что НЕ работает / главная проблема:**
-- Казахский и шала-казахский плохо распознаётся через OpenAI
-- Реальные тесты с казахскими диалогами дают плохой результат
-- Клиентов пока нет — именно из-за языковой проблемы
+**ИНФРАСТРУКТУРА ПРОДА (поднята 02.06.2026 — НЕ ПЕРЕНАСТРАИВАТЬ):**
+- **Бэкенд:** Render, деплоит ветку **main** → `https://aspanlab.onrender.com`
+  (free tier — спит при простое, первый запрос после паузы +50с, это норма).
+- **БД:** Neon PostgreSQL (free, AWS Frankfurt). `DATABASE_URL` в Render.
+  `database.py` сам нормализует URL. Данные больше НЕ теряются.
+- **ISSAI воркер:** VPS ps.kz (Basic-3, 4GB RAM / 4 CPU, Алматы kz-ala-1),
+  IPv4 **213.155.21.25**, порт 8010, +4GB swap. Запущен через
+  `bash scripts/deploy-issai.sh` (Docker, whisper-turbo-ksc2, int8/CPU).
+  Воркер бьётся из main (`git clone` = main). Логин ubuntu → `sudo -i`.
+  Порт 8010 открыт. `/health` публичный. ⚠️ ВОРКЕР ДОЛЖЕН БЫТЬ НА ВЕТКЕ main
+  (не на dev-ветках) — там лучшие настройки распознавания.
+- **Аудио-архив:** Cloudflare R2, бакет **trustcontrol-audio** (публичный r2.dev).
+- **Env в Render (выставлены):** DATABASE_URL, OPENAI_API_KEY, TELEGRAM_BOT_TOKEN,
+  SECRET_KEY, ISSAI_WORKER_URL=http://213.155.21.25:8010, ISSAI_WORKER_KEY,
+  OTP_BYPASS=true (код 000000, пока нет SMS), S3_BUCKET, S3_ENDPOINT_URL,
+  S3_PUBLIC_URL, S3_REGION=auto, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY.
+- Цены (реальные ps.kz): VPS 4GB ~14 450 тг/мес, домен trustcontrol.kz
+  ~9 590 тг/год. Neon + Render + R2 = 0 тг.
 
-**Решение которое реализовано в коде:**
-Цепочка STT: **ISSAI (self-hosted) → Yandex SpeechKit → OpenAI аудио-модель**
-- `backend/services/issai_stt.py` — клиент к self-hosted воркеру
-- `backend/worker/issai_worker.py` — FastAPI сервер с faster-whisper (whisper-turbo-ksc2)
-- `backend/services/yandex_stt.py` — Yandex SpeechKit клиент
+**STT цепочка:** ISSAI (213.155.21.25:8010) → Yandex (тупик, фолбэк) →
+OpenAI аудио-модель (фолбэк тона). ISSAI даёт текст → text-GPT (~$0.001/разговор).
 
-**ЯНДЕКС — ТУПИК (июнь 2026):** аккаунт Данила переведён на новый формат
-ключей со «скоупами» (префикс `AQWJ...`, поле «Область действия» обязательно).
-Старый REST-эндпоинт `transcribe...v2` такие ключи НЕ принимает →
-`code 16 Unknown api key`. Перепробовали кучу ключей — бесполезно.
-Чтобы поддержать новые ключи, надо переписывать на gRPC API v3 (с неясным
-выхлопом). Решили завязать с Яндексом и идти на ISSAI. Яндекс остаётся в коде
-как фолбэк — если когда-нибудь появится рабочий `AQVN...` ключ, подставится сам.
-Код Яндекса теперь шлёт аудио inline base64 (S3 убран — он ломался на
-SignatureDoesNotMatch из-за CRC32 botocore).
+**Известная проблема (в работе):** на РЕАЛЬНОМ диалоге ISSAI иногда галлюцинирует
+(выдаёт связный казахский текст не по теме) — параметры воркера уже оптимальны
+(condition_on_previous_text=False, температурный фолбэк, мягкий VAD), значит
+причина в КАЧЕСТВЕ аудио (тихо/далеко/шум на кассе) или нужна тонкая настройка
+ISSAI_INITIAL_PROMPT под конкретный бизнес. Диагностировать через прослушку записи.
 
-**ТЕКУЩИЙ ПЛАН (июнь 2026): ISSAI локально на ПК Данила для проверки качества.**
-- `docker-compose.issai-local.yml` — поднимает воркер + бесплатный туннель
-  cloudflared одной командой (прод на Render → туннель → ПК Данила).
-- `scripts/run-issai-local.bat` / `run-issai-stop.bat` — запуск/стоп в один клик.
-- `ISSAI_LOCAL.md` — гайд для Данила.
-- После проверки качества → переносим воркер на Hetzner VPS (~€4/мес).
+**ЯНДЕКС — ТУПИК:** новые ключи AQWJ не работают на REST v2 (нужен gRPC v3).
+Остаётся в коде как авто-фолбэк если появится рабочий ключ.
 
-**Env-переменные для ISSAI (выставить в Render когда поднимет воркер):**
-```
-ISSAI_WORKER_URL=https://xxxx.trycloudflare.com   # адрес туннеля из логов cloudflared
-ISSAI_WORKER_KEY=trustlocal2026                    # = ISSAI_API_KEY воркера
-```
+**Обслуживание VPS:**
+- Логи: `docker compose -f docker-compose.issai.yml logs -f`
+- Обновить воркер: `cd ~/AspanLab/trustcontrol && git checkout main && git pull && docker compose -f docker-compose.issai.yml --env-file issai.env up -d --build`
+- Открыть порт: `ufw allow 8010/tcp`
 
 ---
 
