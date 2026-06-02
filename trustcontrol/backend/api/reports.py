@@ -303,13 +303,17 @@ async def _process_submission(
             f"score={context_score:.2f} | {ctx['reason']}"
         )
 
-        # ── priority=1: архив S3 + SHA-256 ───────────────────────
-        audio_sha256 = s3_url = None
-        if priority == 1 and wav_bytes:
+        # ── Архив аудио в R2/S3 для прослушки + SHA-256 ──────────
+        # Сохраняем КАЖДУЮ запись (не только priority=1), чтобы владелец
+        # мог прослушать любой разговор. Если S3 не настроен — тихо
+        # пропускаем (upload_evidence вернёт s3_url=None).
+        audio_sha256 = s3_url = s3_key = None
+        if wav_bytes:
             tmp_id         = int(datetime.utcnow().timestamp())
             storage_result = await upload_evidence(wav_bytes, location_id, tmp_id)
             audio_sha256   = storage_result.get("sha256")
             s3_url         = storage_result.get("s3_url")
+            s3_key         = storage_result.get("key")
 
         # ── Анализ фраз (regex резерв) + GPT events ──────────────
         found = analyze(transcript, business_type=business_type, custom_phrases=custom_phrases or [])
@@ -389,7 +393,7 @@ async def _process_submission(
                 gpt_details={"positives": result.get("positives", []), "issues": result.get("issues", []), "events": events},
                 speakers=speakers,
                 is_priority=is_priority_flag,
-                audio_sha256=audio_sha256,  s3_url=s3_url,
+                audio_sha256=audio_sha256,  s3_url=s3_url,  s3_key=s3_key,
                 payment_confirmed=payment_confirmed,
                 upsell_attempt=upsell_attempt,
                 customer_satisfaction=customer_satisfaction,
@@ -813,6 +817,38 @@ async def get_reports(
             "energy_level":          r.energy_level,
             "s3_url":                r.s3_url,
             "audio_sha256":          r.audio_sha256,
+            "has_audio":             bool(r.s3_key or r.s3_url),
         }
         for r in rows
     ]
+
+
+@router.get("/{report_id}/audio")
+async def get_report_audio(
+    report_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Временная ссылка на прослушку записи разговора.
+    Проверяет что отчёт принадлежит точке текущего владельца.
+    """
+    from backend.services.storage import presigned_get_url
+
+    row = await db.execute(
+        select(Report, Location.owner_id)
+        .join(Location, Report.location_id == Location.id)
+        .where(Report.id == report_id)
+    )
+    rec = row.first()
+    if not rec or rec[1] != user.id:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+
+    report = rec[0]
+    if not report.s3_key:
+        raise HTTPException(status_code=404, detail="Аудио для этого разговора не сохранено")
+
+    url = presigned_get_url(report.s3_key, expires=3600)
+    if not url:
+        raise HTTPException(status_code=503, detail="Хранилище аудио не настроено")
+    return {"url": url}

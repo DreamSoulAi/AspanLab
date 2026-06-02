@@ -50,6 +50,7 @@ class Report(Base):
     is_priority     = Column(Boolean, default=False, index=True)
     audio_sha256    = Column(String(64), nullable=True)
     s3_url          = Column(Text, nullable=True)
+    s3_key          = Column(Text, nullable=True)   # ключ объекта в R2/S3 — для presigned-ссылки прослушки
 
     # ── Бизнес-аналитика (v3.0) ──────────────────────────────
     payment_confirmed     = Column(Boolean, nullable=True)   # оплата завершена в разговоре

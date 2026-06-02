@@ -431,6 +431,7 @@ async def _fix_schema():
             ("employee_name", "VARCHAR(100)"),
             ("energy_level",  "INTEGER"),
             ("score",         "INTEGER"),
+            ("s3_key",        "TEXT"),
         ]
         for _col, _typ in _rep_cols:
             await _run(

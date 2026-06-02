@@ -17,13 +17,50 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _s3_client():
+    """Создаёт boto3 S3-клиент (совместим с Cloudflare R2 / Supabase / MinIO / AWS)."""
+    import boto3
+    from botocore.config import Config
+    from backend.config import settings
+
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.S3_ENDPOINT_URL or None,
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        region_name=settings.S3_REGION or "auto",
+        # s3v4 обязателен для R2 и для корректных presigned-ссылок
+        config=Config(signature_version="s3v4"),
+    )
+
+
+def presigned_get_url(key: str, expires: int = 3600) -> str | None:
+    """
+    Временная ссылка на прослушку записи (по умолчанию 1 час).
+    Подписывается локально, без сетевого запроса. None если S3 не настроен.
+    """
+    from backend.config import settings
+
+    if not (key and settings.S3_BUCKET and settings.AWS_ACCESS_KEY_ID):
+        return None
+    try:
+        return _s3_client().generate_presigned_url(
+            "get_object",
+            Params={"Bucket": settings.S3_BUCKET, "Key": key},
+            ExpiresIn=expires,
+        )
+    except Exception as e:
+        log.error(f"presigned_get_url ошибка для {key}: {e}")
+        return None
+
+
 async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) -> dict:
     """
-    Архивирует аудио-доказательство в S3/Supabase Storage.
+    Архивирует аудио в S3/R2 (для прослушки и доказательств).
 
     Возвращает:
-      {"sha256": "<hex>", "s3_url": "<url>"}   — при успехе
-      {"sha256": "<hex>", "s3_url": None}       — если S3 не настроен или все попытки исчерпаны
+      {"sha256": "<hex>", "s3_url": "<url>", "key": "<key>"}   — при успехе
+      {"sha256": "<hex>", "s3_url": None, "key": None}          — если S3 не настроен/ошибка
 
     SHA-256 вычисляется ДО загрузки — даже если S3 недоступен хеш
     остаётся в БД как доказательство целостности файла.
@@ -37,22 +74,15 @@ async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) 
             f"[loc={location_id}] S3_BUCKET не задан — архивирование пропущено "
             f"(SHA256={sha256[:16]}... сохранён в БД)"
         )
-        return {"sha256": sha256, "s3_url": None}
+        return {"sha256": sha256, "s3_url": None, "key": None}
 
     try:
-        import boto3
-        from botocore.exceptions import ClientError
+        import boto3  # noqa: F401
     except ImportError:
         log.error("boto3 не установлен: pip install boto3")
-        return {"sha256": sha256, "s3_url": None}
+        return {"sha256": sha256, "s3_url": None, "key": None}
 
-    s3 = boto3.client(
-        "s3",
-        endpoint_url=settings.S3_ENDPOINT_URL or None,
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        region_name=settings.S3_REGION or "us-east-1",
-    )
+    s3 = _s3_client()
 
     ts  = datetime.utcnow().strftime("%Y/%m/%d")
     key = f"evidence/{ts}/loc{location_id}_r{report_id}_{sha256[:12]}.wav"
@@ -78,7 +108,7 @@ async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) 
                 url = f"https://{settings.S3_BUCKET}.s3.{settings.S3_REGION}.amazonaws.com/{key}"
 
             log.info(f"[loc={location_id}] Архив S3 (попытка {attempt}): {key} | SHA256: {sha256[:16]}...")
-            return {"sha256": sha256, "s3_url": url}
+            return {"sha256": sha256, "s3_url": url, "key": key}
 
         except Exception as e:
             last_err = e
@@ -89,4 +119,4 @@ async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) 
             else:
                 log.error(f"[loc={location_id}] S3 все {_S3_MAX_RETRIES} попытки исчерпаны: {last_err}")
 
-    return {"sha256": sha256, "s3_url": None}
+    return {"sha256": sha256, "s3_url": None, "key": None}

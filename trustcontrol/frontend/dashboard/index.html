@@ -519,6 +519,9 @@ textarea.f-input{resize:vertical;line-height:1.6}
 .rc-time{font-size:11px;color:var(--muted)}
 .rc-quote{font-size:13px;color:var(--dim);line-height:1.55;margin-bottom:10px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .rc-footer{display:flex;flex-wrap:wrap;gap:6px}
+.rep-play{background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);color:var(--accent2);font-size:12px;font-weight:600;padding:4px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;font-family:inherit}
+.rep-play:hover{background:rgba(59,130,246,.22)}
+.rep-play:disabled{opacity:.6;cursor:default}
 
 /* SETTINGS */
 .srow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)}
@@ -2451,7 +2454,7 @@ async function loadReportsPage(){
           <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:${r.score>=80?'#10B981':r.score>=60?'#F59E0B':'#EF4444'}">${Math.round(r.score||0)}</span>
         </div>
         <p class="rc-quote">${esc((r.transcript||'Нет текста разговора').slice(0,200))}</p>
-        <div class="rc-footer">${statusFlags(r)}</div>
+        <div class="rc-footer">${statusFlags(r)}${r.has_audio?` <button class="rep-play" onclick="playReportAudio(${r.id},this)">▶ Слушать</button>`:''}</div>
       </div>`).join('');
   }else{
     const el=document.getElementById('reportsDesktop');if(!el)return;
@@ -2465,7 +2468,25 @@ async function loadReportsPage(){
         <span class="rep-tone">${toneName(r.tone)}</span>
         <span class="rep-flags">${statusFlags(r)}</span>
         <span class="rep-text">${esc((r.transcript||'').slice(0,100))}</span>
+        ${r.has_audio?`<button class="rep-play" onclick="playReportAudio(${r.id},this)">▶ Слушать</button>`:''}
       </div>`).join('');
+  }
+}
+
+/* Прослушка записи разговора (presigned-ссылка на R2/S3) */
+let _audioPlayer=null;
+async function playReportAudio(id,btn){
+  try{
+    if(!_audioPlayer){_audioPlayer=new Audio();}
+    if(btn){btn.disabled=true;const _t=btn.textContent;btn.textContent='⏳…';btn.dataset.t=_t;}
+    const d=await apiFetch('/reports/'+id+'/audio');
+    if(!d||!d.url){throw new Error('no url');}
+    _audioPlayer.src=d.url;
+    await _audioPlayer.play();
+    if(btn){btn.textContent='▶ Слушать';btn.disabled=false;}
+  }catch(e){
+    showErr('Не удалось проиграть запись (аудио не сохранено или хранилище не настроено)');
+    if(btn){btn.textContent=btn.dataset.t||'▶ Слушать';btn.disabled=false;}
   }
 }
 
