@@ -163,8 +163,17 @@
 //  поэтому 180 сек ≈ 5.8 МБ — с запасом под лимит.
 // ════════════════════════════════════════════════════════════
 
-const MAX_SEGMENT_SECONDS = 180;   // авто-сброс для длинных записей (защита лимита 10МБ)
+const MAX_SEGMENT_SECONDS = 180;   // аварийный потолок (защита лимита 10МБ)
 const TARGET_RATE = 16000;
+
+// ── Сегментация по тишине (один отчёт = один клиент) ─────────
+// Между клиентами на кассе почти всегда есть пауза (клиент ушёл → подошёл
+// следующий). Ловим её: накопили речь, потом тишина дольше порога → значит
+// разговор закончился, отправляем его как ОДИН отчёт. Это режет запись по
+// естественным границам, а не вслепую каждые 180с.
+const SILENCE_RMS         = 0.008; // ниже этого RMS — считаем тишиной
+const SILENCE_FLUSH_SEC   = 6;     // столько тишины ПОСЛЕ речи → конец разговора
+const DROP_AMBIENT_SEC    = 30;    // буфер без единого слова — просто сбрасываем (не шлём фон)
 
 const $ = (id) => document.getElementById(id);
 const apiKeyInput = $("apiKey");
@@ -179,12 +188,39 @@ const sChunks = $("sChunks"), sErrs = $("sErrs"), sTime = $("sTime");
 
 let audioCtx = null, source = null, processor = null, stream = null;
 let pcmBuf = [];           // Float32 accumulators
+let accumulated = 0;       // всего сэмплов в pcmBuf
+let silenceSamples = 0;    // подряд идущая тишина (сэмплов)
+let hasSpeech = false;     // была ли речь в текущем буфере
 let sampleRate = 16000;
 let recording = false;
 let startedAt = 0;
 let chunksOk = 0, chunksErr = 0;
 let timerInt = null;
 let wakeLock = null;
+
+// Собирает накопленный буфер в WAV и отправляет (если там есть речь).
+// Сбрасывает состояние сегмента. Возвращает true если что-то отправлено.
+async function flushBuffer(reason) {
+  if (accumulated < TARGET_RATE) {   // меньше ~1с — нечего слать
+    pcmBuf = []; accumulated = 0; silenceSamples = 0; hasSpeech = false;
+    return false;
+  }
+  const merged = new Float32Array(accumulated);
+  let off = 0;
+  for (const arr of pcmBuf) { merged.set(arr, off); off += arr.length; }
+  pcmBuf = []; accumulated = 0; silenceSamples = 0; hasSpeech = false;
+
+  let peak = 0;
+  for (let i = 0; i < merged.length; i++) {
+    const a = Math.abs(merged[i]);
+    if (a > peak) peak = a;
+  }
+  if (peak < 0.01) { log(`· тишина — пропуск (${reason})`); return false; }
+
+  log(`⤓ отправка разговора (${reason})`);
+  await sendChunk(encodeWAV(merged, TARGET_RATE));
+  return true;
+}
 
 // Restore saved config (URL hash > localStorage)
 const hashParams = new URLSearchParams(location.hash.slice(1));
@@ -333,16 +369,17 @@ async function start() {
   source = audioCtx.createMediaStreamSource(stream);
   processor = audioCtx.createScriptProcessor(4096, 1, 1);
 
-  const chunkSamples = TARGET_RATE * MAX_SEGMENT_SECONDS;
-  let accumulated = 0;
-  pcmBuf = [];
+  const chunkSamples   = TARGET_RATE * MAX_SEGMENT_SECONDS;     // потолок 180с
+  const silenceFlushN  = TARGET_RATE * SILENCE_FLUSH_SEC;       // 6с тишины
+  const dropAmbientN   = TARGET_RATE * DROP_AMBIENT_SEC;        // 30с фона без речи
+  pcmBuf = []; accumulated = 0; silenceSamples = 0; hasSpeech = false;
 
   processor.onaudioprocess = (e) => {
     if (!recording) return;
     const input = e.inputBuffer.getChannelData(0);
     const ds = downsample(input, sampleRate, TARGET_RATE);
 
-    // simple RMS for visual level meter
+    // RMS — и для индикатора, и для детекции тишины
     let sum = 0;
     for (let i = 0; i < ds.length; i++) sum += ds[i] * ds[i];
     const rms = Math.sqrt(sum / ds.length);
@@ -352,25 +389,26 @@ async function start() {
     pcmBuf.push(ds);
     accumulated += ds.length;
 
+    if (rms < SILENCE_RMS) {
+      silenceSamples += ds.length;
+    } else {
+      silenceSamples = 0;
+      hasSpeech = true;
+    }
+
+    // 1) Был разговор и наступила долгая пауза → клиент ушёл, шлём как 1 отчёт
+    if (hasSpeech && silenceSamples >= silenceFlushN) {
+      flushBuffer("пауза");
+      return;
+    }
+    // 2) Долго копится только фон без речи → просто сбрасываем (не шлём тишину)
+    if (!hasSpeech && accumulated >= dropAmbientN) {
+      pcmBuf = []; accumulated = 0; silenceSamples = 0;
+      return;
+    }
+    // 3) Аварийный потолок: разговор без пауз дольше 180с (очередь/долгий клиент)
     if (accumulated >= chunkSamples) {
-      const merged = new Float32Array(accumulated);
-      let off = 0;
-      for (const arr of pcmBuf) { merged.set(arr, off); off += arr.length; }
-      pcmBuf = []; accumulated = 0;
-
-      // Skip silent chunks to save server quota
-      let peak = 0;
-      for (let i = 0; i < merged.length; i++) {
-        const a = Math.abs(merged[i]);
-        if (a > peak) peak = a;
-      }
-      if (peak < 0.01) {
-        log("· тишина — пропуск");
-        return;
-      }
-
-      const wav = encodeWAV(merged, TARGET_RATE);
-      sendChunk(wav);
+      flushBuffer("потолок 180с");
     }
   };
 
@@ -390,7 +428,7 @@ async function start() {
   } catch (e) { log(`! wake lock: ${e.message}`); }
 
   indicator.classList.add("recording");
-  setState("Запись идёт", "Разговор отправится целиком при остановке");
+  setState("Запись идёт", "Каждый разговор отправляется сам после паузы");
   btnStart.style.display = "none";
   btnStop.style.display = "block";
   $("config").style.opacity = "0.5";
@@ -403,31 +441,11 @@ async function stop() {
   recording = false;
   clearInterval(timerInt);
 
-  // Дошлём остаток записи (диалог короче CHUNK_SECONDS).
-  // Без этого короткий разговор < 30с выбрасывался и не попадал на сервер.
+  // Дошлём остаток (текущий незакрытый разговор) при ручной остановке.
   try {
-    let total = 0;
-    for (const arr of pcmBuf) total += arr.length;
-    if (total >= TARGET_RATE) {           // хотя бы ~1 секунда речи
-      const merged = new Float32Array(total);
-      let off = 0;
-      for (const arr of pcmBuf) { merged.set(arr, off); off += arr.length; }
-      let peak = 0;
-      for (let i = 0; i < merged.length; i++) {
-        const a = Math.abs(merged[i]);
-        if (a > peak) peak = a;
-      }
-      if (peak >= 0.01) {
-        log("⤓ дослал остаток записи");
-        await sendChunk(encodeWAV(merged, TARGET_RATE));
-      } else {
-        log("· остаток — тишина, пропуск");
-      }
-    } else if (total > 0) {
-      log("· остаток < 1с — пропуск");
-    }
+    await flushBuffer("стоп");
   } catch (e) { log(`! flush: ${e.message}`); }
-  pcmBuf = [];
+  pcmBuf = []; accumulated = 0; silenceSamples = 0; hasSpeech = false;
 
   try { processor && processor.disconnect(); } catch {}
   try { source && source.disconnect(); } catch {}
