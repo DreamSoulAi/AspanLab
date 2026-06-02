@@ -1,30 +1,11 @@
 #!/usr/bin/env python3
 # ════════════════════════════════════════════════════════════
-#  TrustControl — Генератор лидов из 2ГИС
+#  TrustControl — Генератор лидов из 2ГИС (Selenium-режим)
 #
-#  Что делает:
-#    1. Тянет из каталога 2ГИС заведения по нише и городу
-#       (кофейни, фастфуд, кафе — настраивается).
-#    2. По каждому собирает: название, адрес, телефон, рейтинг,
-#       число отзывов, число филиалов.
-#    3. Считает «температуру лида» — насколько это горячий клиент
-#       именно для TrustControl (низкий рейтинг = боль с сервисом,
-#       сеть филиалов = есть ЛПР, который не уследит за кассами).
-#    4. (опц.) По горячим лидам тянет тексты отзывов и через GPT
-#       находит КОНКРЕТНУЮ боль + пишет подсказку под звонок.
-#    5. Выгружает результат в CSV и JSON, отсортированный по температуре.
-#
-#  ВАЖНО: запускать НЕ в облаке Claude (там нет интернета),
-#         а на своём ПК или на VPS, где есть выход в сеть.
-#
-#  Запуск:
-#    export DGIS_API_KEY=...           # бесплатный ключ dev.2gis.com
-#    export OPENAI_API_KEY=sk-...      # опц., для анализа отзывов
-#    python scripts/leadgen_2gis.py --city Алматы --niche coffee --limit 200
-#
-#  Ключ 2ГИС (бесплатный Catalog API):
-#    https://dev.2gis.com/  → зарегистрироваться → создать ключ
-#    Бесплатного тарифа хватает на тысячи запросов.
+#  Запуск (на своём ПК, где есть Chrome):
+#    pip install selenium webdriver-manager openai
+#    python scripts\leadgen_2gis.py --niche coffee --limit 200
+#    python scripts\leadgen_2gis.py --niche coffee --analyze 30   # + GPT-питч
 # ════════════════════════════════════════════════════════════
 
 import argparse
@@ -33,64 +14,30 @@ import json
 import os
 import sys
 import time
-from dataclasses import dataclass, asdict, field
+import urllib.parse
+from dataclasses import dataclass, asdict
 from typing import Optional
 
-try:
-    import requests
-except ImportError:
-    sys.exit("Нужен модуль requests:  pip install requests")
-
 CATALOG = "https://catalog.api.2gis.com/3.0/items"
+FIELDS  = (
+    "items.point,items.address,items.contact_groups,"
+    "items.reviews,items.rubrics,items.org"
+)
 
-# Публичный ключ, которым пользуется сам сайт 2gis.kz (достаётся из DevTools).
-# Может смениться или ограничиться по IP — тогда возьми новый из Network
-# и передай через --key или переменную DGIS_API_KEY.
-DEFAULT_WEB_KEY = "c7f1a769-c8a5-4636-b14d-d8c987808a12"
-
-# Веб-ключ привязан к домену 2gis.kz и проверяет заголовки.
-# Притворяемся, что запрос идёт со страницы сайта — иначе ключ "blocked".
-HEADERS = {
-    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                   "AppleWebKit/537.36 (KHTML, like Gecko) "
-                   "Chrome/126.0.0.0 Safari/537.36"),
-    "Referer": "https://2gis.kz/",
-    "Origin":  "https://2gis.kz",
-    "Accept":  "application/json, text/plain, */*",
-    "Accept-Language": "ru,kk;q=0.9,en;q=0.8",
-}
-
-SESSION = requests.Session()
-SESSION.headers.update(HEADERS)
-
-# Координаты центра городов (lon, lat) — как в адресной строке 2gis.kz (m=lon,lat).
-# Веб-ключ не пускает в справочник регионов, поэтому ищем по точке + городу в запросе.
-CITY_COORDS = {
-    "алматы":     (76.889709, 43.238949),
-    "астана":     (71.430411, 51.128422),
-    "нур-султан": (71.430411, 51.128422),
-    "шымкент":    (69.596500, 42.317000),
-    "караганда":  (73.087500, 49.806400),
-    "актобе":     (57.166000, 50.283900),
-    "тараз":      (71.378900, 42.901600),
-    "павлодар":   (76.967100, 52.287300),
-    "усть-каменогорск": (82.617800, 49.948600),
-    "семей":      (80.227500, 50.411100),
-    "атырау":     (51.923900, 47.094500),
-    "костанай":   (63.624200, 53.214400),
-    "кызылорда":  (65.509500, 44.842800),
-    "уральск":    (51.366800, 51.227700),
-    "петропавловск": (69.146100, 54.872800),
-    "актау":      (51.158900, 43.651100),
-}
-
-# Ниши → поисковые запросы 2ГИС (рубрики).
 NICHES = {
     "coffee":   ["кофейня", "кофе с собой"],
     "fastfood": ["фастфуд", "донер", "бургерная", "шаурма"],
     "cafe":     ["кафе", "столовая"],
     "beauty":   ["салон красоты", "барбершоп", "парикмахерская"],
     "all":      ["кофейня", "фастфуд", "кафе", "донер", "бургерная"],
+}
+
+CITY_COORDS = {
+    "алматы":     (76.889709, 43.238949),
+    "астана":     (71.430411, 51.128422),
+    "нур-султан": (71.430411, 51.128422),
+    "шымкент":    (69.596500, 42.317000),
+    "актобе":     (57.166000, 50.283900),
 }
 
 
@@ -105,49 +52,137 @@ class Lead:
     rubric:        str = ""
     dgis_id:       str = ""
     url_2gis:      str = ""
-    # заполняется анализом
     heat:          float = 0.0
     pain:          str = ""
     pitch:         str = ""
 
 
-# ── 2ГИС API ──────────────────────────────────────────────────────────────────
+# ── Selenium ──────────────────────────────────────────────────────────────────
 
-def fetch_leads(query: str, city: str, key: str, limit: int) -> list[Lead]:
+def make_driver():
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service
+    except ImportError:
+        sys.exit("pip install selenium webdriver-manager")
+
+    opts = Options()
+    opts.add_argument("--user-data-dir=" + os.path.abspath("dgis_profile"))
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_experimental_option("useAutomationExtension", False)
+    # убираем headless — нужен видимый Chrome (иначе 2ГИС может не грузиться)
+
+    try:
+        from webdriver_manager.chrome import ChromeDriverManager
+        driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()),
+            options=opts,
+        )
+    except Exception:
+        # fallback если webdriver-manager не установлен
+        driver = webdriver.Chrome(options=opts)
+
+    driver.execute_script(
+        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    )
+    return driver
+
+
+def get_live_key(driver) -> str:
     """
-    Тянет заведения по одному запросу с пагинацией.
-    Ищем по координатам центра города (как сам сайт) + город в тексте запроса,
-    т.к. веб-ключ не пускает в справочник регионов.
+    Открывает 2gis.kz, ждёт пока страница сделает XHR к каталогу,
+    вытаскивает рабочий ключ из performance.getEntries().
     """
+    print("  Открываю 2gis.kz чтобы взять живой ключ...")
+    driver.get("https://2gis.kz/almaty")
+    # ждём пока страница загрузится и сделает первые API-запросы
+    time.sleep(5)
+
+    key = driver.execute_script("""
+        const entries = performance.getEntriesByType('resource');
+        for (const e of entries) {
+            const m = e.name.match(/[?&]key=([a-f0-9\\-]{30,})/);
+            if (m && e.name.includes('catalog.api.2gis.com')) return m[1];
+        }
+        return null;
+    """)
+
+    if key:
+        print(f"  Живой ключ: {key[:16]}...")
+        return key
+
+    # Если performance не отдал — пробуем через поиск
+    print("  Делаю поиск для получения ключа...")
+    driver.get("https://2gis.kz/almaty/search/кофейня")
+    time.sleep(4)
+    key = driver.execute_script("""
+        const entries = performance.getEntriesByType('resource');
+        for (const e of entries) {
+            const m = e.name.match(/[?&]key=([a-f0-9\\-]{30,})/);
+            if (m && e.name.includes('catalog.api.2gis.com')) return m[1];
+        }
+        return null;
+    """)
+
+    if not key:
+        sys.exit("Не удалось получить ключ со страницы 2ГИС. Попробуй ещё раз.")
+    print(f"  Живой ключ: {key[:16]}...")
+    return key
+
+
+def api_call(driver, url: str) -> Optional[dict]:
+    """
+    Делает fetch() ИЗНУТРИ браузера на домене 2gis.kz.
+    Ключ работает всегда — он в своём же браузерном контексте.
+    """
+    result = driver.execute_async_script("""
+        const [url, callback] = arguments;
+        fetch(url, {credentials: 'include'})
+            .then(r => r.json())
+            .then(d => callback({ok: true, data: d}))
+            .catch(e => callback({ok: false, error: e.toString()}));
+    """, url)
+
+    if not result or not result.get("ok"):
+        return None
+    return result.get("data")
+
+
+# ── Получение лидов ───────────────────────────────────────────────────────────
+
+def fetch_leads(query: str, city: str, key: str, limit: int, driver) -> list[Lead]:
     out: list[Lead] = []
     page = 1
-    page_size = 50  # максимум 2ГИС
-    fields = (
-        "items.point,items.address,items.contact_groups,"
-        "items.reviews,items.rubrics,items.org"
-    )
+    page_size = 50
     coords = CITY_COORDS.get(city.strip().lower())
-    full_query = f"{query} {city}"
+    full_q = f"{query} {city}"
 
     while len(out) < limit:
-        params = {
-            "q":         full_query,
+        params: dict = {
+            "q":         full_q,
             "page":      page,
             "page_size": page_size,
-            "fields":    fields,
+            "fields":    FIELDS,
             "key":       key,
         }
         if coords:
             params["location"] = f"{coords[0]},{coords[1]}"
-        r = SESSION.get(CATALOG, params=params, timeout=30)
-        if r.status_code == 404:
-            break  # 2ГИС отдаёт 404 когда страницы кончились
-        r.raise_for_status()
-        payload = r.json()
-        meta = payload.get("meta") or {}
-        if meta.get("code") not in (200, None):
-            print(f"    [2ГИС] {meta.get('code')}: {meta.get('error', {})}", file=sys.stderr)
+
+        url = CATALOG + "?" + urllib.parse.urlencode(params)
+        payload = api_call(driver, url)
+
+        if payload is None:
+            print(f"    [!] Пустой ответ на странице {page}", file=sys.stderr)
             break
+
+        meta = payload.get("meta") or {}
+        code = meta.get("code")
+        if code and code != 200:
+            print(f"    [2ГИС] {code}: {meta.get('error', '')}", file=sys.stderr)
+            break
+
         result = payload.get("result") or {}
         items = result.get("items") or []
         if not items:
@@ -160,13 +195,12 @@ def fetch_leads(query: str, city: str, key: str, limit: int) -> list[Lead]:
         if page * page_size >= total:
             break
         page += 1
-        time.sleep(0.25)  # вежливость к API
+        time.sleep(0.3)
 
     return out[:limit]
 
 
 def _parse_item(it: dict, query: str) -> Lead:
-    # телефон
     phone = ""
     for grp in it.get("contact_groups", []):
         for c in grp.get("contacts", []):
@@ -176,24 +210,25 @@ def _parse_item(it: dict, query: str) -> Lead:
         if phone:
             break
 
-    # рейтинг / отзывы
     reviews = it.get("reviews") or {}
     rating  = reviews.get("general_rating")
     rcount  = reviews.get("general_review_count") or 0
 
-    # филиалы
     org = it.get("org") or {}
     branch_count = org.get("branch_count") or 1
 
-    # рубрика
     rubrics = it.get("rubrics") or []
-    rubric = rubrics[0]["name"] if rubrics else query
+    rubric  = rubrics[0]["name"] if rubrics else query
+
+    addr = it.get("address_name", "")
+    if not addr and isinstance(it.get("address"), dict):
+        addr = it["address"].get("name", "")
 
     dgis_id = str(it.get("id", "")).split("_")[0]
 
     return Lead(
         name          = it.get("name", "?"),
-        address       = it.get("address_name", "") or it.get("address", {}).get("name", "") if isinstance(it.get("address"), dict) else it.get("address_name", ""),
+        address       = addr,
         phone         = phone,
         rating        = float(rating) if rating is not None else None,
         reviews_count = int(rcount),
@@ -204,22 +239,10 @@ def _parse_item(it: dict, query: str) -> Lead:
     )
 
 
-# ── Температура лида ────────────────────────────────────────────────────────────
+# ── Температура лида ──────────────────────────────────────────────────────────
 
 def score_heat(lead: Lead) -> float:
-    """
-    0..100. Чем выше — тем горячее клиент для TrustControl.
-
-    Логика:
-      • Низкий рейтинг при заметном числе отзывов = реальная боль с сервисом
-        (хамство/обсчёт/долгое обслуживание — наш профиль).
-      • Сеть филиалов = есть владелец/управляющий (ЛПР), который физически
-        не уследит за каждой кассой = максимально наш клиент.
-      • Совсем без отзывов = непонятно, ставим средне.
-    """
     heat = 0.0
-
-    # 1. Боль из рейтинга (макс 50)
     if lead.rating is not None and lead.reviews_count >= 5:
         if   lead.rating < 3.5: heat += 50
         elif lead.rating < 4.0: heat += 38
@@ -227,15 +250,13 @@ def score_heat(lead: Lead) -> float:
         elif lead.rating < 4.6: heat += 12
         else:                   heat += 4
     else:
-        heat += 15  # нет данных — нейтрально
+        heat += 15
 
-    # 2. Платёжеспособность + наличие ЛПР через число филиалов (макс 35)
     if   lead.branch_count >= 10: heat += 35
     elif lead.branch_count >= 5:  heat += 30
     elif lead.branch_count >= 2:  heat += 22
     else:                         heat += 8
 
-    # 3. Активность аудитории (макс 15) — много отзывов = живой трафик
     if   lead.reviews_count >= 200: heat += 15
     elif lead.reviews_count >= 50:  heat += 11
     elif lead.reviews_count >= 10:  heat += 6
@@ -244,77 +265,46 @@ def score_heat(lead: Lead) -> float:
     return round(min(heat, 100.0), 1)
 
 
-# ── Анализ отзывов через GPT (опционально) ─────────────────────────────────────
+# ── GPT-анализ ────────────────────────────────────────────────────────────────
 
-def fetch_reviews_text(dgis_id: str, key: str, limit: int = 8) -> list[str]:
-    """
-    Пытается вытащить тексты отзывов через Catalog API.
-    Если 2ГИС не отдаёт тексты по этому ключу — вернёт пустой список,
-    и анализ деградирует до оценки по рейтингу.
-    """
-    try:
-        r = SESSION.get(
-            CATALOG,
-            params={
-                "id":     dgis_id,
-                "fields": "items.reviews",
-                "key":    key,
-            },
-            timeout=30,
-        )
-        r.raise_for_status()
-        items = (r.json().get("result") or {}).get("items") or []
-        if not items:
-            return []
-        reviews = (items[0].get("reviews") or {}).get("items") or []
-        texts = [rv.get("text", "").strip() for rv in reviews if rv.get("text")]
-        return texts[:limit]
-    except Exception:
-        return []
-
-
-def analyze_with_gpt(lead: Lead, reviews: list[str], openai_key: str) -> tuple[str, str]:
-    """Возвращает (боль, подсказка под звонок). При ошибке — пустые строки."""
+def analyze_with_gpt(lead: Lead, openai_key: str) -> tuple[str, str]:
     try:
         from openai import OpenAI
     except ImportError:
         return "", ""
 
     client = OpenAI(api_key=openai_key)
-    reviews_block = "\n".join(f"- {t}" for t in reviews[:8]) or "(текстов отзывов нет)"
     prompt = (
-        "Ты — аналитик продаж SaaS TrustControl (ИИ-контроль качества обслуживания "
-        "на кассе: ловит хамство, отсутствие приветствия, обсчёт клиентов, вялых кассиров).\n\n"
-        f"Заведение: {lead.name} ({lead.rubric}), Алматы.\n"
-        f"Рейтинг 2ГИС: {lead.rating}, отзывов: {lead.reviews_count}, филиалов: {lead.branch_count}.\n"
-        f"Отзывы:\n{reviews_block}\n\n"
-        "Задача:\n"
-        "1) В одном предложении — главная БОЛЬ с обслуживанием, которую решает TrustControl.\n"
-        "2) В одном предложении — ПОДСКАЗКА под звонок ЛПР: на что давить, чтобы зацепить.\n"
-        "Ответь строго JSON: {\"pain\": \"...\", \"pitch\": \"...\"}"
+        "Ты аналитик продаж TrustControl (ИИ-контроль качества обслуживания на кассе: "
+        "ловит хамство, отсутствие приветствия, обсчёт, вялых кассиров).\n\n"
+        f"Заведение: {lead.name} ({lead.rubric}), {lead.address}.\n"
+        f"Рейтинг: {lead.rating}, отзывов: {lead.reviews_count}, филиалов: {lead.branch_count}.\n\n"
+        "1) Одно предложение — главная БОЛЬ с обслуживанием (что именно решает TrustControl).\n"
+        "2) Одно предложение — ПОДСКАЗКА под звонок ЛПР: на что давить.\n"
+        "JSON: {\"pain\": \"...\", \"pitch\": \"...\"}"
     )
     try:
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=300,
+            max_tokens=250,
             temperature=0.4,
             response_format={"type": "json_object"},
         )
         data = json.loads(resp.choices[0].message.content)
         return data.get("pain", ""), data.get("pitch", "")
     except Exception as e:
-        print(f"  [GPT] ошибка для {lead.name}: {e}", file=sys.stderr)
+        print(f"  [GPT] {lead.name}: {e}", file=sys.stderr)
         return "", ""
 
 
-# ── Выгрузка ────────────────────────────────────────────────────────────────────
+# ── Сохранение ────────────────────────────────────────────────────────────────
 
 def save(leads: list[Lead], stem: str):
     with open(f"{stem}.json", "w", encoding="utf-8") as f:
         json.dump([asdict(l) for l in leads], f, ensure_ascii=False, indent=2)
 
-    with open(f"{stem}.csv", "w", encoding="utf-8", newline="") as f:
+    with open(f"{stem}.csv", "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["Температура", "Название", "Рейтинг", "Отзывов", "Филиалов",
                     "Телефон", "Адрес", "Боль", "Подсказка", "2ГИС"])
@@ -325,60 +315,62 @@ def save(leads: list[Lead], stem: str):
     print(f"\nГотово: {stem}.csv и {stem}.json — {len(leads)} лидов")
 
 
-# ── main ─────────────────────────────────────────────────────────────────────────
+# ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    ap = argparse.ArgumentParser(description="Генератор лидов из 2ГИС для TrustControl")
-    ap.add_argument("--city",  default="Алматы")
-    ap.add_argument("--niche", default="coffee", choices=list(NICHES))
-    ap.add_argument("--limit", type=int, default=200, help="макс заведений на запрос")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--city",    default="Алматы")
+    ap.add_argument("--niche",   default="coffee", choices=list(NICHES))
+    ap.add_argument("--limit",   type=int, default=200)
     ap.add_argument("--analyze", type=int, default=0,
-                    help="сколько верхних лидов прогнать через GPT (0 = не анализировать)")
-    ap.add_argument("--out", default=None, help="префикс выходных файлов")
-    ap.add_argument("--key", default=None, help="ключ 2ГИС (если встроенный перестал работать)")
+                    help="топ-N лидов прогнать через GPT")
+    ap.add_argument("--out",     default=None)
     args = ap.parse_args()
 
-    key = args.key or os.getenv("DGIS_API_KEY") or DEFAULT_WEB_KEY
-
     print(f"Город: {args.city} | Ниша: {args.niche}")
-    if args.city.strip().lower() not in CITY_COORDS:
-        print(f"  (центр города «{args.city}» неизвестен — ищу только по тексту, "
-              f"результаты могут быть менее точными)")
+    print("Запускаю Chrome...")
 
-    # Собираем по всем запросам ниши, дедупим по dgis_id
-    seen: dict[str, Lead] = {}
-    for q in NICHES[args.niche]:
-        print(f"  Запрос: {q} ...")
-        for lead in fetch_leads(q, args.city, key, args.limit):
-            if lead.dgis_id and lead.dgis_id not in seen:
-                seen[lead.dgis_id] = lead
+    driver = make_driver()
+    try:
+        key = get_live_key(driver)
 
-    leads = list(seen.values())
-    for l in leads:
-        l.heat = score_heat(l)
-    leads.sort(key=lambda x: x.heat, reverse=True)
-    print(f"Собрано уникальных: {len(leads)}")
+        seen: dict[str, Lead] = {}
+        for q in NICHES[args.niche]:
+            print(f"  Запрос: «{q}» ...")
+            for lead in fetch_leads(q, args.city, key, args.limit, driver):
+                if lead.dgis_id and lead.dgis_id not in seen:
+                    seen[lead.dgis_id] = lead
+                elif not lead.dgis_id:
+                    seen[lead.name] = lead
 
-    # GPT-анализ верхних
-    if args.analyze > 0:
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if not openai_key:
-            print("OPENAI_API_KEY не задан — пропускаю GPT-анализ", file=sys.stderr)
-        else:
-            print(f"Анализирую топ-{args.analyze} через GPT ...")
-            for l in leads[:args.analyze]:
-                reviews = fetch_reviews_text(l.dgis_id, key)
-                l.pain, l.pitch = analyze_with_gpt(l, reviews, openai_key)
-                print(f"  ✓ {l.name} (heat={l.heat})")
-                time.sleep(0.3)
+        leads = list(seen.values())
+        for l in leads:
+            l.heat = score_heat(l)
+        leads.sort(key=lambda x: x.heat, reverse=True)
+        print(f"Собрано уникальных: {len(leads)}")
 
-    stem = args.out or f"leads_{args.city}_{args.niche}".replace(" ", "_")
-    save(leads, stem)
+        if args.analyze > 0:
+            openai_key = os.getenv("OPENAI_API_KEY")
+            if not openai_key:
+                print("OPENAI_API_KEY не задан — пропускаю GPT", file=sys.stderr)
+            else:
+                print(f"GPT-анализ топ-{args.analyze}...")
+                for l in leads[:args.analyze]:
+                    l.pain, l.pitch = analyze_with_gpt(l, openai_key)
+                    print(f"  ✓ {l.name}")
+                    time.sleep(0.3)
 
-    # Превью топ-10
-    print("\nТоп-10 горячих лидов:")
-    for l in leads[:10]:
-        print(f"  {l.heat:5}  {l.name[:35]:35}  ★{l.rating}  отз.{l.reviews_count}  фил.{l.branch_count}")
+        stem = args.out or f"leads_{args.city}_{args.niche}".replace(" ", "_")
+        save(leads, stem)
+
+        print("\nТоп-10 горячих лидов:")
+        for l in leads[:10]:
+            print(f"  {l.heat:5}  {l.name[:38]:38}  ★{l.rating}  "
+                  f"отз.{l.reviews_count}  фил.{l.branch_count}  {l.phone}")
+
+    finally:
+        print("\nЗакрываю браузер...")
+        driver.quit()
 
 
 if __name__ == "__main__":
