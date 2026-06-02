@@ -44,6 +44,11 @@ except ImportError:
 CATALOG = "https://catalog.api.2gis.com/3.0/items"
 REGION  = "https://catalog.api.2gis.com/2.0/region/search"
 
+# Публичный ключ, которым пользуется сам сайт 2gis.kz (достаётся из DevTools).
+# Может смениться или ограничиться по IP — тогда возьми новый из Network
+# и передай через --key или переменную DGIS_API_KEY.
+DEFAULT_WEB_KEY = "c7f1a769-c8a5-4636-b14d-d8c987808a12"
+
 # Ниши → поисковые запросы 2ГИС (рубрики).
 NICHES = {
     "coffee":   ["кофейня", "кофе с собой"],
@@ -292,11 +297,10 @@ def main():
     ap.add_argument("--analyze", type=int, default=0,
                     help="сколько верхних лидов прогнать через GPT (0 = не анализировать)")
     ap.add_argument("--out", default=None, help="префикс выходных файлов")
+    ap.add_argument("--key", default=None, help="ключ 2ГИС (если встроенный перестал работать)")
     args = ap.parse_args()
 
-    key = os.getenv("DGIS_API_KEY")
-    if not key:
-        sys.exit("Нет ключа. Получи бесплатный на https://dev.2gis.com/ → export DGIS_API_KEY=...")
+    key = args.key or os.getenv("DGIS_API_KEY") or DEFAULT_WEB_KEY
 
     print(f"Город: {args.city} | Ниша: {args.niche}")
     region_id = get_region_id(args.city, key)
