@@ -361,14 +361,30 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
     Синхронная инференция. Запускается в executor, не блокирует event loop.
     Возвращает (text, language, total_duration, num_segments).
     """
-    audio_buf = io.BytesIO(audio_bytes)
+    # Декодируем и НОРМАЛИЗУЕМ громкость. На кассе телефон далеко от кассира,
+    # а autoGainControl в PWA выключен (ради чистых казахских согласных) →
+    # запись тихая. Тихую речь VAD считает тишиной и вырезает ВЕСЬ файл
+    # (в логах: "VAD filter removed 26с" + "Готово: 0 симв"). Поднимаем
+    # тихие записи до рабочего уровня перед распознаванием.
+    try:
+        from faster_whisper.audio import decode_audio
+        import numpy as np
+        audio_input = decode_audio(io.BytesIO(audio_bytes), sampling_rate=16000)
+        peak = float(np.max(np.abs(audio_input))) if audio_input.size else 0.0
+        if 0 < peak < 0.5:
+            gain = min(0.5 / peak, 8.0)   # тянем тихое к пику 0.5, максимум x8
+            audio_input = (audio_input * gain).astype("float32")
+            log.info(f"Усиление тихой записи x{gain:.1f} (пик был {peak:.3f})")
+    except Exception as e:
+        log.warning(f"Нормализация громкости не удалась ({e}) — отдаю как есть")
+        audio_input = io.BytesIO(audio_bytes)
 
     # initial_prompt подсказываем ТОЛЬКО для казахского — для ru/en/auto он
     # сместит распознавание не туда.
     init_prompt = INITIAL_PROMPT if language in (None, "kk") else None
 
     segments, info = _model.transcribe(
-        audio_buf,
+        audio_input,
         language=language,
         task="transcribe",
         beam_size=5,
@@ -385,6 +401,9 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
         # фильтр съедал по 13с живой речи и оставлял один огрызок.
         vad_filter=True,
         vad_parameters=dict(
+            # threshold ниже дефолта (0.5): тихую речь с кассы НЕ принимаем
+            # за тишину. Раньше VAD вырезал весь файл и выдавал 0 символов.
+            threshold=0.2,
             min_silence_duration_ms=2000,
             speech_pad_ms=400,
         ),
