@@ -388,12 +388,41 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
     parts = []
     total_dur = 0.0
     num_segs = 0
+    dropped = 0
     for seg in segments:
-        text = (seg.text or "").strip()
-        if text:
-            parts.append(text)
         total_dur = seg.end
         num_segs += 1
+        text = (seg.text or "").strip()
+        if not text:
+            continue
+
+        # ── Фильтр галлюцинаций ──────────────────────────────────
+        # На нечётком/тихом аудио Whisper выдаёт УВЕРЕННЫЙ бред
+        # ("Hejrancession", "staircase-карта"). Отсекаем по сигналам:
+        #   • no_speech_prob высокий → модель "слышала" тишину, но выдала текст
+        #   • avg_logprob очень низкий → декодер не уверен (угадывал)
+        #   • compression_ratio высокий → зациклился/повторы (классика галлюц.)
+        no_speech = getattr(seg, "no_speech_prob", 0.0) or 0.0
+        avg_lp    = getattr(seg, "avg_logprob", 0.0) or 0.0
+        comp_ratio = getattr(seg, "compression_ratio", 1.0) or 1.0
+
+        is_hallucination = (
+            (no_speech > 0.6 and avg_lp < -0.8)   # тишина, но «распознал» текст
+            or avg_lp < -1.15                       # крайне неуверенный декод
+            or comp_ratio > 2.5                     # повторяющийся бред
+        )
+        if is_hallucination:
+            dropped += 1
+            log.info(
+                f"⊘ галлюцинация отброшена: {text[:60]!r} "
+                f"(no_speech={no_speech:.2f}, logprob={avg_lp:.2f}, comp={comp_ratio:.2f})"
+            )
+            continue
+
+        parts.append(text)
+
+    if dropped:
+        log.info(f"Отброшено сегментов-галлюцинаций: {dropped}/{num_segs}")
 
     result_text = " ".join(parts).strip()
     result_lang = info.language or (language or "kk")
