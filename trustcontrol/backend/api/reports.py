@@ -356,7 +356,7 @@ async def _process_submission(
         # это спамило на каждый IGNORE. STT работает, отладка больше не нужна.
         if settings.DEBUG and telegram_chat and failed_job_id is None:
             try:
-                from backend.services.notifier import _send
+                from backend.services.notifier import _send, _listen_button
                 from backend.services import yandex_stt, issai_stt
                 _y = "on" if yandex_stt.is_enabled() else "OFF"
                 _i = "on" if issai_stt.is_enabled() else "OFF"
@@ -375,7 +375,18 @@ async def _process_submission(
                     msg = f"🔧 STT: `{_eng}` / `{_stg}` {_extra}\n[yx={_y} issai={_i}{_kinfo}] {_status_line}\n{_preview}"
                 else:
                     msg = f"🔧 STT: нет диагностики [yx={_y} issai={_i}] {_status_line}\n{_preview}"
-                await _send(telegram_chat, msg)
+                # Проверка слышимости: грузим СЫРОЕ аудио каждой записи в R2 и
+                # вешаем кнопку «Слушать запись» — даже на IGNORE/пустой транскрипт.
+                # Так на кассе слышно ЧТО реально ловит телефон (тихо/далеко/шум).
+                _debug_listen = None
+                if wav_bytes:
+                    try:
+                        _diag_id = int(datetime.utcnow().timestamp())
+                        _up = await upload_evidence(wav_bytes, location_id, _diag_id)
+                        _debug_listen = _listen_button(_up.get("s3_url"))
+                    except Exception as _ue:
+                        log.warning(f"[loc={location_id}] debug audio upload failed: {_ue}")
+                await _send(telegram_chat, msg, reply_markup=_debug_listen)
             except Exception as _de:
                 log.warning(f"[loc={location_id}] STT diag send failed: {_de}")
 
