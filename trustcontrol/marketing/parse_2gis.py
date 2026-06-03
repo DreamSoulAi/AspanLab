@@ -4,7 +4,7 @@
 #
 #  Собирает бизнесы по категориям (кофейни / аптеки / фастфуд),
 #  достаёт название, телефон, адрес, рейтинг, ссылку 2ГИС → CSV.
-#  CSV потом скармливается whatsapp_outreach.py для рассылки.
+#  CSV потом скармливается scripts/whatsapp_sender.py для рассылки.
 #
 #  КАК ПОЛУЧИТЬ КЛЮЧ (бесплатно):
 #    1. Зайди на https://dev.2gis.ru → «Получить ключ» (Catalog API).
@@ -187,7 +187,7 @@ def main():
                     "lat":        point.get("lat", ""),
                     "lon":        point.get("lon", ""),
                     "twogis_url": f"https://2gis.kz/almaty/firm/{item_id}" if item_id else "",
-                    "contacted":  "",     # заполняется whatsapp_outreach.py
+                    "contacted":  "",     # заполняется scripts/whatsapp_sender.py
                 })
 
     if not rows:
@@ -205,7 +205,7 @@ def main():
     with_phone = sum(1 for r in rows if r["phone"])
     print(f"\n✅ Готово: {len(rows)} лидов ({with_phone} с телефоном)")
     print(f"   Файл: {OUT_FILE}")
-    print(f"   Дальше: python whatsapp_outreach.py")
+    print(f"   Дальше: python scripts\\whatsapp_sender.py --leads <leads>.json")
 
 
 if __name__ == "__main__":

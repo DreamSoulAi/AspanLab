@@ -40,9 +40,16 @@ import sys
 import time
 import urllib.parse
 from datetime import datetime
+from pathlib import Path
 
-SENT_LOG = "wa_sent.log"          # номера, которым уже писали
-PROFILE_DIR = "wa_profile"        # сессия WhatsApp (QR один раз)
+# Общая папка WhatsApp-инструментов: рассыльщик и авто-ответчик
+# (marketing/whatsapp_autoresponder.py) смотрят в ОДНУ сессию → QR сканируем
+# один раз. Путь абсолютный (от расположения файла), не зависит от cwd.
+_WA_DIR = Path(__file__).resolve().parent.parent / "marketing" / "wa_session"
+_WA_DIR.mkdir(parents=True, exist_ok=True)
+
+SENT_LOG = str(_WA_DIR / "wa_sent.log")       # номера, которым уже писали
+PROFILE_DIR = str(_WA_DIR / "wa_profile")     # сессия WhatsApp (QR один раз)
 
 # Мусор по названию — заправки и сети, которым слать бессмысленно.
 # 2ГИС иногда метит их рубрикой «кафе», поэтому фильтруем ещё и здесь.

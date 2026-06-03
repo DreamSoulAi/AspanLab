@@ -7,9 +7,10 @@
 #  выйти на ЛПР и забить ВРЕМЯ СОЗВОНА. Когда лид «тёплый» — пишет
 #  в hot_leads.csv и пингует тебя в Telegram.
 #
-#  ⚠️ Это дополнение к whatsapp_outreach.py:
-#    1. outreach.py — отправил первые сообщения
+#  ⚠️ Это дополнение к scripts/whatsapp_sender.py:
+#    1. whatsapp_sender.py — отправил первые сообщения
 #    2. autoresponder.py — крутится в фоне и отвечает на ответы
+#  Оба используют ОДНУ сессию WhatsApp (marketing/wa_session/) → QR один раз.
 #
 #  СТОИМОСТЬ: ~$0.0004 за сообщение (gpt-4o-mini). 500 лидов ≈ $1.2.
 #
@@ -39,9 +40,13 @@ from pathlib import Path
 import requests
 
 HERE = Path(__file__).parent
-CONV_FILE = HERE / "conversations.json"     # история переписок {phone: [msgs]}
-HOT_FILE = HERE / "hot_leads.csv"           # горячие лиды с временем созвона
-PROFILE_DIR = HERE / "wa_profile"           # та же сессия что у outreach.py
+# Общая папка с рассыльщиком (scripts/whatsapp_sender.py): ОДНА сессия WhatsApp
+# на оба скрипта → QR сканируем один раз. Путь не зависит от cwd.
+_WA_DIR = HERE / "wa_session"
+_WA_DIR.mkdir(parents=True, exist_ok=True)
+CONV_FILE = _WA_DIR / "conversations.json"  # история переписок {phone: [msgs]}
+HOT_FILE = _WA_DIR / "hot_leads.csv"        # горячие лиды с временем созвона
+PROFILE_DIR = _WA_DIR / "wa_profile"        # та же сессия что у рассыльщика
 
 OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
 TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
