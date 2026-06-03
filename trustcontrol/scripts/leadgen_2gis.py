@@ -39,6 +39,18 @@ JUNK_RUBRIC_WORDS = (
     "магазин продуктов", "автозаправ", "топлив", "нефт",
 )
 
+# Для ниш coffee/fastfood/cafe — оставляем только эти рубрики (whitelist).
+# Если рубрика не содержит ни одного слова из списка → выброс.
+NICHE_WHITELIST = {
+    "coffee":   ("кофе", "кофейн", "пекарн", "кондитер", "чай", "десерт"),
+    "fastfood": ("фастфуд", "донер", "бургер", "шаурм", "пицц", "быстрого питания",
+                 "суши", "лапш", "блин"),
+    "cafe":     ("кафе", "столов", "бистро", "ресторан", "кухн", "харчевн"),
+    "beauty":   ("красот", "барбер", "парикмах", "салон", "студия красот", "ногт"),
+    "all":      ("кофе", "кофейн", "фастфуд", "донер", "бургер", "кафе",
+                 "столов", "пекарн", "шаурм"),
+}
+
 # slug города в URL 2gis.kz
 CITY_SLUG = {
     "алматы": "almaty", "астана": "astana", "нур-султан": "astana",
@@ -180,31 +192,71 @@ def collect(driver, query: str, city_slug: str, limit: int, sink: dict):
             break
 
 
+_current_niche = "coffee"  # выставляется в main перед сбором
+
+
 def _is_junk(lead: Lead) -> bool:
-    """Отсеивает заправки, супермаркеты, аптеки и т.п."""
-    text = f"{lead.rubric} {lead.name}".lower()
-    return any(w in text for w in JUNK_RUBRIC_WORDS)
+    """
+    Двухступенчатый фильтр:
+    1) Blacklist — явный мусор (заправки, аптеки…)
+    2) Whitelist — рубрика должна содержать хотя бы одно слово ниши.
+       Это отсекает LUKOIL/Qazaq Oil, у которых рубрика «кафе быстрого питания»
+       не проходит whitelist для coffee-ниши.
+    """
+    rubric_low = lead.rubric.lower()
+    name_low   = lead.name.lower()
+    text = f"{rubric_low} {name_low}"
+
+    if any(w in text for w in JUNK_RUBRIC_WORDS):
+        return True
+
+    allowed = NICHE_WHITELIST.get(_current_niche, ())
+    if allowed and not any(w in rubric_low for w in allowed):
+        return True
+
+    return False
+
+
+def _extract_branch_count(it: dict) -> Optional[int]:
+    """Пробует все варианты где 2ГИС прячет число филиалов."""
+    org = it.get("org") or {}
+    for key in ("branch_count", "count", "total_count", "totalCount", "branchCount"):
+        v = org.get(key)
+        if v and int(v) > 1:
+            return int(v)
+    # иногда приходит в корне item
+    for key in ("branch_count", "branchCount"):
+        v = it.get(key)
+        if v and int(v) > 1:
+            return int(v)
+    # иногда в links
+    links = it.get("links") or {}
+    v = links.get("branches", {}).get("count") if isinstance(links.get("branches"), dict) else None
+    if v and int(v) > 1:
+        return int(v)
+    return None
 
 
 def enrich_from_card(driver, lead: Lead):
     """
     Заходит на карточку фирмы и дозабирает реальное число филиалов + телефон.
-    2ГИС отдаёт branch_count и контакты только на детальной странице.
+    2ГИС возвращает их только на детальной странице организации.
     """
     if not lead.dgis_id:
         return
     seen_rids: set = set()
     driver.get(f"https://2gis.kz/firm/{lead.dgis_id}")
-    for _ in range(4):
+    for _ in range(5):
         time.sleep(1.2)
         for data in harvest_responses(driver, seen_rids):
             for it in _items_from_payload(data):
-                if str(it.get("id", "")).split("_")[0] != lead.dgis_id:
+                item_id = str(it.get("id", "")).split("_")[0]
+                # принимаем как свой item или если id совпадает
+                if item_id and item_id != lead.dgis_id:
                     continue
-                org = it.get("org") or {}
-                bc = org.get("branch_count")
+                bc = _extract_branch_count(it)
                 if bc:
-                    lead.branch_count = int(bc)
+                    lead.branch_count = bc
                 if not lead.phone:
                     for grp in it.get("contact_groups", []) or []:
                         for c in grp.get("contacts", []) or []:
@@ -213,7 +265,8 @@ def enrich_from_card(driver, lead: Lead):
                                 break
                         if lead.phone:
                             break
-                return
+                if lead.branch_count > 1 and lead.phone:
+                    return  # всё нашли
 
 
 def _parse_item(it: dict, query: str) -> Lead:
@@ -340,6 +393,8 @@ def main():
     ap.add_argument("--out",     default=None)
     args = ap.parse_args()
 
+    global _current_niche
+    _current_niche = args.niche
     city_slug = CITY_SLUG.get(args.city.strip().lower(), "almaty")
     print(f"Город: {args.city} ({city_slug}) | Ниша: {args.niche}")
     print("Запускаю Chrome (окно откроется — не закрывай)...")
