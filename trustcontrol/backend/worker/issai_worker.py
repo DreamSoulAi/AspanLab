@@ -53,6 +53,11 @@ PORT          = int(os.getenv("ISSAI_PORT",    8010))
 NUM_WORKERS   = int(os.getenv("ISSAI_WORKERS", 1))
 API_KEY       = os.getenv("ISSAI_API_KEY", "")
 
+# Денойз стационарного шума (аппарат за кассой) перед распознаванием.
+# Включён по умолчанию; выключить — ISSAI_DENOISE=false. prop=насколько давить.
+DENOISE       = os.getenv("ISSAI_DENOISE", "true").lower() in ("1", "true", "yes", "on")
+DENOISE_PROP  = float(os.getenv("ISSAI_DENOISE_PROP", 0.9))
+
 # Куда складывать сконвертированную CT2-модель (риск №1)
 CT2_CACHE_DIR = os.getenv("ISSAI_CT2_DIR", "/tmp/issai_ct2")
 # Минимум RAM (МБ) для безопасного старта (риск №2)
@@ -265,45 +270,94 @@ async def transcribe(
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Пустой файл")
 
-    # Нормализуем код языка
-    lang = (language or "kk").split("-")[0].lower()
-    # whisper-turbo-ksc2 лучше всего работает с kk; для шала-казахского тоже kk
-    # Для явно русских файлов → ru; для остальных → None (auto-detect)
+    # Нормализуем код языка.
+    # "auto"/"" → None: модель сама определяет язык. КРИТИЧНО: жёсткий "kk"
+    # ломает русскую речь (модель казахская) — русский мат превращается в кашу.
+    lang = (language or "auto").split("-")[0].lower()
     whisper_lang = lang if lang in ("kk", "ru", "en") else None
 
     t0 = time.time()
-    log.info(f"Запрос: {len(audio_bytes)/1024:.0f}KB | lang={whisper_lang or 'auto'}")
+    log.info(f"Запрос: {len(audio_bytes)/1024:.0f}KB | lang={whisper_lang or 'auto'} | denoise={DENOISE}")
 
     # Одновременно работает только один запрос (CPU ограничение)
     async with _model_lock:
-        result_text, result_lang, total_dur, num_segs = await asyncio.get_event_loop().run_in_executor(
+        result_text, result_lang, total_dur, num_segs, audio_dur = await asyncio.get_event_loop().run_in_executor(
             None, _run_inference, audio_bytes, whisper_lang
         )
 
     elapsed = time.time() - t0
     log.info(
-        f"Готово: {len(result_text)} симв | dur={total_dur:.1f}с "
-        f"| segs={num_segs} | elapsed={elapsed:.1f}с | {result_text[:80]!r}"
+        f"Готово: {len(result_text)} симв | speech_dur={total_dur:.1f}с "
+        f"| audio_dur={audio_dur:.1f}с | segs={num_segs} | elapsed={elapsed:.1f}с "
+        f"| lang={result_lang} | {result_text[:80]!r}"
     )
 
     return {
-        "text":     result_text,
-        "language": result_lang,
-        "duration": round(total_dur, 2),
-        "segments": num_segs,
-        "elapsed":  round(elapsed, 2),
+        "text":           result_text,
+        "language":       result_lang,
+        "duration":       round(total_dur, 2),   # длительность распознанной речи
+        "audio_duration": round(audio_dur, 2),   # длина исходного аудио (для детекта мусора)
+        "segments":       num_segs,
+        "elapsed":        round(elapsed, 2),
     }
+
+
+def _decode_wav(audio_bytes: bytes):
+    """
+    Декодирует WAV (16-бит PCM, моно) в float32-массив [-1..1] и его длину в сек.
+    Возвращает (samples, sample_rate, duration) или (None, 0, 0.0) если не WAV/не моно.
+    Нужно для денойза: faster-whisper умеет принимать numpy-массив напрямую.
+    """
+    try:
+        import wave as _wave
+        import numpy as _np
+        with _wave.open(io.BytesIO(audio_bytes), "rb") as wf:
+            if wf.getsampwidth() != 2:
+                return None, 0, 0.0
+            nch = wf.getnchannels()
+            sr  = wf.getframerate()
+            nfr = wf.getnframes()
+            raw = wf.readframes(nfr)
+        a = _np.frombuffer(raw, dtype=_np.int16).astype(_np.float32) / 32768.0
+        if nch > 1:
+            a = a.reshape(-1, nch).mean(axis=1)
+        return a, sr, (len(a) / sr if sr else 0.0)
+    except Exception as e:
+        log.warning(f"WAV-декод не удался (пойдёт через ffmpeg, без денойза): {e}")
+        return None, 0, 0.0
+
+
+def _denoise(samples, sr):
+    """Подавление стационарного шума (аппарат за кассой). Без падений."""
+    try:
+        import noisereduce as nr
+        out = nr.reduce_noise(y=samples, sr=sr, stationary=True, prop_decrease=DENOISE_PROP)
+        # лёгкая нормализация громкости после чистки
+        import numpy as _np
+        peak = float(_np.abs(out).max()) or 1.0
+        return (out / peak * 0.7).astype("float32")
+    except Exception as e:
+        log.warning(f"Денойз не удался — распознаю как есть: {e}")
+        return samples
 
 
 def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
     """
     Синхронная инференция. Запускается в executor, не блокирует event loop.
-    Возвращает (text, language, total_duration, num_segments).
+    Возвращает (text, language, total_duration, num_segments, audio_duration).
     """
-    audio_buf = io.BytesIO(audio_bytes)
+    # Пытаемся декодировать WAV для денойза. Получилось → чистим и кормим массивом.
+    # Не WAV / не 16-бит → fallback на ffmpeg (BytesIO), без денойза.
+    samples, sr, audio_dur = _decode_wav(audio_bytes)
+    if samples is not None and sr == 16000:
+        if DENOISE:
+            samples = _denoise(samples, sr)
+        audio_input = samples
+    else:
+        audio_input = io.BytesIO(audio_bytes)
 
     segments, info = _model.transcribe(
-        audio_buf,
+        audio_input,
         language=language,
         task="transcribe",
         beam_size=5,
@@ -347,7 +401,8 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
 
     result_text = " ".join(parts).strip()
     result_lang = info.language or (language or "kk")
-    return result_text, result_lang, total_dur, num_segs
+    # audio_dur=0 если шло через ffmpeg — подставим длительность речи как приближение
+    return result_text, result_lang, total_dur, num_segs, (audio_dur or total_dur)
 
 
 if __name__ == "__main__":

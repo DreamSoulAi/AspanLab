@@ -37,9 +37,10 @@ async def transcribe(audio_bytes: bytes, lang: str | None = None) -> str:
     if not is_enabled():
         return ""
 
-    # whisper-turbo-ksc2 принимает ISO-639-1: "kk", "ru", "en"
-    # YANDEX_STT_LANG может быть "kk-KZ" — обрезаем.
-    language = (lang or settings.YANDEX_STT_LANG or "kk").split("-")[0].lower()
+    # Язык НЕ форсим. Модель казахская, но кассиры часто говорят (и матерятся)
+    # по-русски — жёсткий "kk" превращал русскую речь в кашу. "auto" → воркер
+    # сам определяет язык по звуку. Передать явный код можно через аргумент lang.
+    language = (lang or "auto").split("-")[0].lower()
 
     worker_url = settings.ISSAI_WORKER_URL.rstrip("/")
 
@@ -62,10 +63,25 @@ async def transcribe(audio_bytes: bytes, lang: str | None = None) -> str:
 
         data = r.json()
         text = (data.get("text") or "").strip()
+
+        # ── Защита от мусора ──────────────────────────────────────────────
+        # Если аудио длинное (много речи), но ISSAI вернул 1-3 слова — модель
+        # не справилась (чаще: русская речь через казахскую модель → каша вроде
+        # «әлім кәлі»). Возвращаем "", чтобы НЕ скармливать мусор аудио-модели
+        # как эталон — иначе она ставит IGNORE и теряет грубость/мат.
+        audio_dur = float(data.get("audio_duration") or data.get("duration") or 0)
+        words = len(text.split())
+        if text and audio_dur >= 12 and words < 4:
+            log.warning(
+                f"ISSAI: подозрение на мусор — {words} слов на {audio_dur:.0f}с аудио "
+                f"({text[:50]!r}). Отбрасываю, пусть решает аудио-модель."
+            )
+            return ""
+
         if text:
             log.info(
                 f"ISSAI STT OK | lang={data.get('language', language)} "
-                f"| {len(text)} симв | {text[:80]!r}"
+                f"| {len(text)} симв | {words} слов | {audio_dur:.0f}с | {text[:80]!r}"
             )
         else:
             log.info("ISSAI STT: пустой ответ")
