@@ -235,22 +235,38 @@ def send_one(driver, phone: str, message: str, timeout: int = 40) -> bool:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
 
     url = f"https://web.whatsapp.com/send?phone={phone}&text={urllib.parse.quote(message)}"
     driver.get(url)
+
+    # data-tab меняется между версиями WhatsApp — пробуем несколько селекторов.
+    # Нужно именно поле ввода (footer), не строка поиска.
+    compose_selectors = [
+        '//footer//div[@contenteditable="true"]',
+        '//div[@contenteditable="true"][@data-tab="10"]',
+        '//div[@contenteditable="true"][@role="textbox"]',
+    ]
+
+    box = None
+    deadline = time.time() + timeout
+    while time.time() < deadline and box is None:
+        for sel in compose_selectors:
+            els = driver.find_elements(By.XPATH, sel)
+            if els:
+                box = els[-1]
+                break
+        if box is None:
+            time.sleep(1)
+
+    if box is None:
+        return False
+
     try:
-        box = WebDriverWait(driver, timeout).until(
-            EC.element_to_be_clickable(
-                (By.CSS_SELECTOR, 'div[contenteditable="true"][data-tab="10"]')
-            )
-        )
         time.sleep(random.uniform(1.5, 3.0))
         box.send_keys(Keys.ENTER)
         time.sleep(random.uniform(2.0, 4.0))
         return True
     except Exception:
-        # Чаще всего: номера нет в WhatsApp, или верстка изменилась
         return False
 
 
