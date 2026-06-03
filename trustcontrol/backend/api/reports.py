@@ -19,10 +19,11 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header, Form, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from backend.config import settings
 from backend.database import get_db, AsyncSessionLocal
 from backend.models.location import Location
 from backend.models.report import Report
@@ -51,6 +52,133 @@ router = APIRouter()
 
 MAX_AUDIO_SIZE_MB    = 10
 MAX_TRANSCRIPT_CHARS = 10_000
+
+
+# ── Диагностика S3 / аудио-архива (для бесплатного Render без Shell) ──────────
+@router.get("/_debug/s3")
+async def debug_s3(token: str = ""):
+    """Проверка S3 из браузера. Открыть:
+       https://<домен>/api/reports/_debug/s3?token=<первые 12 симв SECRET_KEY>
+
+    Грузит тестовый файл, проверяет публичную ссылку, смотрит s3_url
+    у последних отчётов. Защищено префиксом SECRET_KEY.
+    """
+    from backend.config import settings
+    if not token or not settings.SECRET_KEY or token != settings.SECRET_KEY[:12]:
+        raise HTTPException(status_code=403, detail="Неверный токен (первые 12 символов SECRET_KEY)")
+
+    out: dict = {"env": {}, "upload": {}, "public_url": {}, "recent_reports": []}
+
+    out["env"] = {
+        "S3_BUCKET":         settings.S3_BUCKET or None,
+        "S3_ENDPOINT_URL":   settings.S3_ENDPOINT_URL or None,
+        "S3_PUBLIC_URL":     settings.S3_PUBLIC_URL or None,
+        "S3_REGION":         settings.S3_REGION or None,
+        "AWS_ACCESS_KEY_ID": (settings.AWS_ACCESS_KEY_ID[:6] + "…") if settings.AWS_ACCESS_KEY_ID else None,
+        "AWS_SECRET_set":    bool(settings.AWS_SECRET_ACCESS_KEY),
+    }
+    if not (settings.S3_BUCKET and settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY):
+        out["error"] = "Не хватает ключей S3 в Environment"
+        return out
+
+    # Тестовый WAV: 1 секунда тишины
+    import struct
+    sr = 16000
+    data = b"\x00\x00" * sr
+    wav = (b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVE"
+           + b"fmt " + struct.pack("<IHHIIHH", 16, 1, 1, sr, sr * 2, 2, 16)
+           + b"data" + struct.pack("<I", len(data)) + data)
+
+    # Прямая загрузка через boto3 с захватом РЕАЛЬНОЙ ошибки + перебор
+    # вариантов checksum-конфига (botocore 1.36+ ломает Yandex).
+    import boto3
+    from botocore.config import Config
+    import botocore
+
+    _endpoint = (settings.S3_ENDPOINT_URL or "").strip() or None
+    _region = "ru-central1" if (_endpoint and "yandexcloud" in _endpoint) else (settings.S3_REGION or "us-east-1")
+    out["upload"]["botocore_version"] = botocore.__version__
+
+    key = "evidence/_debug/test.wav"
+    attempts = []
+
+    # СНАЧАЛА проверка ключей на операции БЕЗ тела (нет checksum-фактора).
+    # Если list падает с SignatureDoesNotMatch → виноваты КЛЮЧИ.
+    # Если list проходит, а put падает → виноват checksum-баг botocore 1.36+.
+    try:
+        _probe = boto3.client(
+            "s3", endpoint_url=_endpoint,
+            aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
+            aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
+            region_name=_region, config=Config(signature_version="s3v4"),
+        )
+        _probe.list_objects_v2(Bucket=settings.S3_BUCKET, MaxKeys=1)
+        out["creds_check"] = {"list_objects": "OK — ключи и подпись валидны"}
+    except Exception as e:
+        out["creds_check"] = {"list_objects": f"{type(e).__name__}: {str(e)[:300]}"}
+
+    configs = {
+        "when_required": dict(signature_version="s3v4",
+                              request_checksum_calculation="when_required",
+                              response_checksum_validation="when_required"),
+        "plain_s3v4":    dict(signature_version="s3v4"),
+    }
+    url = None
+    for name, cfg_kwargs in configs.items():
+        try:
+            cfg = Config(**cfg_kwargs)
+        except TypeError as te:
+            attempts.append({"config": name, "error": f"Config не принял параметры: {te}"})
+            continue
+        try:
+            s3 = boto3.client(
+                "s3", endpoint_url=_endpoint,
+                aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
+                aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
+                region_name=_region, config=cfg,
+            )
+            s3.put_object(Bucket=settings.S3_BUCKET, Key=key, Body=wav, ContentType="audio/wav")
+            if settings.S3_PUBLIC_URL:
+                url = f"{settings.S3_PUBLIC_URL.rstrip('/')}/{key}"
+            elif _endpoint:
+                url = f"{_endpoint.rstrip('/')}/{settings.S3_BUCKET}/{key}"
+            else:
+                url = f"https://{settings.S3_BUCKET}.s3.{_region}.amazonaws.com/{key}"
+            attempts.append({"config": name, "ok": True})
+            break
+        except Exception as e:
+            attempts.append({"config": name, "error": f"{type(e).__name__}: {str(e)[:300]}"})
+
+    out["upload"] = {"ok": bool(url), "url": url, "attempts": attempts,
+                     "botocore_version": botocore.__version__}
+    if not url:
+        return out
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=15.0) as cli:
+            r = await cli.get(url)
+        out["public_url"] = {"status": r.status_code, "bytes": len(r.content)}
+        if r.status_code == 403:
+            out["public_url"]["hint"] = "Файл загружен, но бакет НЕ публичный → браузер не откроет"
+        elif r.status_code == 200:
+            out["public_url"]["hint"] = "OK — аудио будет играть в браузере"
+    except Exception as e:
+        out["public_url"] = {"error": str(e)[:200]}
+
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = (await db.execute(
+                select(Report).order_by(Report.timestamp.desc()).limit(5)
+            )).scalars().all()
+        out["recent_reports"] = [
+            {"id": r.id, "time": r.timestamp.isoformat(), "has_s3_url": bool(r.s3_url)}
+            for r in rows
+        ]
+    except Exception as e:
+        out["recent_reports"] = {"error": str(e)[:200]}
+
+    return out
 
 # Per-API-key rate limits:
 #   * 60 запросов / минуту  → защита от пиковых атак
@@ -164,6 +292,10 @@ async def _process_submission(
     """
     Полный цикл обработки одного аудио-сегмента.
     """
+    # Флаг: отчёт уже сохранён в БД. Если упадёт код ПОСЛЕ сохранения
+    # (уведомления/email/диагностика) — НЕ ставим в очередь повторов,
+    # иначе retry-воркер создаст идентичный дубль отчёта.
+    report_saved = False
     try:
         # Собираем контекст бизнеса для GPT.
         # ВАЖНО: здесь только ДАННЫЕ точки. Вся ЛОГИКА как их трактовать
@@ -212,6 +344,51 @@ async def _process_submission(
         status         = result.get("status", "OK")
         is_personal    = result.get("is_personal_talk", False)
         transcript_raw = result.get("transcript", "")
+
+        # ── Диагностика STT (временно): видно каким движком распознан текст ──
+        # engine=yandex stage=ok → казахский распознан Yandex (правильно)
+        # engine=audio_model      → казахского эталона не было, слова от OpenAI
+        # stage=lrr_http_error/disabled/... → почему Yandex не сработал
+        stt_diag = result.get("_stt_diag") or {}
+        log.info(f"[loc={location_id}] STT diag: {stt_diag}")
+        # Техническую диагностику STT в Telegram шлём ТОЛЬКО в DEBUG-режиме.
+        # В проде клиент не должен видеть "🔧 STT: issai / timeout [yx=on...]" —
+        # это спамило на каждый IGNORE. STT работает, отладка больше не нужна.
+        if settings.DEBUG and telegram_chat and failed_job_id is None:
+            try:
+                from backend.services.notifier import _send, _listen_button
+                from backend.services import yandex_stt, issai_stt
+                _y = "on" if yandex_stt.is_enabled() else "OFF"
+                _i = "on" if issai_stt.is_enabled() else "OFF"
+                # Текст для превью: сначала из сохранённого транскрипта, иначе
+                # из диагностики STT (на IGNORE отчёта нет, но что распозналось —
+                # видно). Так понятно ЧТО услышал движок и почему отфильтровано.
+                _preview = (transcript_raw or "").strip()[:400] or (stt_diag.get("text") or "")[:400]
+                _status_line = f"status={status}" if status else ""
+                if stt_diag:
+                    _eng = stt_diag.get("engine", "?")
+                    _stg = stt_diag.get("stage", "?")
+                    _extra = stt_diag.get("error") or f"{stt_diag.get('http','')}"
+                    _kl = stt_diag.get("keylen")
+                    _ws = " +WS!" if stt_diag.get("key_had_ws") else ""
+                    _kinfo = f" keylen={_kl}{_ws}" if _kl is not None else ""
+                    msg = f"🔧 STT: `{_eng}` / `{_stg}` {_extra}\n[yx={_y} issai={_i}{_kinfo}] {_status_line}\n{_preview}"
+                else:
+                    msg = f"🔧 STT: нет диагностики [yx={_y} issai={_i}] {_status_line}\n{_preview}"
+                # Проверка слышимости: грузим СЫРОЕ аудио каждой записи в R2 и
+                # вешаем кнопку «Слушать запись» — даже на IGNORE/пустой транскрипт.
+                # Так на кассе слышно ЧТО реально ловит телефон (тихо/далеко/шум).
+                _debug_listen = None
+                if wav_bytes:
+                    try:
+                        _diag_id = int(datetime.utcnow().timestamp())
+                        _up = await upload_evidence(wav_bytes, location_id, _diag_id)
+                        _debug_listen = _listen_button(_up.get("s3_url"))
+                    except Exception as _ue:
+                        log.warning(f"[loc={location_id}] debug audio upload failed: {_ue}")
+                await _send(telegram_chat, msg, reply_markup=_debug_listen)
+            except Exception as _de:
+                log.warning(f"[loc={location_id}] STT diag send failed: {_de}")
 
         log.info(
             f"[loc={location_id}] Pipeline | status={status!r} "
@@ -266,10 +443,9 @@ async def _process_submission(
             )
             _mark_job_done(failed_job_id)
             return
-        is_short = word_count < 6 or len(speakers) < 2
-
         # ── Поля GPT ─────────────────────────────────────────────
-        speakers              = result.get("speakers", [])
+        speakers              = result.get("speakers") or []
+        is_short = word_count < 6 or len(speakers) < 2
         gpt_score             = result.get("score")
         gpt_summary           = result.get("summary", "")
         gpt_tone              = result.get("tone", "neutral")
@@ -305,8 +481,8 @@ async def _process_submission(
 
         # ── Архив аудио в R2/S3 для прослушки + SHA-256 ──────────
         # Сохраняем КАЖДУЮ запись (не только priority=1), чтобы владелец
-        # мог прослушать любой разговор. Если S3 не настроен — тихо
-        # пропускаем (upload_evidence вернёт s3_url=None).
+        # мог прослушать любой разговор (по s3_key строится публичная ссылка).
+        # Если S3 не настроен — тихо пропускаем (upload_evidence вернёт s3_url=None).
         audio_sha256 = s3_url = s3_key = None
         if wav_bytes:
             tmp_id         = int(datetime.utcnow().timestamp())
@@ -480,6 +656,7 @@ async def _process_submission(
 
             await db.commit()
             report_id = report.id
+            report_saved = True   # отчёт в БД — повтор больше не нужен
 
             # ── POS-матчинг если оплата подтверждена ─────────────
             if payment_confirmed:
@@ -527,6 +704,7 @@ async def _process_submission(
                 score=final_score,
                 upsell=upsell_attempt,
                 greeting=has_greeting,
+                audio_url=s3_url,
             )
 
         # Email for fraud incidents
@@ -549,9 +727,13 @@ async def _process_submission(
 
         _mark_job_done(failed_job_id)
 
-    except Exception:
+    except Exception as _exc:
+        import traceback as _tb
+        _err_text = _tb.format_exc()[-800:]
         log.exception(f"[loc={location_id}] Ошибка фоновой обработки")
-        if wav_bytes and not failed_job_id:
+        # Если отчёт уже сохранён — НЕ повторяем (иначе дубль).
+        # Повтор нужен только когда упали ДО сохранения (STT/GPT/БД).
+        if wav_bytes and not failed_job_id and not report_saved:
             await _enqueue_retry(
                 location_id=location_id, wav_bytes=wav_bytes,
                 language=language, audio_size_kb=audio_size_kb,
@@ -559,14 +741,13 @@ async def _process_submission(
                 telegram_chat=telegram_chat, location_name=location_name,
                 error="Необработанное исключение",
             )
-        # Уведомляем владельца об ошибке обработки чтобы он знал
         if telegram_chat:
             try:
                 from backend.services.notifier import _send
                 await _send(
                     telegram_chat,
-                    f"⚠️ *{location_name}* — ошибка обработки разговора\\.\n"
-                    f"Запись сохранена в очередь повторов\\.",
+                    f"⚠️ *{location_name}* — ошибка обработки\\.\n"
+                    f"```\n{_err_text}\n```",
                 )
             except Exception:
                 pass
@@ -636,13 +817,19 @@ async def _delete_job(job_id: int):
 
 @router.post("/submit")
 async def submit_audio(
+    background_tasks: BackgroundTasks,
     audio:           Optional[UploadFile] = File(None),
     x_api_key:       Optional[str]        = Header(None),
     transcript_text: Optional[str]        = Form(None),
     language:        Optional[str]        = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Принимает аудио и синхронно обрабатывает (GPT + DB + Telegram)."""
+    """Принимает аудио, отвечает сразу и обрабатывает в фоне (GPT + DB + Telegram).
+
+    Обработка может занять 10-120с (асинхронный Yandex STT), поэтому НЕ держим
+    HTTP-соединение открытым — иначе кнопка «Стоп» в PWA висит и пользователь
+    шлёт повторный запрос (дубль). Возвращаем ok сразу, работаем фоном.
+    """
     effective_key = (x_api_key or "").strip()
     if not effective_key:
         raise HTTPException(status_code=401, detail="API ключ обязателен (X-API-Key заголовок)")
@@ -712,7 +899,8 @@ async def submit_audio(
         owner = await db.execute(select(User.telegram_chat).where(User.id == location.owner_id))
         telegram_chat = owner.scalar()
 
-    await _process_submission(
+    background_tasks.add_task(
+        _process_submission,
         location_id=location.id,
         wav_bytes=wav_bytes,
         transcript_text=transcript_text,
@@ -736,7 +924,7 @@ async def submit_audio(
         employees=getattr(location, 'employees', None) or [],
     )
 
-    return {"status": "ok", "message": "Обработано"}
+    return {"status": "ok", "message": "Принято в обработку"}
 
 
 # ── Endpoint: список отчётов ──────────────────────────────────────────────────
@@ -797,7 +985,7 @@ async def get_reports(
             "location_id":           r.location_id,
             "location_name":         loc_names.get(r.location_id, ""),
             "timestamp":             r.timestamp.isoformat(),
-            "transcript":            (r.transcript or "")[:300],
+            "transcript":            r.transcript or "",
             "tone":                  r.tone,
             "gpt_score":             r.gpt_score,
             "score":                 r.score if r.score is not None else r.gpt_score,

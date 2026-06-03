@@ -35,20 +35,25 @@ def is_garbage(text: str, audio_duration: float) -> bool:
     return audio_duration >= 12 and len(text.split()) < 4
 
 
-async def transcribe(audio_bytes: bytes, lang: str | None = None) -> str:
+async def transcribe(audio_bytes: bytes, lang: str | None = None, diag: dict | None = None) -> str:
     """
     Отправляет аудио на self-hosted ISSAI-воркер, возвращает текст.
 
     Поддерживает WAV, MP3, OGG, WebM — любой формат принимает ffmpeg на воркере.
     lang: код ISO (ru, kk, en…). Если None — берём из YANDEX_STT_LANG (kk-KZ → kk).
+    diag: если передан dict — заполняется причиной ошибки (для Telegram-диагностики),
+          чтобы было видно ПОЧЕМУ ISSAI не ответил (туннель мёртв / таймаут / HTTP).
 
     Никогда не бросает исключение — при ошибке возвращает "",
     чтобы вызывающий код перешёл к следующему STT в цепочке.
     """
+    if diag is None:
+        diag = {}
     if not is_enabled():
+        diag.update({"engine": "issai", "stage": "disabled"})
         return ""
 
-    # Язык НЕ форсим. Модель казахская, но кассиры часто говорят (и матерятся)
+    # Язык НЕ форсим. Модель казахская, но в Алматы ~60% говорят (и матерятся)
     # по-русски — жёсткий "kk" превращал русскую речь в кашу. "auto" → воркер
     # сам определяет язык по звуку. Передать явный код можно через аргумент lang.
     language = (lang or "auto").split("-")[0].lower()
@@ -60,7 +65,10 @@ async def transcribe(audio_bytes: bytes, lang: str | None = None) -> str:
         headers["X-API-Key"] = settings.ISSAI_WORKER_KEY
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as cli:
+        # 300с: CPU-инференция ~80-90с на 40с аудио + очередь до 3 запросов.
+        # Render всё равно может оборвать соединение на своём уровне, но
+        # 120с было слишком мало даже для одного длинного разговора в очереди.
+        async with httpx.AsyncClient(timeout=300.0) as cli:
             r = await cli.post(
                 f"{worker_url}/transcribe",
                 files={"audio": ("audio.wav", audio_bytes, "audio/wav")},
@@ -70,6 +78,8 @@ async def transcribe(audio_bytes: bytes, lang: str | None = None) -> str:
 
         if r.status_code != 200:
             log.warning(f"ISSAI worker HTTP {r.status_code}: {r.text[:200]}")
+            diag.update({"engine": "issai", "stage": "http_error",
+                         "http": r.status_code, "error": r.text[:160]})
             return ""
 
         data = r.json()
@@ -94,13 +104,19 @@ async def transcribe(audio_bytes: bytes, lang: str | None = None) -> str:
                 f"ISSAI STT OK | lang={data.get('language', language)} "
                 f"| {len(text)} симв | {words} слов | {audio_dur:.0f}с | {text[:80]!r}"
             )
+            diag.update({"engine": "issai", "stage": "ok", "text": text[:160]})
         else:
             log.info("ISSAI STT: пустой ответ")
+            diag.update({"engine": "issai", "stage": "empty"})
         return text
 
     except httpx.TimeoutException:
-        log.warning("ISSAI STT: таймаут — воркер не ответил за 120с")
+        log.warning("ISSAI STT: таймаут — воркер не ответил за 300с")
+        diag.update({"engine": "issai", "stage": "timeout",
+                     "error": "воркер не ответил за 300с"})
         return ""
     except Exception as e:
         log.warning(f"ISSAI STT ошибка: {e}")
+        diag.update({"engine": "issai", "stage": "connect_error",
+                     "error": f"{type(e).__name__}: {str(e)[:160]}"})
         return ""

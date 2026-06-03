@@ -162,50 +162,34 @@ class TestAnalyzer:
         assert get_tone("", events={"fraud_attempt": True}) == "negative"
 
     def test_score_fraud_penalty(self):
-        """fraud → score ≤ 10 (жёсткое бизнес-правило)."""
+        """Явный фрод (confidence >= 75) → score = 5."""
         from backend.services.analyzer import calculate_score
         score = calculate_score(
-            gpt_score=50,
             events={"fraud_attempt": True},
-            has_fraud=True,
+            fraud_confidence=90,
         )
-        assert score < 15
+        assert score == 5
 
     def test_score_normal_conversation(self):
-        """Нормальный разговор без флагов — score ≥ 50."""
+        """Нормальный разговор с приветствием и позитивным тоном — score ≥ 70."""
         from backend.services.analyzer import calculate_score
         score = calculate_score(
-            gpt_score=80,
             events={"greeting": True, "farewell": True},
-            has_greeting=True,
-            has_goodbye=True,
             tone="positive",
         )
         assert score >= 70
 
-    def test_score_no_gpt_fallback(self):
-        """Без gpt_score — fallback через флаги, база 50."""
+    def test_score_base(self):
+        """Пустой разговор без флагов — база 60."""
         from backend.services.analyzer import calculate_score
-        score = calculate_score(
-            gpt_score=None,
-            has_greeting=True,
-            has_goodbye=True,
-            has_bonus=True,
-            tone="positive",
-        )
-        assert score >= 80
+        score = calculate_score()
+        assert score == 60
 
-    def test_target_upsells_coffee(self):
-        """Целевые допродажи возвращаются для coffee."""
-        from backend.services.analyzer import get_target_upsells
-        targets = get_target_upsells("coffee")
-        assert "сироп" in targets
-        assert "карта лояльности" in targets
-
-    def test_target_upsells_custom_phrases(self):
-        from backend.services.analyzer import get_target_upsells
-        targets = get_target_upsells("coffee", custom_phrases=["мой_бонус"])
-        assert "мой_бонус" in targets
+    def test_score_short_visit(self):
+        """Короткий визит — не ниже 55."""
+        from backend.services.analyzer import calculate_score
+        score = calculate_score(is_short=True)
+        assert score >= 55
 
 
 @pytest.mark.asyncio

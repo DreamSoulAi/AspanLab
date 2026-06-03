@@ -82,7 +82,27 @@ async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) 
         log.error("boto3 не установлен: pip install boto3")
         return {"sha256": sha256, "s3_url": None, "key": None}
 
-    s3 = _s3_client()
+    from botocore.config import Config
+    _endpoint = (settings.S3_ENDPOINT_URL or "").strip() or None
+    _region = (settings.S3_REGION or "").strip() or "us-east-1"
+    if _endpoint and "yandexcloud" in _endpoint:
+        _region = "ru-central1"   # подпись s3v4 требует точный регион
+    # botocore >= 1.36 шлёт CRC32-чексуммы, что ломает не-AWS хранилища
+    # (SignatureDoesNotMatch). Отключаем их; старый botocore — фолбэк.
+    _cfg_base = {"signature_version": "s3v4"}
+    try:
+        _cfg = Config(request_checksum_calculation="when_required",
+                      response_checksum_validation="when_required", **_cfg_base)
+    except TypeError:
+        _cfg = Config(**_cfg_base)
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=_endpoint,
+        aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
+        aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
+        region_name=_region,
+        config=_cfg,
+    )
 
     ts  = datetime.utcnow().strftime("%Y/%m/%d")
     key = f"evidence/{ts}/loc{location_id}_r{report_id}_{sha256[:12]}.wav"
@@ -102,7 +122,13 @@ async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) 
                 },
             )
 
-            if settings.S3_ENDPOINT_URL:
+            # Публичная ссылка для прослушивания:
+            #  • R2: задан S3_PUBLIC_URL (pub-xxxx.r2.dev) → bucket в путь НЕ входит
+            #  • Supabase/MinIO: из S3_ENDPOINT_URL + bucket
+            #  • AWS: virtual-hosted style
+            if settings.S3_PUBLIC_URL:
+                url = f"{settings.S3_PUBLIC_URL.rstrip('/')}/{key}"
+            elif settings.S3_ENDPOINT_URL:
                 url = f"{settings.S3_ENDPOINT_URL.rstrip('/')}/{settings.S3_BUCKET}/{key}"
             else:
                 url = f"https://{settings.S3_BUCKET}.s3.{settings.S3_REGION}.amazonaws.com/{key}"

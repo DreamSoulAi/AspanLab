@@ -1,0 +1,63 @@
+# ════════════════════════════════════════════════════════════
+#  ISSAI STT — ЛОКАЛЬНЫЙ запуск на ПК для проверки качества казахского
+#
+#  Поднимает ДВА контейнера одной командой:
+#    1. issai-worker  — сама модель распознавания (whisper-turbo-ksc2)
+#    2. cloudflared   — бесплатный туннель наружу (без регистрации),
+#                       чтобы прод на Render достучался до твоего ПК
+#
+#  ЗАПУСК (Windows / Mac / Linux, нужен только Docker Desktop):
+#    docker compose -f docker-compose.issai-local.yml up -d
+#
+#  Первый старт качает модель (~1.5GB) — подожди 3-5 минут.
+#
+#  УЗНАТЬ АДРЕС ТУННЕЛЯ (вставить в Render → ISSAI_WORKER_URL):
+#    docker compose -f docker-compose.issai-local.yml logs cloudflared
+#  Ищи строку вида:  https://xxxx-yyyy-zzzz.trycloudflare.com
+#
+#  ОСТАНОВИТЬ:
+#    docker compose -f docker-compose.issai-local.yml down
+#
+#  ⚠️ Нужно ~5-6GB свободной RAM для Docker (Settings → Resources в Docker Desktop).
+# ════════════════════════════════════════════════════════════
+
+services:
+  issai-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.issai
+    restart: unless-stopped
+    # Порт наружу ПК не обязателен (туннель ходит по внутренней сети compose),
+    # но оставляем для локальной отладки через http://localhost:8010/health
+    ports:
+      - "8010:8010"
+    environment:
+      ISSAI_MODEL:   abilmansplus/whisper-turbo-ksc2
+      ISSAI_DEVICE:  cpu
+      ISSAI_COMPUTE: int8
+      ISSAI_PORT:    "8010"
+      ISSAI_THREADS: "4"
+      # Секрет: тот же ключ пропишешь в Render → ISSAI_WORKER_KEY
+      ISSAI_API_KEY: ${ISSAI_API_KEY:-trustlocal2026}
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+      - ct2_cache:/root/.cache/issai_ct2
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          memory: 4G
+
+  # Бесплатный быстрый туннель Cloudflare — даёт публичный https-адрес
+  # без аккаунта и без своего домена. Адрес печатается в логах контейнера.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://issai-worker:8010
+    depends_on:
+      - issai-worker
+
+volumes:
+  hf_cache:
+  ct2_cache:

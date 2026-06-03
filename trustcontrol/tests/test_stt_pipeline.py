@@ -62,16 +62,9 @@ def test_garbage_long_audio_few_words():
     assert issai_stt.is_garbage("", 60) is False                  # пусто — не мусор
 
 
-# ── result-хелперы: единый формат ─────────────────────────────────────────────
-
-def test_personal_and_ignore_result_shape():
-    p = A._personal_result("личный")
-    assert p["status"] == "PERSONAL" and p["is_personal_talk"] is True and p["transcript"] == ""
-    i = A._ignore_result("шум")
-    assert i["status"] == "IGNORE" and i["is_business"] is False and i["transcript"] == ""
-
-
 # ── Маршрутизация analyze_audio_with_fallback (модели замоканы) ────────────────
+# Реальный (слитый) поток: ISSAI/Yandex → дешёвый text-GPT; аудио-модель только
+# как фолбэк / редкая страховка от ложного IGNORE. Проверяем именно эту логику.
 
 def _run(coro):
     return asyncio.get_event_loop().run_until_complete(coro)
@@ -82,7 +75,6 @@ def _mock_models(monkeypatch):
     """По умолчанию: ISSAI/Yandex выключены, аудио-модель и GPT — заглушки."""
     monkeypatch.setattr(issai_stt, "is_enabled", lambda: False)
     monkeypatch.setattr(A.yandex_stt, "is_enabled", lambda: False)
-    # дефолтные заглушки — тесты переопределяют под себя
     async def _audio(*a, **k):  return {}
     async def _gpt(*a, **k):    return {}
     monkeypatch.setattr(A, "analyze_audio", _audio)
@@ -90,7 +82,13 @@ def _mock_models(monkeypatch):
     return monkeypatch
 
 
-def test_text_mode_uses_text_path(_mock_models):
+def _enable_issai(mp, text):
+    mp.setattr(issai_stt, "is_enabled", lambda: True)
+    async def _issai(wav, **k):  return text
+    mp.setattr(issai_stt, "transcribe", _issai)
+
+
+def test_text_mode_uses_text_gpt(_mock_models):
     async def _gpt(text, **k):
         return {"status": "OK", "is_business": True, "score": 70, "events": {},
                 "summary": "ок", "tone": "neutral"}
@@ -100,63 +98,60 @@ def test_text_mode_uses_text_path(_mock_models):
     assert "два кофе" in res["transcript"]
 
 
-def test_audio_ok_returned_directly(_mock_models):
+def test_stt_text_goes_to_cheap_text_gpt(_mock_models):
+    """Когда ISSAI дал текст — анализ через дешёвый text-GPT, аудио-модель НЕ зовём."""
+    _enable_issai(_mock_models, "здравствуйте один латте картой спасибо")
+    audio_called = {"n": 0}
+    async def _audio(*a, **k):
+        audio_called["n"] += 1
+        return {}
+    async def _gpt(text, **k):
+        return {"status": "OK", "is_business": True, "score": 75, "events": {},
+                "summary": "латте", "tone": "neutral"}
+    _mock_models.setattr(A, "analyze_audio", _audio)
+    _mock_models.setattr(A, "gpt_analyze", _gpt)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert res["status"] == "OK"
+    assert audio_called["n"] == 0, "аудио-модель не должна вызываться когда есть STT-текст (экономия)"
+
+
+def test_false_ignore_on_plausible_text_rescued_by_audio(_mock_models):
+    """Главный кейс: text-GPT ошибочно сказал IGNORE на обрывке с суммой →
+    страховка слушает звук аудио-моделью и спасает разговор."""
+    _enable_issai(_mock_models, "екі мың төрт жүз жетпіс теңге")   # озвучена сумма
+    async def _gpt(text, **k):
+        return {"status": "IGNORE", "is_business": False}          # ложный IGNORE
+    async def _audio(wav, **k):
+        return {"status": "OK", "is_business": True, "transcript": "екі мың...", "score": 60}
+    _mock_models.setattr(A, "gpt_analyze", _gpt)
+    _mock_models.setattr(A, "analyze_audio", _audio)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert res["status"] == "OK", "разговор с озвученной суммой не должен теряться в IGNORE"
+
+
+def test_garbage_text_ignore_not_rescued(_mock_models):
+    """Каша (2 слова, неправдоподобно) + IGNORE → остаётся IGNORE, аудио не зовём."""
+    _enable_issai(_mock_models, "әлім кәлі")
+    audio_called = {"n": 0}
+    async def _gpt(text, **k):
+        return {"status": "IGNORE", "is_business": False}
+    async def _audio(*a, **k):
+        audio_called["n"] += 1
+        return {}
+    _mock_models.setattr(A, "gpt_analyze", _gpt)
+    _mock_models.setattr(A, "analyze_audio", _audio)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert res["status"] == "IGNORE"
+    assert audio_called["n"] == 0, "на неправдоподобной каше страховку не запускаем"
+
+
+def test_no_stt_falls_back_to_audio_model(_mock_models):
+    """Нет ISSAI/Yandex → аудио-модель как фолбэк (свежий звук)."""
     async def _audio(wav, **k):
         return {"status": "OK", "is_business": True, "transcript": "привет", "score": 80}
     _mock_models.setattr(A, "analyze_audio", _audio)
     res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
     assert res["status"] == "OK" and res["score"] == 80
-
-
-def test_audio_personal_trusted(_mock_models):
-    async def _audio(wav, **k):
-        return A._personal_result("личный звонок")
-    _mock_models.setattr(A, "analyze_audio", _audio)
-    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert res["status"] == "PERSONAL"
-
-
-def test_false_ignore_rescued_by_plausible_kz_text(_mock_models):
-    """Главный кейс: аудио-модель ошибочно сказала IGNORE, но распознаватель
-    дал правдоподобный разговор → запись СПАСАЕТСЯ и анализируется по тексту."""
-    _mock_models.setattr(issai_stt, "is_enabled", lambda: True)
-    async def _issai(wav, **k):
-        return "алты жүз тоқсан теңге болады рахмет"   # реальная сделка (каз)
-    _mock_models.setattr(issai_stt, "transcribe", _issai)
-    async def _audio(wav, **k):
-        return A._ignore_result("показалось мусором")   # ложный IGNORE
-    _mock_models.setattr(A, "analyze_audio", _audio)
-    async def _gpt(text, **k):
-        return {"status": "OK", "is_business": True, "score": 65, "events": {},
-                "summary": "оплата", "tone": "neutral"}
-    _mock_models.setattr(A, "gpt_analyze", _gpt)
-
-    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert res["status"] == "OK", "разговор с озвученной суммой не должен теряться в IGNORE"
-    assert "тоқсан" in res["transcript"]
-
-
-def test_real_ignore_stays_ignore(_mock_models):
-    """Если речи реально нет (нет текста распознавателя) — IGNORE остаётся."""
-    async def _audio(wav, **k):
-        return A._ignore_result("тишина/шум")
-    _mock_models.setattr(A, "analyze_audio", _audio)
-    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert res["status"] == "IGNORE"
-
-
-def test_garbage_kz_text_does_not_rescue(_mock_models):
-    """Каша от распознавателя (2 слова) НЕ должна спасать ложный IGNORE —
-    иначе мусор будет сохраняться как разговор."""
-    _mock_models.setattr(issai_stt, "is_enabled", lambda: True)
-    async def _issai(wav, **k):
-        return "әлім кәлі"     # каша, _is_plausible_conversation отбракует
-    _mock_models.setattr(issai_stt, "transcribe", _issai)
-    async def _audio(wav, **k):
-        return A._ignore_result("мусор")
-    _mock_models.setattr(A, "analyze_audio", _audio)
-    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert res["status"] == "IGNORE"
 
 
 # ── calculate_score: детерминированный движок ─────────────────────────────────

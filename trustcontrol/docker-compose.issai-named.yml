@@ -1,0 +1,63 @@
+# ════════════════════════════════════════════════════════════
+#  ISSAI STT — запуск с ИМЕНОВАННЫМ туннелем Cloudflare
+#
+#  В отличие от docker-compose.issai-local.yml (случайный trycloudflare,
+#  рвётся и меняет адрес) — здесь ПОСТОЯННЫЙ адрес на твоём домене.
+#
+#  ПОДГОТОВКА (один раз):
+#   1. В Cloudflare добавь свой домен (Add a site).
+#   2. Zero Trust → Networks → Tunnels → Create a tunnel → Cloudflared →
+#      назови (напр. "issai") → скопируй ТОКЕН (длинная строка eyJ...).
+#   3. Public Hostname: Subdomain=issai, Domain=твойдомен,
+#      Service: HTTP → issai-worker:8010
+#   4. Положи токен в файл .env рядом с этим compose:
+#        CF_TUNNEL_TOKEN=eyJ...твой_токен...
+#        ISSAI_API_KEY=trustlocal2026
+#
+#  ЗАПУСК:
+#    docker compose -f docker-compose.issai-named.yml up -d
+#
+#  В Render → ISSAI_WORKER_URL = https://issai.твойдомен  (постоянный!)
+#            ISSAI_WORKER_KEY = trustlocal2026
+#
+#  ОСТАНОВИТЬ:
+#    docker compose -f docker-compose.issai-named.yml down
+# ════════════════════════════════════════════════════════════
+
+services:
+  issai-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.issai
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+    environment:
+      ISSAI_MODEL:   abilmansplus/whisper-turbo-ksc2
+      ISSAI_DEVICE:  cpu
+      ISSAI_COMPUTE: int8
+      ISSAI_PORT:    "8010"
+      ISSAI_THREADS: "4"
+      ISSAI_API_KEY: ${ISSAI_API_KEY:-trustlocal2026}
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+      - ct2_cache:/root/.cache/issai_ct2
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          memory: 4G
+
+  # Именованный туннель: ходит по токену, адрес постоянный (на твоём домене),
+  # переподключается стабильнее случайного trycloudflare.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+    depends_on:
+      - issai-worker
+
+volumes:
+  hf_cache:
+  ct2_cache:

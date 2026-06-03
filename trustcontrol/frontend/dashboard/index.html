@@ -519,9 +519,6 @@ textarea.f-input{resize:vertical;line-height:1.6}
 .rc-time{font-size:11px;color:var(--muted)}
 .rc-quote{font-size:13px;color:var(--dim);line-height:1.55;margin-bottom:10px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .rc-footer{display:flex;flex-wrap:wrap;gap:6px}
-.rep-play{background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);color:var(--accent2);font-size:12px;font-weight:600;padding:4px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;font-family:inherit}
-.rep-play:hover{background:rgba(59,130,246,.22)}
-.rep-play:disabled{opacity:.6;cursor:default}
 
 /* SETTINGS */
 .srow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)}
@@ -1691,9 +1688,11 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <div class="pay-chips">
               <div class="pay-chip" id="pay-kaspi_qr" onclick="togglePay(this,'kaspi_qr')">Kaspi QR</div>
               <div class="pay-chip" id="pay-halyk_qr" onclick="togglePay(this,'halyk_qr')">Halyk QR</div>
+              <div class="pay-chip" id="pay-bck_qr" onclick="togglePay(this,'bck_qr')">БЦК QR</div>
+              <div class="pay-chip" id="pay-freedom" onclick="togglePay(this,'freedom')">Freedom Pay</div>
               <div class="pay-chip" id="pay-kaspi_transfer" onclick="togglePay(this,'kaspi_transfer')">Kaspi перевод</div>
+              <div class="pay-chip" id="pay-card" onclick="togglePay(this,'card')">Картой</div>
               <div class="pay-chip" id="pay-cash" onclick="togglePay(this,'cash')">Наличные</div>
-              <div class="pay-chip" id="pay-terminal" onclick="togglePay(this,'terminal')">Терминал</div>
             </div>
             <div style="font-size:11px;color:var(--muted);margin-top:6px">ИИ будет фиксировать факт оплаты в каждом разговоре</div>
           </div>
@@ -1720,8 +1719,15 @@ textarea.f-input{resize:vertical;line-height:1.6}
           </div>
 
           <div class="f-group" style="margin-bottom:4px">
-            <label class="f-label">Скрипт приветствия / прощания</label>
-            <textarea class="f-input" id="bizGreeting" rows="2" placeholder="Например: «Добро пожаловать, что будете?» и «Спасибо, ждём вас снова»"></textarea>
+            <label class="f-label">На каком языке говорят кассиры</label>
+            <div class="pay-chips" style="margin-bottom:8px">
+              <div class="pay-chip" id="lang-kk" onclick="toggleLang(this,'kk')">Казахский</div>
+              <div class="pay-chip" id="lang-shala" onclick="toggleLang(this,'shala')">Шала-казахский</div>
+              <div class="pay-chip" id="lang-ru" onclick="toggleLang(this,'ru')">Русский</div>
+              <div class="pay-chip" id="lang-mix" onclick="toggleLang(this,'mix')">Смешанный</div>
+            </div>
+            <textarea class="f-input" id="bizGreeting" rows="2" placeholder="Конкретные фразы — необязательно. Например: «Рахмет, сау болыңыз» или «Спасибо, ждём вас снова»"></textarea>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Если нет конкретного скрипта — просто выберите язык или оставьте пустым</div>
           </div>
 
           <div style="padding:10px 12px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.15);border-radius:10px;font-size:12px;color:var(--muted);line-height:1.6;margin-top:2px;margin-bottom:2px">
@@ -2201,11 +2207,18 @@ async function saveSettings(advance){
 
 /* ── BUSINESS STEP ── */
 let _payMethods=new Set();
-const _payLabels={kaspi_qr:'Kaspi QR',halyk_qr:'Halyk QR',kaspi_transfer:'Kaspi перевод',cash:'Наличные',terminal:'Терминал'};
+const _payLabels={kaspi_qr:'Kaspi QR',halyk_qr:'Halyk QR',bck_qr:'БЦК QR',freedom:'Freedom Pay',kaspi_transfer:'Kaspi перевод',card:'Картой',cash:'Наличные'};
+let _greetLang=new Set();
+const _langLabels={kk:'казахский',shala:'шала-казахский (казахско-русский микс, код-свитчинг)',ru:'русский',mix:'смешанный (несколько языков в одном разговоре)'};
 
 function togglePay(el,key){
   if(_payMethods.has(key)){_payMethods.delete(key);el.classList.remove('on');}
   else{_payMethods.add(key);el.classList.add('on');}
+}
+
+function toggleLang(el,key){
+  if(_greetLang.has(key)){_greetLang.delete(key);el.classList.remove('on');}
+  else{_greetLang.add(key);el.classList.add('on');}
 }
 
 function toggleBonusCard(cb){
@@ -2217,15 +2230,18 @@ function toggleBonusCard(cb){
 }
 
 async function loadBizStep(){
-  // Reset chips
+  // Reset pay chips
   _payMethods=new Set();
   Object.keys(_payLabels).forEach(k=>{const c=document.getElementById('pay-'+k);if(c)c.classList.remove('on');});
+  // Reset lang chips
+  _greetLang=new Set();
+  Object.keys(_langLabels).forEach(k=>{const c=document.getElementById('lang-'+k);if(c)c.classList.remove('on');});
   const locs=await apiFetch('/locations',{},true);
   if(!locs||!locs.length)return;
   const loc=locs[0];
   const desc=(loc.business_description||'').toLowerCase();
-  // Detect payment methods from saved description
-  const payKw={kaspi_qr:'kaspi qr',halyk_qr:'halyk qr',kaspi_transfer:'kaspi перевод',cash:'наличн',terminal:'терминал'};
+  // Detect payment methods
+  const payKw={kaspi_qr:'kaspi qr',halyk_qr:'halyk qr',bck_qr:'бцк qr',freedom:'freedom',kaspi_transfer:'kaspi перевод',card:'картой',cash:'наличн'};
   for(const[k,kw] of Object.entries(payKw)){
     if(desc.includes(kw)){
       _payMethods.add(k);
@@ -2242,7 +2258,23 @@ async function loadBizStep(){
     if(m)setVal('bonusCardName',m[1].trim().replace(/^["«]+|["»]+$/g,''));
   }
   setVal('bizUpsell',loc.upsell_script||'');
-  setVal('bizGreeting',loc.greeting_script||'');
+  // Parse saved greeting_script: first line may be "Язык: X, Y", rest is custom text
+  const raw=loc.greeting_script||'';
+  const langLine=raw.match(/^Язык:\s*([^\n]+)/i);
+  if(langLine){
+    langLine[1].split(',').forEach(l=>{
+      const t=l.trim().toLowerCase();
+      const found=Object.entries(_langLabels).find(([,v])=>v===t);
+      if(found){
+        _greetLang.add(found[0]);
+        const c=document.getElementById('lang-'+found[0]);
+        if(c)c.classList.add('on');
+      }
+    });
+    setVal('bizGreeting',raw.replace(/^Язык:[^\n]*\n?/i,'').trim());
+  } else {
+    setVal('bizGreeting',raw);
+  }
 }
 
 async function saveBizStep(){
@@ -2261,7 +2293,13 @@ async function saveBizStep(){
   const payload={};
   if(parts.length)payload.business_description=parts.join('\n');
   const upsell=val('bizUpsell').trim();if(upsell)payload.upsell_script=upsell;
-  const greeting=val('bizGreeting').trim();if(greeting)payload.greeting_script=greeting;
+  // Build greeting_script: "Язык: X, Y\nФразы: ..."
+  const langParts=[..._greetLang].map(k=>_langLabels[k]).filter(Boolean);
+  const customGreeting=val('bizGreeting').trim();
+  let greetingScript='';
+  if(langParts.length)greetingScript='Язык: '+langParts.join(', ');
+  if(customGreeting)greetingScript=(greetingScript?greetingScript+'\n':'')+customGreeting;
+  if(greetingScript)payload.greeting_script=greetingScript;
   if(Object.keys(payload).length){
     await apiFetch('/locations/'+locId,{method:'PATCH',body:JSON.stringify(payload)});
   }
@@ -2439,54 +2477,60 @@ async function resolveAlert(id,btn){
 }
 
 /* ── REPORTS ── */
+let _reportsCache=[];
+function showReportModal(idx){
+  const r=_reportsCache[idx];if(!r)return;
+  document.getElementById('rmTranscript').textContent=r.transcript||'Нет транскрипта';
+  const meta=[];
+  if(r.employee_name)meta.push('Сотрудник: '+r.employee_name);
+  if(r.gpt_summary)meta.push(r.gpt_summary);
+  document.getElementById('rmMeta').textContent=meta.join(' · ');
+  const sc=Math.round(r.score||0);
+  document.getElementById('rmScore').textContent=sc+'/100';
+  document.getElementById('rmScore').style.color=sc>=80?'#10B981':sc>=60?'#F59E0B':'#EF4444';
+  document.getElementById('rmTime').textContent=fmt(r.timestamp||r.created_at);
+  document.getElementById('rmFlags').innerHTML=statusFlags(r);
+  const audioWrap=document.getElementById('rmAudio');
+  if(r.s3_url){
+    audioWrap.innerHTML=`<audio controls style="width:100%;margin-bottom:4px"><source src="${esc(r.s3_url)}" type="audio/wav"></audio>`
+      +`<a href="${esc(r.s3_url)}" download style="font-size:12px;color:var(--accent2)">⬇ Скачать запись</a>`;
+    audioWrap.style.display='';
+  }else{
+    audioWrap.style.display='none';
+  }
+  document.getElementById('reportModal').style.display='flex';
+}
 async function loadReportsPage(){
   const days=document.getElementById('reportDays')?.value||'7';
   const d=await apiFetch('/reports/?days='+days+'&limit=50');
+  _reportsCache=d||[];
   const mobile=window.innerWidth<768;
   if(mobile){
     const el=document.getElementById('reportsCards');if(!el)return;
     el.style.display='';
     document.getElementById('reportsDesktop').style.display='none';
     if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет отчётов за период</p>';return;}
-    el.innerHTML=d.map(r=>`
-      <div class="rc">
+    el.innerHTML=d.map((r,i)=>`
+      <div class="rc" onclick="showReportModal(${i})" style="cursor:pointer">
         <div class="rc-top"><span class="rc-time">${fmt(r.timestamp||r.created_at)}</span>
           <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:${r.score>=80?'#10B981':r.score>=60?'#F59E0B':'#EF4444'}">${Math.round(r.score||0)}</span>
         </div>
         <p class="rc-quote">${esc((r.transcript||'Нет текста разговора').slice(0,200))}</p>
-        <div class="rc-footer">${statusFlags(r)}${r.has_audio?` <button class="rep-play" onclick="playReportAudio(${r.id},this)">▶ Слушать</button>`:''}</div>
+        <div class="rc-footer">${statusFlags(r)}<span style="margin-left:auto;font-size:11px;color:var(--muted)">читать →</span></div>
       </div>`).join('');
   }else{
     const el=document.getElementById('reportsDesktop');if(!el)return;
     el.style.display='';
     document.getElementById('reportsCards').style.display='none';
     if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет отчётов за период</p>';return;}
-    el.innerHTML=d.map(r=>`
-      <div class="rep-row">
+    el.innerHTML=d.map((r,i)=>`
+      <div class="rep-row" onclick="showReportModal(${i})" style="cursor:pointer" title="Нажмите для просмотра полного транскрипта">
         <span class="rep-time">${fmt(r.timestamp||r.created_at)}</span>
         <span class="rep-score ${r.score>=80?'g':r.score>=60?'y':'r'}">${Math.round(r.score||0)}</span>
         <span class="rep-tone">${toneName(r.tone)}</span>
         <span class="rep-flags">${statusFlags(r)}</span>
-        <span class="rep-text">${esc((r.transcript||'').slice(0,100))}</span>
-        ${r.has_audio?`<button class="rep-play" onclick="playReportAudio(${r.id},this)">▶ Слушать</button>`:''}
+        <span class="rep-text">${esc((r.transcript||'').slice(0,120))}</span>
       </div>`).join('');
-  }
-}
-
-/* Прослушка записи разговора (presigned-ссылка на R2/S3) */
-let _audioPlayer=null;
-async function playReportAudio(id,btn){
-  try{
-    if(!_audioPlayer){_audioPlayer=new Audio();}
-    if(btn){btn.disabled=true;const _t=btn.textContent;btn.textContent='⏳…';btn.dataset.t=_t;}
-    const d=await apiFetch('/reports/'+id+'/audio');
-    if(!d||!d.url){throw new Error('no url');}
-    _audioPlayer.src=d.url;
-    await _audioPlayer.play();
-    if(btn){btn.textContent='▶ Слушать';btn.disabled=false;}
-  }catch(e){
-    showErr('Не удалось проиграть запись (аудио не сохранено или хранилище не настроено)');
-    if(btn){btn.textContent=btn.dataset.t||'▶ Слушать';btn.disabled=false;}
   }
 }
 
@@ -2964,5 +3008,24 @@ async function unlinkTelegram(){
   }
 })();
 </script>
+
+<!-- ── Модальное окно: полный транскрипт разговора ── -->
+<div id="reportModal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.75);align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)this.style.display='none'">
+  <div style="background:#12122a;border:1px solid rgba(255,255,255,.12);border-radius:14px;max-width:640px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <span id="rmTime" style="font-size:13px;color:var(--muted)"></span>
+        <span id="rmScore" style="margin-left:12px;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:15px"></span>
+        <span id="rmFlags" style="margin-left:10px"></span>
+      </div>
+      <button onclick="document.getElementById('reportModal').style.display='none'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:22px;line-height:1;padding:0 4px">✕</button>
+    </div>
+    <div style="padding:20px;overflow-y:auto;flex:1">
+      <div id="rmAudio" style="display:none;margin-bottom:16px;padding:12px;background:rgba(255,255,255,.04);border-radius:8px"></div>
+      <p id="rmTranscript" style="font-size:14px;line-height:1.75;color:#e2e8f0;white-space:pre-wrap;margin:0"></p>
+    </div>
+    <div id="rmMeta" style="padding:12px 20px;border-top:1px solid rgba(255,255,255,.08);font-size:12px;color:var(--muted)"></div>
+  </div>
+</div>
 </body>
 </html>

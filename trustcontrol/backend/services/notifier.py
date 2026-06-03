@@ -198,6 +198,7 @@ async def send_ok_report(
     score: float,
     upsell: bool,
     greeting: bool,
+    audio_url: str | None = None,
 ):
     score_icon = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
     tone_ru = {"positive": "позитивный", "neutral": "нейтральный", "negative": "негативный"}.get(tone, "нейтральный")
@@ -209,12 +210,27 @@ async def send_ok_report(
         flags.append("нет допродажи")
     flags_line = f"\n_{', '.join(flags)}_" if flags else ""
 
+    # Показываем транскрипт только если он похож на настоящий разговор.
+    # Мусор (2 слова на 60с, галлюцинация-повтор) владельцу не показываем.
+    def _transcript_looks_ok(t: str) -> bool:
+        if not t or not t.strip():
+            return False
+        words = t.split()
+        if len(words) < 3:
+            return False
+        # повторяющаяся галлюцинация: много токенов, мало уникальных
+        if len(words) >= 6 and len({w.lower() for w in words}) <= 2:
+            return False
+        return True
+
+    transcript_line = f"\n_{transcript[:300]}_" if _transcript_looks_ok(transcript) else ""
     text = (
         f"{score_icon} *{location_name}* — {score:.0f}/100\n"
         f"Тон: {tone_ru}"
         f"{flags_line}"
+        f"{transcript_line}"
     )
-    await _send(chat_id, text)
+    await _send(chat_id, text, reply_markup=_listen_button(audio_url) if audio_url else None)
 
 
 async def send_shift_summary(chat_id: str, location_name: str, shift_data: dict):
