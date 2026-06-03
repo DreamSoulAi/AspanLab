@@ -47,6 +47,7 @@ _WA_DIR.mkdir(parents=True, exist_ok=True)
 CONV_FILE = _WA_DIR / "conversations.json"  # история переписок {phone: [msgs]}
 HOT_FILE = _WA_DIR / "hot_leads.csv"        # горячие лиды с временем созвона
 PROFILE_DIR = _WA_DIR / "wa_profile"        # та же сессия что у рассыльщика
+SENT_LOG = _WA_DIR / "wa_sent.log"          # кому писал рассыльщик (белый список)
 
 OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
 TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -98,6 +99,40 @@ SYSTEM_PROMPT = f"""Ты — вежливый деловой ассистент 
 notify_owner=true ТОЛЬКО когда есть конкретная договорённость о созвоне
 (stage=booked) или клиент явно просит чтобы Данил позвонил/написал лично.
 """
+
+
+# ── Белый список: отвечаем ТОЛЬКО тем, кому писал рассыльщик ──────────────────
+# КРИТИЧНО: без этого бот ответил бы рекламой на ВСЕ непрочитанные чаты, включая
+# твоих реальных клиентов/родных/группы. Отвечаем только на номера из wa_sent.log.
+
+def normalize_phone(raw: str) -> str | None:
+    """+7 707 123 45 67 / 8 (707)... → 7707xxxxxxx. None если это не номер
+    (например имя сохранённого контакта или название группы)."""
+    digits = "".join(ch for ch in (raw or "") if ch.isdigit())
+    if not digits:
+        return None
+    if digits.startswith("8") and len(digits) == 11:
+        digits = "7" + digits[1:]
+    if digits.startswith("7") and len(digits) == 11:
+        return digits
+    if len(digits) == 10:
+        return "7" + digits
+    return None
+
+
+def load_allowed_phones() -> set[str]:
+    """Номера, которым писал рассыльщик (wa_sent.log). Формат строки:
+    7707xxxxxxx<TAB>имя<TAB>дата."""
+    if not SENT_LOG.exists():
+        return set()
+    allowed = set()
+    for line in SENT_LOG.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        p = normalize_phone(line.split("\t")[0])
+        if p:
+            allowed.add(p)
+    return allowed
 
 
 def _load_conv() -> dict:
@@ -165,14 +200,21 @@ def _make_driver():
 
 
 def _get_unread_chats(driver):
-    """Возвращает элементы чатов с непрочитанными сообщениями."""
+    """Возвращает элементы чатов с непрочитанными сообщениями.
+    Бейдж непрочитанных помечен aria-label — на ru «N непрочитан…»,
+    на en «N unread message…». Ловим оба языка интерфейса."""
     from selenium.webdriver.common.by import By
-    chats = []
-    # Непрочитанный чат = бейдж с количеством (aria-label «непрочитан…»)
-    for badge in driver.find_elements(By.XPATH, '//span[contains(@aria-label, "непрочит")]'):
+    chats, seen = [], set()
+    badges = (
+        driver.find_elements(By.XPATH, '//span[contains(@aria-label, "непрочит")]')
+        + driver.find_elements(By.XPATH, '//span[contains(@aria-label, "unread")]')
+    )
+    for badge in badges:
         try:
             row = badge.find_element(By.XPATH, './ancestor::div[@role="listitem"]')
-            chats.append(row)
+            if row.id not in seen:          # один чат не добавляем дважды
+                seen.add(row.id)
+                chats.append(row)
         except Exception:
             continue
     return chats
@@ -189,30 +231,54 @@ def _read_incoming(driver) -> list[str]:
     return msgs[-5:]  # последние 5 входящих — контекст
 
 
-def _send_message(driver, text: str):
+def _find_compose_box(driver):
+    """Поле ввода сообщения. data-tab меняется между версиями WhatsApp,
+    поэтому пробуем несколько селекторов; поле всегда внизу (footer)."""
     from selenium.webdriver.common.by import By
+    selectors = [
+        '//footer//div[@contenteditable="true"]',
+        '//div[@contenteditable="true"][@data-tab="10"]',
+        '//div[@contenteditable="true"][@role="textbox"]',
+    ]
+    for sel in selectors:
+        els = driver.find_elements(By.XPATH, sel)
+        if els:
+            return els[-1]      # последнее contenteditable = поле ввода, не поиск
+    return None
+
+
+def _send_message(driver, text: str) -> bool:
     from selenium.webdriver.common.keys import Keys
-    box = driver.find_element(By.XPATH, '//div[@contenteditable="true"][@data-tab="10"]')
+    box = _find_compose_box(driver)
+    if box is None:
+        return False
     box.click()
     # send_keys по строкам — WhatsApp не любит \n как Enter
-    for i, line in enumerate(text.split("\n")):
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
         box.send_keys(line)
-        if i < len(text.split("\n")) - 1:
+        if i < len(lines) - 1:
             box.send_keys(Keys.SHIFT, Keys.ENTER)
     box.send_keys(Keys.ENTER)
+    return True
 
 
 def _chat_phone_name(driver) -> tuple[str, str]:
-    """Пытается достать имя/номер открытого чата из заголовка."""
+    """Достаёт заголовок открытого чата. Для несохранённого лида заголовок —
+    это его НОМЕР (+7 ...), для сохранённого контакта — имя."""
     from selenium.webdriver.common.by import By
-    try:
-        header = driver.find_element(By.XPATH, '//header//span[@dir="auto"]')
-        return header.text.strip(), header.text.strip()
-    except Exception:
-        return "", ""
+    for xp in ('//header//span[@dir="auto"]', '//header//span[@title]'):
+        try:
+            el = driver.find_element(By.XPATH, xp)
+            title = (el.get_attribute("title") or el.text or "").strip()
+            if title:
+                return title, title
+        except Exception:
+            continue
+    return "", ""
 
 
-def run(poll_interval: int):
+def run(poll_interval: int, reply_all: bool = False):
     if not OPENAI_KEY:
         print("❌ Нет OPENAI_API_KEY. export OPENAI_API_KEY=sk-...")
         return
@@ -228,6 +294,23 @@ def run(poll_interval: int):
     input("   После входа нажми ENTER...")
 
     conv = _load_conv()
+
+    # Белый список: отвечаем ТОЛЬКО тем, кому писал рассыльщик. Защищает твои
+    # реальные чаты (клиенты, родные, группы) от авто-рекламы.
+    allowed = load_allowed_phones() if not reply_all else set()
+    if reply_all:
+        print("⚠️  РЕЖИМ reply-all: бот ответит на ЛЮБОЙ непрочитанный чат, "
+              "включая твои реальные контакты. Используй осознанно.")
+    elif not allowed:
+        print("❌ wa_sent.log пуст — некому отвечать (рассыльщик ещё не слал, "
+              "или сессия в другой папке). Чтобы не спамить реальные чаты, "
+              "бот НЕ отвечает никому. Сначала запусти рассылку.")
+        driver.quit()
+        return
+    else:
+        print(f"✓ Белый список: {len(allowed)} номеров из рассылки. "
+              "Только им бот и ответит.")
+
     print(f"🤖 AI-продавец запущен. Проверка каждые {poll_interval}с. Ctrl+C для выхода.")
 
     try:
@@ -240,9 +323,17 @@ def run(poll_interval: int):
                     chat.click()
                     time.sleep(2)
                     name, phone = _chat_phone_name(driver)
-                    key = phone or name
-                    if not key:
+                    if not name:
                         continue
+
+                    # ── ФИЛЬТР: только наши лиды ──────────────────────────────
+                    norm = normalize_phone(phone)
+                    if not reply_all and (norm is None or norm not in allowed):
+                        # Сохранённый контакт (имя вместо номера) или чужой чат —
+                        # это НЕ лид из рассылки. Не трогаем.
+                        print(f"  ⏭  пропуск (не наш лид): {name[:40]}")
+                        continue
+                    key = norm or name
 
                     incoming = _read_incoming(driver)
                     if not incoming:
@@ -257,7 +348,9 @@ def run(poll_interval: int):
                     if not reply:
                         continue
 
-                    _send_message(driver, reply)
+                    if not _send_message(driver, reply):
+                        print(f"  ! поле ввода не найдено — пропуск {name[:30]}")
+                        continue
                     hist.append({"role": "assistant", "content": reply})
                     conv[key] = hist[-20:]   # держим последние 20 реплик
                     _save_conv(conv)
@@ -290,5 +383,8 @@ def run(poll_interval: int):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="AI-продавец TrustControl в WhatsApp")
     ap.add_argument("--poll", type=int, default=30, help="Интервал проверки чатов, сек")
-    ap.parse_args()
-    run(ap.parse_args().poll)
+    ap.add_argument("--all-chats", action="store_true",
+                    help="ОПАСНО: отвечать на ВСЕ чаты, не только лидам из рассылки. "
+                         "По умолчанию бот отвечает только тем, кому писал рассыльщик.")
+    args = ap.parse_args()
+    run(args.poll, reply_all=args.all_chats)
