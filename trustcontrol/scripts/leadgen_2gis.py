@@ -33,6 +33,12 @@ NICHES = {
     "all":      ["кофейня", "фастфуд", "кафе", "донер", "бургерная"],
 }
 
+# Рубрики-мусор: заправки, супермаркеты, аптеки, продуктовые — выкидываем.
+JUNK_RUBRIC_WORDS = (
+    "азс", "заправ", "супермаркет", "гипермаркет", "аптек", "продуктовый",
+    "магазин продуктов", "автозаправ", "топлив", "нефт",
+)
+
 # slug города в URL 2gis.kz
 CITY_SLUG = {
     "алматы": "almaty", "астана": "astana", "нур-султан": "astana",
@@ -161,6 +167,8 @@ def collect(driver, query: str, city_slug: str, limit: int, sink: dict):
             for data in harvest_responses(driver, seen_rids):
                 for it in _items_from_payload(data):
                     lead = _parse_item(it, query)
+                    if _is_junk(lead):
+                        continue
                     key = lead.dgis_id or lead.name
                     if key and key not in sink:
                         sink[key] = lead
@@ -170,6 +178,42 @@ def collect(driver, query: str, city_slug: str, limit: int, sink: dict):
             break  # страницы кончились
         if len(sink) >= limit:
             break
+
+
+def _is_junk(lead: Lead) -> bool:
+    """Отсеивает заправки, супермаркеты, аптеки и т.п."""
+    text = f"{lead.rubric} {lead.name}".lower()
+    return any(w in text for w in JUNK_RUBRIC_WORDS)
+
+
+def enrich_from_card(driver, lead: Lead):
+    """
+    Заходит на карточку фирмы и дозабирает реальное число филиалов + телефон.
+    2ГИС отдаёт branch_count и контакты только на детальной странице.
+    """
+    if not lead.dgis_id:
+        return
+    seen_rids: set = set()
+    driver.get(f"https://2gis.kz/firm/{lead.dgis_id}")
+    for _ in range(4):
+        time.sleep(1.2)
+        for data in harvest_responses(driver, seen_rids):
+            for it in _items_from_payload(data):
+                if str(it.get("id", "")).split("_")[0] != lead.dgis_id:
+                    continue
+                org = it.get("org") or {}
+                bc = org.get("branch_count")
+                if bc:
+                    lead.branch_count = int(bc)
+                if not lead.phone:
+                    for grp in it.get("contact_groups", []) or []:
+                        for c in grp.get("contacts", []) or []:
+                            if c.get("type") == "phone":
+                                lead.phone = c.get("value") or c.get("text") or ""
+                                break
+                        if lead.phone:
+                            break
+                return
 
 
 def _parse_item(it: dict, query: str) -> Lead:
@@ -290,6 +334,8 @@ def main():
     ap.add_argument("--city",    default="Алматы")
     ap.add_argument("--niche",   default="coffee", choices=list(NICHES))
     ap.add_argument("--limit",   type=int, default=200)
+    ap.add_argument("--enrich",  type=int, default=60,
+                    help="зайти на карточки топ-N за реальными филиалами+телефоном")
     ap.add_argument("--analyze", type=int, default=0, help="топ-N через GPT")
     ap.add_argument("--out",     default=None)
     args = ap.parse_args()
@@ -309,7 +355,21 @@ def main():
         for l in leads:
             l.heat = score_heat(l)
         leads.sort(key=lambda x: x.heat, reverse=True)
-        print(f"\nСобрано уникальных: {len(leads)}")
+        print(f"\nСобрано уникальных (без мусора): {len(leads)}")
+
+        # дозагрузка карточек топ-лидов: реальные филиалы + телефон
+        if args.enrich > 0 and leads:
+            top = leads[:args.enrich]
+            print(f"Дозагружаю карточки топ-{len(top)} (филиалы + телефоны)...")
+            for i, l in enumerate(top, 1):
+                try:
+                    enrich_from_card(driver, l)
+                except Exception as e:
+                    print(f"  [!] {l.name}: {e}", file=sys.stderr)
+                l.heat = score_heat(l)  # пересчёт с реальными филиалами
+                if i % 10 == 0:
+                    print(f"  ...{i}/{len(top)}")
+            leads.sort(key=lambda x: x.heat, reverse=True)
 
         if args.analyze > 0 and leads:
             openai_key = os.getenv("OPENAI_API_KEY")
