@@ -39,6 +39,16 @@ from pathlib import Path
 
 import requests
 
+# Подгружаем .env из папки marketing/ или trustcontrol/ (если python-dotenv установлен)
+try:
+    from dotenv import load_dotenv
+    _env = Path(__file__).parent / ".env"
+    if not _env.exists():
+        _env = Path(__file__).parent.parent / ".env"
+    load_dotenv(_env)
+except ImportError:
+    pass  # без dotenv тоже работает — ключ можно передать через set OPENAI_API_KEY=...
+
 HERE = Path(__file__).parent
 # Общая папка с рассыльщиком (scripts/whatsapp_sender.py): ОДНА сессия WhatsApp
 # на оба скрипта → QR сканируем один раз. Путь не зависит от cwd.
