@@ -86,10 +86,10 @@ class Settings:
     # и нормально тянет шала-казахский (казахский + русские слова).
     YANDEX_STT_LANG:      str = os.getenv("YANDEX_STT_LANG", "kk-KZ")
 
-    # ── S3 / R2 / Supabase Storage (архив приоритетных записей) ───
+    # ── S3 / R2 / Supabase Storage (архив записей для прослушки) ───
     S3_BUCKET:             str = os.getenv("S3_BUCKET", "")
-    S3_REGION:             str = os.getenv("S3_REGION", "us-east-1")
-    S3_ENDPOINT_URL:       str = os.getenv("S3_ENDPOINT_URL", "")   # пусто = AWS, иначе R2/Supabase/MinIO
+    S3_REGION:             str = os.getenv("S3_REGION", "auto")        # R2 = auto
+    S3_ENDPOINT_URL:       str = os.getenv("S3_ENDPOINT_URL", "")      # пусто = AWS, иначе R2/Supabase/MinIO
     AWS_ACCESS_KEY_ID:     str = os.getenv("AWS_ACCESS_KEY_ID", "")
     AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     # Публичный базовый URL для прослушивания (R2: https://pub-xxxx.r2.dev).

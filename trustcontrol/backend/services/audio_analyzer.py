@@ -400,6 +400,40 @@ def _normalize_text_result(gpt: dict, transcript: str, language: str = None) -> 
     }
 
 
+def _looks_like_real_transaction(text: str) -> bool:
+    """Сильный признак реальной сделки: озвучена сумма (тысячи/мың/тенге) или оплата."""
+    if not text:
+        return False
+    tl = text.lower()
+    if any(w in tl for w in ("мың", "тысяч", "тенге", "теңге", "₸", " тг")):
+        return True
+    pay_words = ("оплат", "наличн", "картой", "картамен", "каспи", "kaspi",
+                 "сдач", "итого", "с вас", "төлейміз", "қолма-қол", "чек")
+    return any(w in tl for w in pay_words)
+
+
+def _is_plausible_conversation(text: str) -> bool:
+    """
+    Generic-проверка: похож ли текст на РЕАЛЬНЫЙ разговор обслуживания
+    (а не на обрывок/галлюцинацию распознавателя). Засчитываем при ЛЮБОМ
+    независимом признаке живого взаимодействия:
+      • озвучена сумма/оплата, ИЛИ
+      • есть маркер обслуживания (приветствие/заказ/прощание на ru/kk), ИЛИ
+      • достаточно длинный СВЯЗНЫЙ обмен (>=6 слов и >=4 разных — отсекает
+        повторяющиеся галлюцинации вроде «да да да да да»).
+    Не под конкретный пример, а общий критерий «здесь есть речь».
+    """
+    if not text or not text.strip():
+        return False
+    if _looks_like_real_transaction(text):
+        return True
+    from backend.services.context_analyzer import count_service_markers
+    if count_service_markers(text) >= 1:
+        return True
+    words = text.split()
+    return len(words) >= 6 and len({w.lower() for w in words}) >= 4
+
+
 async def analyze_audio_with_fallback(
     wav_bytes: bytes | None,
     transcript_text: str | None,
@@ -509,6 +543,17 @@ async def analyze_audio_with_fallback(
                     "_stt_diag":        stt_diag,
                 }
             if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
+                # Страховка от ЛОЖНОГО IGNORE: распознаватель мог дать лишь обрывок
+                # (например одну цену), и text-GPT счёл это «не разговором». Если
+                # обрывок выглядит как реальная речь (сумма/оплата/маркер сервиса) —
+                # даём аудио-модели послушать звук напрямую. Срабатывает РЕДКО, так
+                # что экономика не страдает, но грубость/сделку при этом не теряем.
+                if _is_plausible_conversation(yx_text):
+                    log.info(f"text-GPT IGNORE на правдоподобной речи — слушаем звук: {yx_text[:80]!r}")
+                    ar = await analyze_audio(wav_bytes, business_context=business_context, known_transcript=None)
+                    if ar and ar.get("status") == "OK" and ar.get("transcript"):
+                        ar["_stt_diag"] = stt_diag
+                        return ar
                 return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", ""), "_stt_diag": stt_diag}
             _r = _normalize_text_result(gpt, yx_text, language)
             _r["_stt_diag"] = stt_diag

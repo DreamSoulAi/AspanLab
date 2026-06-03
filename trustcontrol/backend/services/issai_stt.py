@@ -24,6 +24,17 @@ def is_enabled() -> bool:
     return bool(settings.ISSAI_WORKER_URL)
 
 
+def is_garbage(text: str, audio_duration: float) -> bool:
+    """
+    Похоже ли на мусор: на длинном аудио (>=12с речи) распознаватель отдал
+    меньше 4 слов. Чаще всего это провал модели (русская речь через казахскую
+    модель → каша). Чистая функция — вынесена для тестируемости.
+    """
+    if not text:
+        return False
+    return audio_duration >= 12 and len(text.split()) < 4
+
+
 async def transcribe(audio_bytes: bytes, lang: str | None = None, diag: dict | None = None) -> str:
     """
     Отправляет аудио на self-hosted ISSAI-воркер, возвращает текст.
@@ -42,10 +53,10 @@ async def transcribe(audio_bytes: bytes, lang: str | None = None, diag: dict | N
         diag.update({"engine": "issai", "stage": "disabled"})
         return ""
 
-    # whisper-turbo-ksc2 принимает ISO-639-1: "kk", "ru", "en"
-    # Используем "auto" чтобы модель сама определила язык —
-    # в Алматы ~60% говорят на русском, принудительный kk ломал русскую речь.
-    language = lang.split("-")[0].lower() if lang else "auto"
+    # Язык НЕ форсим. Модель казахская, но в Алматы ~60% говорят (и матерятся)
+    # по-русски — жёсткий "kk" превращал русскую речь в кашу. "auto" → воркер
+    # сам определяет язык по звуку. Передать явный код можно через аргумент lang.
+    language = (lang or "auto").split("-")[0].lower()
 
     worker_url = settings.ISSAI_WORKER_URL.rstrip("/")
 
@@ -73,10 +84,25 @@ async def transcribe(audio_bytes: bytes, lang: str | None = None, diag: dict | N
 
         data = r.json()
         text = (data.get("text") or "").strip()
+
+        # ── Защита от мусора ──────────────────────────────────────────────
+        # Если аудио длинное (много речи), но ISSAI вернул 1-3 слова — модель
+        # не справилась (чаще: русская речь через казахскую модель → каша вроде
+        # «әлім кәлі»). Возвращаем "", чтобы НЕ скармливать мусор аудио-модели
+        # как эталон — иначе она ставит IGNORE и теряет грубость/мат.
+        audio_dur = float(data.get("audio_duration") or data.get("duration") or 0)
+        words = len(text.split())
+        if is_garbage(text, audio_dur):
+            log.warning(
+                f"ISSAI: подозрение на мусор — {words} слов на {audio_dur:.0f}с аудио "
+                f"({text[:50]!r}). Отбрасываю, пусть решает аудио-модель."
+            )
+            return ""
+
         if text:
             log.info(
                 f"ISSAI STT OK | lang={data.get('language', language)} "
-                f"| {len(text)} симв | {text[:80]!r}"
+                f"| {len(text)} симв | {words} слов | {audio_dur:.0f}с | {text[:80]!r}"
             )
             diag.update({"engine": "issai", "stage": "ok", "text": text[:160]})
         else:

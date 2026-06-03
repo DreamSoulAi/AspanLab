@@ -6,6 +6,11 @@
 # Inference
 faster-whisper>=1.0.3
 
+# Денойз стационарного шума (аппарат за кассой) перед распознаванием
+noisereduce>=3.0.0
+scipy>=1.10.0
+numpy>=1.24.0
+
 # Авто-конвертация модели в CT2 (если на HF лежит обычный transformers-чекпойнт)
 ctranslate2>=4.0.0
 transformers>=4.40.0

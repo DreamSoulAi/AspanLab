@@ -53,16 +53,37 @@ PORT          = int(os.getenv("ISSAI_PORT",    8010))
 NUM_WORKERS   = int(os.getenv("ISSAI_WORKERS", 1))
 API_KEY       = os.getenv("ISSAI_API_KEY", "")
 
+# Денойз стационарного шума (аппарат за кассой) перед распознаванием.
+# Включён по умолчанию; выключить — ISSAI_DENOISE=false. prop=насколько давить.
+DENOISE       = os.getenv("ISSAI_DENOISE", "true").lower() in ("1", "true", "yes", "on")
+DENOISE_PROP  = float(os.getenv("ISSAI_DENOISE_PROP", 0.9))
+
+# ── Пороги декодирования (настраиваются без правки кода) ──────────────────────
+# Дефолты СМЯГЧЕНЫ против прежних: на int8-CPU модель не уверена в казахском,
+# и жёсткие пороги (log_prob>-1.0, no_speech>0.6) молча выкидывали РЕАЛЬНУЮ речь —
+# из 2.5-мин диалога оставалась пара слов. Теперь держим неуверенные сегменты.
+BEAM_SIZE      = int(os.getenv("ISSAI_BEAM_SIZE", 5))
+NO_SPEECH_TH   = float(os.getenv("ISSAI_NO_SPEECH_TH",   0.85))   # было 0.6 → меньше режет
+LOGPROB_TH     = float(os.getenv("ISSAI_LOGPROB_TH",    -2.0))    # было -1.0 → держит неуверенное
+COMPRESSION_TH = float(os.getenv("ISSAI_COMPRESSION_TH", 2.6))    # было 2.4
+# VAD: мягкие дефолты (подобраны на проде) — режем ТОЛЬКО длинные паузы (>2с),
+# порог 0.2 чтобы тихую речь с кассы не принять за тишину (иначе VAD съедал файл).
+VAD_FILTER     = os.getenv("ISSAI_VAD", "true").lower() in ("1", "true", "yes", "on")
+VAD_THRESHOLD  = float(os.getenv("ISSAI_VAD_THRESHOLD", 0.2))
+VAD_MIN_SIL_MS = int(os.getenv("ISSAI_VAD_MIN_SILENCE_MS", 2000))
+VAD_SPEECH_PAD_MS = int(os.getenv("ISSAI_VAD_SPEECH_PAD_MS", 400))
+# Температурный фолбэк: если окно проваливает пороги — повтор с темп. выше,
+# вместо тихого выкидывания. Это ВОЗВРАЩАЕТ потерянную речь. "0.0" = без фолбэка.
+TEMPERATURE    = tuple(float(t) for t in os.getenv("ISSAI_TEMPERATURE", "0.0,0.2,0.4,0.6,0.8,1.0").split(","))
+
 # initial_prompt — «подсказка» декодеру: типовой казахский диалог обслуживания.
 # Whisper смещает распознавание к этим словам/написаниям. Это резко чинит
 # самые частые слова кассы ("Сәлеметсіз бе", "донер", "картамен", "дайын болады"),
 # которые модель вслепую слышала как "салмақсызда" и т.п.
+# Двуязычный (рус+каз вперемешку) — чтобы Whisper НЕ выбирал один язык на весь
+# файл, а писал каждое слово на своём алфавите даже в одном предложении.
 # Можно переопределить под конкретный бизнес через ISSAI_INITIAL_PROMPT.
 DEFAULT_KK_PROMPT = (
-    # Шала-казахский (реальная речь Алматы): русские слова + казахская грамматика.
-    # Двуязычный промпт — Whisper видит оба алфавита вперемешку и не выбирает
-    # один язык для всего файла. Казахские слова пишутся казахскими буквами,
-    # русские — русскими, даже в одном предложении.
     "Сәлеметсіз бе! Саламатсыз ба! Здравствуйте! Добрый день! "
     "Не аласыз? Что будете заказывать? Тағы не аласыз? Что-нибудь ещё? "
     "Бір донер куриный, картамен. Один латте, эспрессо, капучино. "
@@ -297,6 +318,17 @@ async def health():
         "model":   MODEL_ID,
         "device":  DEVICE,
         "compute": COMPUTE_TYPE,
+        "tuning": {
+            "denoise":        DENOISE,
+            "denoise_prop":   DENOISE_PROP,
+            "beam_size":      BEAM_SIZE,
+            "no_speech_th":   NO_SPEECH_TH,
+            "logprob_th":     LOGPROB_TH,
+            "compression_th": COMPRESSION_TH,
+            "vad_filter":     VAD_FILTER,
+            "vad_min_sil_ms": VAD_MIN_SIL_MS,
+            "temperature":    list(TEMPERATURE),
+        },
     }
 
 
@@ -326,60 +358,112 @@ async def transcribe(
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Пустой файл")
 
-    # Нормализуем код языка
+    # Нормализуем код языка. "auto"/"" → None: Whisper сам определяет язык.
+    # КРИТИЧНО: жёсткий "kk" ломает русскую речь (модель казахская) — русский
+    # мат превращается в кашу. В Алматы ~60% говорят на русском.
     lang = (language or "auto").split("-")[0].lower()
-    # "auto" или неизвестный код → None (Whisper сам определит язык)
-    # Это важно для шала-казахского: в Алматы ~60% говорят на русском.
     whisper_lang = lang if lang in ("kk", "ru", "en") else None
 
     t0 = time.time()
-    log.info(f"Запрос: {len(audio_bytes)/1024:.0f}KB | lang={whisper_lang or 'auto'}")
+    log.info(f"Запрос: {len(audio_bytes)/1024:.0f}KB | lang={whisper_lang or 'auto'} | denoise={DENOISE}")
 
     # Одновременно работает только один запрос (CPU ограничение)
     async with _model_lock:
-        result_text, result_lang, total_dur, num_segs = await asyncio.get_event_loop().run_in_executor(
+        result_text, result_lang, total_dur, num_segs, audio_dur = await asyncio.get_event_loop().run_in_executor(
             None, _run_inference, audio_bytes, whisper_lang
         )
 
     elapsed = time.time() - t0
     log.info(
-        f"Готово: {len(result_text)} симв | dur={total_dur:.1f}с "
-        f"| segs={num_segs} | elapsed={elapsed:.1f}с | {result_text[:80]!r}"
+        f"Готово: {len(result_text)} симв | speech_dur={total_dur:.1f}с "
+        f"| audio_dur={audio_dur:.1f}с | segs={num_segs} | elapsed={elapsed:.1f}с "
+        f"| lang={result_lang} | {result_text[:80]!r}"
     )
 
     return {
-        "text":     result_text,
-        "language": result_lang,
-        "duration": round(total_dur, 2),
-        "segments": num_segs,
-        "elapsed":  round(elapsed, 2),
+        "text":           result_text,
+        "language":       result_lang,
+        "duration":       round(total_dur, 2),   # длительность распознанной речи
+        "audio_duration": round(audio_dur, 2),   # длина исходного аудио (для детекта мусора)
+        "segments":       num_segs,
+        "elapsed":        round(elapsed, 2),
     }
+
+
+def _decode_wav(audio_bytes: bytes):
+    """
+    Декодирует WAV (16-бит PCM, моно) в float32-массив [-1..1] и его длину в сек.
+    Возвращает (samples, sample_rate, duration) или (None, 0, 0.0) если не WAV/не моно.
+    Нужно для денойза: faster-whisper умеет принимать numpy-массив напрямую.
+    """
+    try:
+        import wave as _wave
+        import numpy as _np
+        with _wave.open(io.BytesIO(audio_bytes), "rb") as wf:
+            if wf.getsampwidth() != 2:
+                return None, 0, 0.0
+            nch = wf.getnchannels()
+            sr  = wf.getframerate()
+            nfr = wf.getnframes()
+            raw = wf.readframes(nfr)
+        a = _np.frombuffer(raw, dtype=_np.int16).astype(_np.float32) / 32768.0
+        if nch > 1:
+            a = a.reshape(-1, nch).mean(axis=1)
+        return a, sr, (len(a) / sr if sr else 0.0)
+    except Exception as e:
+        log.warning(f"WAV-декод не удался (пойдёт через ffmpeg, без денойза): {e}")
+        return None, 0, 0.0
+
+
+def _denoise(samples, sr):
+    """Подавление стационарного шума (аппарат за кассой). Без падений."""
+    try:
+        import noisereduce as nr
+        out = nr.reduce_noise(y=samples, sr=sr, stationary=True, prop_decrease=DENOISE_PROP)
+        # лёгкая нормализация громкости после чистки
+        import numpy as _np
+        peak = float(_np.abs(out).max()) or 1.0
+        return (out / peak * 0.7).astype("float32")
+    except Exception as e:
+        log.warning(f"Денойз не удался — распознаю как есть: {e}")
+        return samples
 
 
 def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
     """
     Синхронная инференция. Запускается в executor, не блокирует event loop.
-    Возвращает (text, language, total_duration, num_segments).
+    Возвращает (text, language, total_duration, num_segments, audio_duration).
     """
-    # Декодируем и НОРМАЛИЗУЕМ громкость. На кассе телефон далеко от кассира,
-    # а autoGainControl в PWA выключен (ради чистых казахских согласных) →
-    # запись тихая. Тихую речь VAD считает тишиной и вырезает ВЕСЬ файл
-    # (в логах: "VAD filter removed 26с" + "Готово: 0 симв"). Поднимаем
-    # тихие записи до рабочего уровня перед распознаванием.
-    try:
-        from faster_whisper.audio import decode_audio
-        import numpy as np
-        audio_input = decode_audio(io.BytesIO(audio_bytes), sampling_rate=16000)
-        peak = float(np.max(np.abs(audio_input))) if audio_input.size else 0.0
+    # ── Предобработка аудио: ДЕНОЙЗ → НОРМАЛИЗАЦИЯ ГРОМКОСТИ ──────────────
+    # Два дополняющих шага против двух разных бед:
+    #  1) денойз убирает постоянный шум аппарата за кассой (буреет речь);
+    #  2) нормализация поднимает тихую запись (PWA без autoGainControl) —
+    #     иначе VAD принимает тихую речь за тишину и вырезает весь файл.
+    # WAV 16кГц → чистим/нормализуем массивом. Не WAV → ffmpeg + нормализация.
+    import numpy as np
+    samples, sr, audio_dur = _decode_wav(audio_bytes)
+    if samples is None or sr != 16000:
+        try:
+            from faster_whisper.audio import decode_audio
+            samples = decode_audio(io.BytesIO(audio_bytes), sampling_rate=16000)
+            audio_dur = len(samples) / 16000 if getattr(samples, "size", 0) else 0.0
+        except Exception as e:
+            log.warning(f"Декод не удался ({e}) — отдаю сырой поток, без обработки")
+            samples = None
+
+    if samples is not None and getattr(samples, "size", 0):
+        if DENOISE:
+            samples = _denoise(samples, sr or 16000)
+        peak = float(np.max(np.abs(samples)))
         if 0 < peak < 0.5:
             gain = min(0.5 / peak, 8.0)   # тянем тихое к пику 0.5, максимум x8
-            audio_input = (audio_input * gain).astype("float32")
+            samples = (samples * gain).astype("float32")
             log.info(f"Усиление тихой записи x{gain:.1f} (пик был {peak:.3f})")
-    except Exception as e:
-        log.warning(f"Нормализация громкости не удалась ({e}) — отдаю как есть")
+        audio_input = samples
+    else:
         audio_input = io.BytesIO(audio_bytes)
 
-    # initial_prompt подсказываем ТОЛЬКО для казахского — для ru/en/auto он
+    # initial_prompt подсказываем ТОЛЬКО для казахского/auto — для ru/en он
     # сместит распознавание не туда.
     init_prompt = INITIAL_PROMPT if language in (None, "kk") else None
 
@@ -387,25 +471,27 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
         audio_input,
         language=language,
         task="transcribe",
-        beam_size=5,
-        # Подсказка декодеру: типовая лексика казахской кассы → правильные
-        # написания частых слов ("Сәлеметсіз бе", "донер", "картамен").
+        beam_size=BEAM_SIZE,
+        best_of=BEAM_SIZE,
+        # Двуязычная подсказка (рус+каз) — правильные написания частых слов кассы.
         initial_prompt=init_prompt,
         # Не «зацикливать» модель на предыдущем тексте — на диалоге двух
         # говорящих это вызывает коллапс/обрыв (теряется половина речи).
         condition_on_previous_text=False,
-        # Перебор температур: если decode «застрял» — пробуем менее жадно,
-        # а не выбрасываем сегмент.
-        temperature=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
-        # VAD режем мягко: вырезаем ТОЛЬКО длинные паузы (>2с), иначе
-        # фильтр съедал по 13с живой речи и оставлял один огрызок.
-        vad_filter=True,
+        # Температурный фолбэк: окно, не прошедшее пороги, ПЕРЕдекодируется,
+        # а не выкидывается молча — так возвращаем потерянную речь.
+        temperature=TEMPERATURE,
+        # Пороги декодирования (смягчены через env) — держим неуверенную речь.
+        no_speech_threshold=NO_SPEECH_TH,
+        log_prob_threshold=LOGPROB_TH,
+        compression_ratio_threshold=COMPRESSION_TH,
+        # VAD режем мягко (env): вырезаем ТОЛЬКО длинные паузы, низкий порог —
+        # чтобы тихую речь не принять за тишину.
+        vad_filter=VAD_FILTER,
         vad_parameters=dict(
-            # threshold ниже дефолта (0.5): тихую речь с кассы НЕ принимаем
-            # за тишину. Раньше VAD вырезал весь файл и выдавал 0 символов.
-            threshold=0.2,
-            min_silence_duration_ms=2000,
-            speech_pad_ms=400,
+            threshold=VAD_THRESHOLD,
+            min_silence_duration_ms=VAD_MIN_SIL_MS,
+            speech_pad_ms=VAD_SPEECH_PAD_MS,
         ),
     )
 
@@ -450,7 +536,8 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
 
     result_text = " ".join(parts).strip()
     result_lang = info.language or (language or "kk")
-    return result_text, result_lang, total_dur, num_segs
+    # audio_dur=0 если шло через ffmpeg — подставим длительность речи как приближение
+    return result_text, result_lang, total_dur, num_segs, (audio_dur or total_dur)
 
 
 if __name__ == "__main__":
