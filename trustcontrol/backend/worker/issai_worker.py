@@ -58,6 +58,20 @@ API_KEY       = os.getenv("ISSAI_API_KEY", "")
 DENOISE       = os.getenv("ISSAI_DENOISE", "true").lower() in ("1", "true", "yes", "on")
 DENOISE_PROP  = float(os.getenv("ISSAI_DENOISE_PROP", 0.9))
 
+# ── Пороги декодирования (настраиваются без правки кода) ──────────────────────
+# Дефолты СМЯГЧЕНЫ против прежних: на int8-CPU модель не уверена в казахском,
+# и жёсткие пороги (log_prob>-1.0, no_speech>0.6) молча выкидывали РЕАЛЬНУЮ речь —
+# из 2.5-мин диалога оставалась пара слов. Теперь держим неуверенные сегменты.
+BEAM_SIZE      = int(os.getenv("ISSAI_BEAM_SIZE", 5))
+NO_SPEECH_TH   = float(os.getenv("ISSAI_NO_SPEECH_TH",   0.85))   # было 0.6 → меньше режет
+LOGPROB_TH     = float(os.getenv("ISSAI_LOGPROB_TH",    -2.0))    # было -1.0 → держит неуверенное
+COMPRESSION_TH = float(os.getenv("ISSAI_COMPRESSION_TH", 2.6))    # было 2.4
+VAD_FILTER     = os.getenv("ISSAI_VAD", "true").lower() in ("1", "true", "yes", "on")
+VAD_MIN_SIL_MS = int(os.getenv("ISSAI_VAD_MIN_SILENCE_MS", 700))
+# Температурный фолбэк: если окно проваливает пороги — повтор с темп. выше,
+# вместо тихого выкидывания. Это ВОЗВРАЩАЕТ потерянную речь. "0.0" = без фолбэка.
+TEMPERATURE    = tuple(float(t) for t in os.getenv("ISSAI_TEMPERATURE", "0.0,0.2,0.4").split(","))
+
 # Куда складывать сконвертированную CT2-модель (риск №1)
 CT2_CACHE_DIR = os.getenv("ISSAI_CT2_DIR", "/tmp/issai_ct2")
 # Минимум RAM (МБ) для безопасного старта (риск №2)
@@ -241,6 +255,17 @@ async def health(x_api_key: Optional[str] = Header(default=None)):
         "model":   MODEL_ID,
         "device":  DEVICE,
         "compute": COMPUTE_TYPE,
+        "tuning": {
+            "denoise":        DENOISE,
+            "denoise_prop":   DENOISE_PROP,
+            "beam_size":      BEAM_SIZE,
+            "no_speech_th":   NO_SPEECH_TH,
+            "logprob_th":     LOGPROB_TH,
+            "compression_th": COMPRESSION_TH,
+            "vad_filter":     VAD_FILTER,
+            "vad_min_sil_ms": VAD_MIN_SIL_MS,
+            "temperature":    list(TEMPERATURE),
+        },
     }
 
 
@@ -360,8 +385,8 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
         audio_input,
         language=language,
         task="transcribe",
-        beam_size=5,
-        best_of=5,
+        beam_size=BEAM_SIZE,
+        best_of=BEAM_SIZE,
         # Контекстная подсказка для шала-казахского:
         # модель лучше угадывает казахско-русские слова
         initial_prompt=(
@@ -369,22 +394,19 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
             "Шала-казахский: смесь казахского и русского. "
             "Сәлем, рахмет, теңге, картамен, жоқ, ия, тез."
         ),
-        # ── Анти-галлюцинация (главный фикс) ──────────────────────
-        # НЕ цепляться за предыдущий текст: иначе одна ошибка на тихом
-        # участке тянет за собой выдуманный «связный» бред дальше.
+        # НЕ цепляться за предыдущий текст: одна ошибка на тихом участке
+        # иначе тянет за собой выдуманный «связный» бред дальше.
         condition_on_previous_text=False,
-        # Жадная декодировка без температурного фолбэка — детерминированно,
-        # меньше выдумок (фолбэк на t>0 как раз генерит «правдоподобный» бред).
-        temperature=0.0,
-        # Подавить галлюцинации на тишине
-        no_speech_threshold=0.6,
-        # Логарифмическая вероятность — если очень низкая, это шум
-        log_prob_threshold=-1.0,
-        # Не сжимать повторяющиеся токены (артефакты на шуме)
-        compression_ratio_threshold=2.4,
-        vad_filter=True,               # VAD убирает тишину до и после речи
+        # Температурный фолбэк: окно, не прошедшее пороги, ПЕРЕдекодируется,
+        # а не выкидывается молча — так возвращаем потерянную казахскую речь.
+        temperature=TEMPERATURE,
+        # Пороги (смягчены через env) — держим неуверенную, но реальную речь.
+        no_speech_threshold=NO_SPEECH_TH,
+        log_prob_threshold=LOGPROB_TH,
+        compression_ratio_threshold=COMPRESSION_TH,
+        vad_filter=VAD_FILTER,         # VAD убирает тишину до и после речи
         vad_parameters=dict(
-            min_silence_duration_ms=500,
+            min_silence_duration_ms=VAD_MIN_SIL_MS,
             speech_pad_ms=200,
         ),
     )
