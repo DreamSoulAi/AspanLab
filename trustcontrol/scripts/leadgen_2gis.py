@@ -237,36 +237,71 @@ def _extract_branch_count(it: dict) -> Optional[int]:
     return None
 
 
+def _grab_phone_from_dom(driver) -> str:
+    """
+    Читает телефон прямо со страницы карточки:
+    1) жмёт кнопки «Показать телефон» если есть
+    2) забирает первую ссылку tel:
+    """
+    from selenium.webdriver.common.by import By
+    # 1) раскрыть скрытые номера
+    try:
+        btns = driver.find_elements(
+            By.XPATH,
+            "//*[contains(translate(text(),'ПОКАЗТЬ','показть'),'показать') "
+            "and contains(translate(text(),'ТЕЛФОН','телфон'),'телефон')]",
+        )
+        for b in btns[:3]:
+            try:
+                driver.execute_script("arguments[0].click();", b)
+                time.sleep(0.4)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 2) собрать tel: ссылки
+    try:
+        tels = driver.find_elements(By.CSS_SELECTOR, "a[href^='tel:']")
+        for t in tels:
+            href = (t.get_attribute("href") or "").replace("tel:", "").strip()
+            if href:
+                return href
+    except Exception:
+        pass
+    return ""
+
+
 def enrich_from_card(driver, lead: Lead):
     """
-    Заходит на карточку фирмы и дозабирает реальное число филиалов + телефон.
-    2ГИС возвращает их только на детальной странице организации.
+    Заходит на карточку фирмы и дозабирает число филиалов + телефон.
+    Телефон берём со страницы (tel:), филиалы — из перехваченных ответов.
     """
     if not lead.dgis_id:
         return
     seen_rids: set = set()
     driver.get(f"https://2gis.kz/firm/{lead.dgis_id}")
-    for _ in range(5):
+
+    for _ in range(4):
         time.sleep(1.2)
+        try:
+            driver.execute_script("window.scrollBy(0, 700);")
+        except Exception:
+            pass
+        # филиалы из API-ответов
         for data in harvest_responses(driver, seen_rids):
             for it in _items_from_payload(data):
                 item_id = str(it.get("id", "")).split("_")[0]
-                # принимаем как свой item или если id совпадает
                 if item_id and item_id != lead.dgis_id:
                     continue
                 bc = _extract_branch_count(it)
                 if bc:
                     lead.branch_count = bc
-                if not lead.phone:
-                    for grp in it.get("contact_groups", []) or []:
-                        for c in grp.get("contacts", []) or []:
-                            if c.get("type") == "phone":
-                                lead.phone = c.get("value") or c.get("text") or ""
-                                break
-                        if lead.phone:
-                            break
-                if lead.branch_count > 1 and lead.phone:
-                    return  # всё нашли
+        # телефон из DOM
+        if not lead.phone:
+            lead.phone = _grab_phone_from_dom(driver)
+        if lead.phone and lead.branch_count > 1:
+            break
 
 
 def _parse_item(it: dict, query: str) -> Lead:
@@ -416,15 +451,18 @@ def main():
         if args.enrich > 0 and leads:
             top = leads[:args.enrich]
             print(f"Дозагружаю карточки топ-{len(top)} (филиалы + телефоны)...")
+            got_phones = 0
             for i, l in enumerate(top, 1):
                 try:
                     enrich_from_card(driver, l)
                 except Exception as e:
                     print(f"  [!] {l.name}: {e}", file=sys.stderr)
                 l.heat = score_heat(l)  # пересчёт с реальными филиалами
-                if i % 10 == 0:
-                    print(f"  ...{i}/{len(top)}")
+                if l.phone:
+                    got_phones += 1
+                print(f"  {i}/{len(top)} {l.name[:30]:30} тел:{l.phone or '—'} фил:{l.branch_count}")
             leads.sort(key=lambda x: x.heat, reverse=True)
+            print(f"  → телефонов найдено: {got_phones}/{len(top)}")
 
         if args.analyze > 0 and leads:
             openai_key = os.getenv("OPENAI_API_KEY")
