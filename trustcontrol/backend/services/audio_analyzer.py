@@ -192,6 +192,27 @@ score (база 50 за любой рабочий разговор):
 • Если слово не расслышал — пропусти или напиши «...», не придумывай замену."""
 
 
+def _looks_like_real_transaction(text: str) -> bool:
+    """
+    Сильный признак реальной сделки в тексте от казахского распознавателя:
+    озвучена сумма (тысячи/мың/тенге) или явное слово оплаты.
+
+    Нужно как страховка: если ISSAI/Yandex услышал цену или оплату — это
+    ТОЧНО рабочий разговор кассир↔клиент, даже если аудио-модель засомневалась
+    из-за каши в распознанных словах и поставила IGNORE. Сделку нельзя выкидывать.
+    """
+    if not text:
+        return False
+    tl = text.lower()
+    # «тысячи»/«мың»/«тенге» рядом — почти всегда озвученная цена в тенге
+    if any(w in tl for w in ("мың", "тысяч", "тенге", "теңге", "₸", " тг")):
+        return True
+    # явные слова оплаты (рус/каз)
+    pay_words = ("оплат", "наличн", "картой", "картамен", "каспи", "kaspi",
+                 "сдач", "итого", "с вас", "төлейміз", "қолма-қол", "чек")
+    return any(w in tl for w in pay_words)
+
+
 def _detect_audio_format(data: bytes) -> str:
     if data[:4] == b"RIFF":
         return "wav"
@@ -457,6 +478,21 @@ async def analyze_audio_with_fallback(
 
     if audio_result:
         status = audio_result.get("status", "OK")
+
+        # ── Защита от ложного IGNORE на реальной сделке ──────────────────
+        # Аудио-модель иногда метит запись как мусор (IGNORE), когда казахский
+        # распознаватель отдал кашу слов. Но если в этих словах есть СУММА или
+        # ОПЛАТА — кассир точно обслуживал клиента, это не мусор. Не выкидываем,
+        # а анализируем по тексту (тон по словам).
+        if status == "IGNORE" and yx_text and _looks_like_real_transaction(yx_text):
+            log.info(
+                f"IGNORE отменён — в тексте есть сумма/оплата, анализ по тексту: {yx_text[:80]!r}"
+            )
+            gpt = await gpt_analyze(yx_text, business_context=business_context)
+            if gpt and gpt.get("status") != "IGNORE" and gpt.get("is_business", True) \
+                    and not (gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk")):
+                return _normalize_text_result(gpt, yx_text, language)
+
         # PERSONAL / IGNORE — возвращаем как есть
         if status in ("PERSONAL", "IGNORE"):
             return audio_result
