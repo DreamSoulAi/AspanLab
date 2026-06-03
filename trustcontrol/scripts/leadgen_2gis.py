@@ -72,6 +72,8 @@ def make_driver():
     opts.add_argument("--disable-blink-features=AutomationControlled")
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
     opts.add_experimental_option("useAutomationExtension", False)
+    # включаем логирование сети Chrome (CDP) — оттуда достанем рабочий ключ
+    opts.set_capability("goog:loggingPrefs", {"performance": "ALL"})
     # убираем headless — нужен видимый Chrome (иначе 2ГИС может не грузиться)
 
     try:
@@ -90,46 +92,54 @@ def make_driver():
     return driver
 
 
+def _scan_key_from_logs(driver) -> Optional[str]:
+    """Читает CDP-логи сети и ищет key= в запросах к catalog.api.2gis."""
+    import re
+    try:
+        logs = driver.get_log("performance")
+    except Exception:
+        return None
+    for entry in logs:
+        try:
+            msg = json.loads(entry["message"])["message"]
+        except Exception:
+            continue
+        if msg.get("method") not in (
+            "Network.requestWillBeSent", "Network.responseReceived"
+        ):
+            continue
+        params = msg.get("params", {})
+        url = (params.get("request", {}).get("url")
+               or params.get("response", {}).get("url") or "")
+        if "catalog.api.2gis" in url and "key=" in url:
+            m = re.search(r"[?&]key=([a-zA-Z0-9\-]{20,})", url)
+            if m:
+                return m.group(1)
+    return None
+
+
 def get_live_key(driver) -> str:
     """
-    Открывает 2gis.kz, ждёт пока страница сделает XHR к каталогу,
-    вытаскивает рабочий ключ из performance.getEntries().
+    Открывает поиск 2gis.kz и ловит рабочий ключ из сетевых логов Chrome.
+    Скроллит список, чтобы спровоцировать запросы к каталогу.
     """
-    print("  Открываю 2gis.kz чтобы взять живой ключ...")
-    driver.get("https://2gis.kz/almaty")
-    # ждём пока страница загрузится и сделает первые API-запросы
-    time.sleep(5)
+    print("  Открываю поиск 2gis.kz, ловлю живой ключ...")
+    driver.get("https://2gis.kz/almaty/search/" + urllib.parse.quote("кофейня"))
 
-    key = driver.execute_script("""
-        const entries = performance.getEntriesByType('resource');
-        for (const e of entries) {
-            const m = e.name.match(/[?&]key=([a-f0-9\\-]{30,})/);
-            if (m && e.name.includes('catalog.api.2gis.com')) return m[1];
-        }
-        return null;
-    """)
+    # ждём и периодически скроллим — пока не поймаем ключ (до ~25 сек)
+    for i in range(12):
+        time.sleep(2)
+        try:
+            driver.execute_script("window.scrollBy(0, 600);")
+        except Exception:
+            pass
+        key = _scan_key_from_logs(driver)
+        if key:
+            print(f"  Живой ключ пойман: {key[:16]}...")
+            return key
 
-    if key:
-        print(f"  Живой ключ: {key[:16]}...")
-        return key
-
-    # Если performance не отдал — пробуем через поиск
-    print("  Делаю поиск для получения ключа...")
-    driver.get("https://2gis.kz/almaty/search/кофейня")
-    time.sleep(4)
-    key = driver.execute_script("""
-        const entries = performance.getEntriesByType('resource');
-        for (const e of entries) {
-            const m = e.name.match(/[?&]key=([a-f0-9\\-]{30,})/);
-            if (m && e.name.includes('catalog.api.2gis.com')) return m[1];
-        }
-        return null;
-    """)
-
-    if not key:
-        sys.exit("Не удалось получить ключ со страницы 2ГИС. Попробуй ещё раз.")
-    print(f"  Живой ключ: {key[:16]}...")
-    return key
+    sys.exit("Не удалось поймать ключ из сети 2ГИС. "
+             "Проверь что окно Chrome открылось и страница загрузилась, запусти ещё раз.")
 
 
 def api_call(driver, url: str) -> Optional[dict]:
