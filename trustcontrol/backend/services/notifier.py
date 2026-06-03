@@ -210,7 +210,15 @@ async def send_ok_report(
         flags.append("нет допродажи")
     flags_line = f"\n_{', '.join(flags)}_" if flags else ""
 
-    transcript_line = f"\n_{transcript[:300]}_" if transcript and transcript.strip() else ""
+    # Показываем транскрипт только если он выглядит как настоящий разговор.
+    # Мусор (2 слова на длинном аудио, галлюцинация-повтор) владельцу не показываем.
+    _t = (transcript or "").strip()
+    _words = _t.split()
+    _is_clean = (
+        len(_words) >= 3
+        and not (len(_words) >= 6 and len({w.lower() for w in _words}) <= 2)
+    )
+    transcript_line = f"\n_{_t[:300]}_" if _is_clean else ""
     text = (
         f"{score_icon} *{location_name}* — {score:.0f}/100\n"
         f"Тон: {tone_ru}"
