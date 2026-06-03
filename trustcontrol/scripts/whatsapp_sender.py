@@ -204,17 +204,29 @@ def wait_logged_in(driver):
     """Ждёт пока пользователь отсканирует QR (один раз)."""
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
 
     driver.get("https://web.whatsapp.com")
     print("\n>>> ОТСКАНИРУЙ QR-код в открывшемся окне Chrome:")
     print(">>> Телефон → WhatsApp → Настройки → Связанные устройства → Привязать устройство")
     print(">>> Жду авторизацию (до 5 минут)...\n")
+
+    # Признак входа = появился список чатов. Один селектор хрупкий (WhatsApp
+    # часто меняет вёрстку), поэтому проверяем несколько разом. #pane-side —
+    # левая колонка со списком чатов, самый стабильный маркер «я вошёл».
+    login_markers = [
+        '#pane-side',
+        'div[aria-label="Список чатов"]',
+        'div[aria-label="Chat list"]',
+        'div[title="Поиск или новый чат"]',
+        'div[contenteditable="true"]',
+    ]
+
+    def _logged_in(d):
+        return any(d.find_elements(By.CSS_SELECTOR, s) for s in login_markers)
+
     # 300с: на ПЕРВЫЙ вход с QR 120с мало (найти окно, открыть телефон, отсканировать).
     # После первого раза сессия в wa_session/ — вход мгновенный, ждать не придётся.
-    WebDriverWait(driver, 300).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, 'div[contenteditable="true"]'))
-    )
+    WebDriverWait(driver, 300).until(_logged_in)
     print("✓ WhatsApp авторизован")
 
 
