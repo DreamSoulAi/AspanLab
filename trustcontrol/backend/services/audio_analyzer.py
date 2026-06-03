@@ -194,12 +194,8 @@ score (база 50 за любой рабочий разговор):
 
 def _looks_like_real_transaction(text: str) -> bool:
     """
-    Сильный признак реальной сделки в тексте от казахского распознавателя:
-    озвучена сумма (тысячи/мың/тенге) или явное слово оплаты.
-
-    Нужно как страховка: если ISSAI/Yandex услышал цену или оплату — это
-    ТОЧНО рабочий разговор кассир↔клиент, даже если аудио-модель засомневалась
-    из-за каши в распознанных словах и поставила IGNORE. Сделку нельзя выкидывать.
+    Сильный признак реальной сделки: озвучена сумма (тысячи/мың/тенге) или оплата.
+    Один из сигналов «это настоящий разговор» (см. _is_plausible_conversation).
     """
     if not text:
         return False
@@ -211,6 +207,34 @@ def _looks_like_real_transaction(text: str) -> bool:
     pay_words = ("оплат", "наличн", "картой", "картамен", "каспи", "kaspi",
                  "сдач", "итого", "с вас", "төлейміз", "қолма-қол", "чек")
     return any(w in tl for w in pay_words)
+
+
+def _is_plausible_conversation(text: str) -> bool:
+    """
+    Generic-проверка: похож ли текст на РЕАЛЬНЫЙ разговор обслуживания
+    (а не на обрывок/галлюцинацию распознавателя на шуме).
+
+    Принцип (не под конкретный пример, а общий): засчитываем разговор, если
+    есть ХОТЯ БЫ ОДИН независимый признак живого взаимодействия:
+      • озвучена сумма/оплата (сделка), ИЛИ
+      • есть маркер обслуживания (приветствие/заказ/прощание на ru/kk), ИЛИ
+      • достаточно длинный СВЯЗНЫЙ обмен (>=6 слов и >=4 разных слова —
+        отсекает повторяющиеся галлюцинации вроде «да да да да да»).
+
+    Используется как страховка против ложного IGNORE: если аудио-модель
+    выкинула запись как мусор, но независимый текст распознавателя выглядит
+    как настоящий разговор — сохраняем и анализируем, а не теряем.
+    """
+    if not text or not text.strip():
+        return False
+    if _looks_like_real_transaction(text):
+        return True
+    from backend.services.context_analyzer import count_service_markers
+    if count_service_markers(text) >= 1:
+        return True
+    words   = text.split()
+    distinct = {w.lower() for w in words}
+    return len(words) >= 6 and len(distinct) >= 4
 
 
 def _detect_audio_format(data: bytes) -> str:
@@ -252,15 +276,17 @@ async def analyze_audio(
         transcript_hint = ""
         if known_transcript and known_transcript.strip():
             transcript_hint = (
-                "\n\n━━━ ТОЧНЫЙ ТРАНСКРИПТ (казахский распознаватель) ━━━\n"
-                "Ниже точная расшифровка СЛОВ этого аудио, сделанная "
-                "специализированным казахским распознавателем. Слова бери "
-                "ОТСЮДА как эталон — НЕ переслушивай и НЕ заменяй их:\n"
+                "\n\n━━━ ПОДСКАЗКА: казахский распознаватель ━━━\n"
+                "Ниже черновая расшифровка от казахского распознавателя. Используй "
+                "её КАК ПОДСКАЗКУ, чтобы правильно записать казахские слова:\n"
                 f"«{known_transcript.strip()}»\n"
-                "Твоя задача по звуку — оценить ТОН ГОЛОСА и интонацию "
-                "(грубость, раздражение, усталость, доброжелательность), "
-                "которые текст не передаёт. В поле transcript верни этот же "
-                "текст без изменения слов."
+                "ВАЖНО: подсказка может быть неточной/неполной (шум, обрывки, не тот "
+                "язык). Доверяй прежде всего тому, что СЛЫШИШЬ. Если подсказка "
+                "противоречит звуку или выглядит как каша — игнорируй её и распознавай "
+                "сам. Решение, рабочий ли это разговор, принимай по ЗВУКУ, а не по "
+                "подсказке: короткая/кривая подсказка НЕ повод ставить IGNORE, если "
+                "по звуку слышен живой диалог. Твоя сильная сторона — ТОН голоса "
+                "(грубость, раздражение, усталость, доброжелательность)."
             )
 
         response = await client.chat.completions.create(
@@ -318,10 +344,14 @@ async def analyze_audio(
         result.setdefault("payment_confirmed", None)
         result.setdefault("upsell_attempt", None)
 
-        # Эталонные казахские слова от Yandex важнее слов аудио-модели:
-        # модель оценила ТОН, но точную расшифровку берём от распознавателя.
-        if known_transcript and known_transcript.strip():
-            result["transcript"] = known_transcript.strip()
+        # Казахский распознаватель обычно точнее в СЛОВАХ — берём его расшифровку,
+        # НО только если аудио-модель не сделала свою существенную (она могла
+        # услышать русский/смесь лучше). Если модель дала развёрнутый транскрипт —
+        # доверяем ушам, подсказку не навязываем.
+        hint = (known_transcript or "").strip()
+        own  = (result.get("transcript") or "").strip()
+        if hint and len(own.split()) < max(4, len(hint.split()) // 2):
+            result["transcript"] = hint
 
         log.info(
             f"GPT audio OK | score={result['score']} "
@@ -397,6 +427,82 @@ def _normalize_text_result(gpt: dict, transcript: str, language: str = None) -> 
     }
 
 
+def _personal_result(summary: str = "Личный разговор сотрудника") -> dict:
+    """Единый вид результата для личного разговора (сохраняется как is_hidden)."""
+    return {
+        "status":           "PERSONAL",
+        "is_business":      False,
+        "is_personal_talk": True,
+        "priority":         0,
+        "transcript":       "",
+        "summary":          summary,
+    }
+
+
+def _ignore_result(summary: str = "") -> dict:
+    """Единый вид результата для мусора (не сохраняется)."""
+    return {
+        "status":      "IGNORE",
+        "is_business": False,
+        "priority":    0,
+        "transcript":  "",
+        "summary":     summary,
+    }
+
+
+async def _analyze_by_text(
+    text: str, business_context: str | None, language: str | None
+) -> dict:
+    """
+    Единая текстовая ветка анализа (gpt-4o-mini по словам).
+
+    Возвращает стандартизованный результат: PERSONAL / IGNORE / OK-словарь,
+    либо {} если GPT недоступен. Раньше эта же логика была скопирована в 4
+    местах fallback-цепочки — теперь одна точка истины.
+    """
+    gpt = await gpt_analyze(text, business_context=business_context)
+    if not gpt:
+        return {}
+    if gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk"):
+        return _personal_result(gpt.get("summary", "Личный разговор сотрудника"))
+    if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
+        return _ignore_result(gpt.get("summary", ""))
+    return _normalize_text_result(gpt, text.strip(), language)
+
+
+async def _best_kazakh_transcript(wav_bytes: bytes) -> str | None:
+    """
+    Точные казахские СЛОВА: ISSAI (self-hosted) → Yandex (облако).
+
+    Возвращает текст только если он ПРАВДОПОДОБЕН как разговор; иначе None,
+    чтобы мусор распознавателя не отравлял аудио-модель (та ставила IGNORE и
+    теряла грубость/мат). Garbage-guard уже есть и в issai_stt — здесь второй
+    общий слой защиты, единый для всех распознавателей.
+    """
+    if issai_stt.is_enabled():
+        raw = await issai_stt.transcribe(wav_bytes)
+        if raw and _is_plausible_conversation(raw):
+            log.info(f"ISSAI STT принят | {len(raw)} симв | {raw[:80]!r}")
+            return raw
+        if raw:
+            log.info(f"ISSAI STT отброшен как неправдоподобный: {raw[:80]!r}")
+        else:
+            log.info("ISSAI STT пусто — пробуем Yandex")
+
+    if yandex_stt.is_enabled():
+        try:
+            raw = await yandex_stt.transcribe(wav_bytes)
+        except Exception as e:
+            log.warning(f"Yandex STT ошибка: {e}")
+            raw = ""
+        if raw and _is_plausible_conversation(raw):
+            log.info(f"Yandex STT принят | {len(raw)} симв | {raw[:80]!r}")
+            return raw
+        log.info("Yandex STT пусто/неправдоподобно — без эталонного транскрипта")
+
+    return None
+
+
 async def analyze_audio_with_fallback(
     wav_bytes: bytes | None,
     transcript_text: str | None,
@@ -415,135 +521,63 @@ async def analyze_audio_with_fallback(
     """
     # ── Режим 1: уже есть транскрипт (local-whisper на кассе) ───
     if transcript_text and transcript_text.strip():
-        gpt = await gpt_analyze(transcript_text, business_context=business_context)
-        if not gpt:
-            return {}
-        if gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk"):
-            return {
-                "status":           "PERSONAL",
-                "is_business":      False,
-                "is_personal_talk": True,
-                "priority":         0,
-                "transcript":       "",
-                "summary":          gpt.get("summary", "Личный разговор сотрудника"),
-            }
-        if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
-            return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
-        return _normalize_text_result(gpt, transcript_text.strip(), language)
+        return await _analyze_by_text(transcript_text, business_context, language)
 
     # ── Режим 2: есть аудио ──────────────────────────────────────────
-    # В Казахстане шала-казахский / казахский / узбекский — Whisper-only
-    # путь даёт каракули типа "Папаю пите Чарльз". Аудио-модель слышит
-    # звук напрямую, но и она слаба на чистом казахском.
-    #
-    # Поэтому ГИБРИД:
-    #   1. Yandex SpeechKit (kk-KZ) → точные казахские СЛОВА
-    #   2. Аудио-модель с этим эталоном → оценка ТОНА голоса
-    # Если Yandex не настроен — работает прежний путь (аудио-модель сама).
+    # Гибрид: казахский распознаватель даёт точные СЛОВА, аудио-модель —
+    # ТОН голоса и судит, рабочий ли это разговор. ПРИНЦИП: распознаватель
+    # только УЛУЧШАЕТ слова, он НЕ имеет права «ветировать» разговор. Запись
+    # выкидываем (IGNORE) лишь когда речи реально нет.
     if not wav_bytes:
         return {}
 
-    # ── Шаг 1: точный казахский текст — ISSAI (self-hosted) или Yandex ──
-    # Приоритет: ISSAI → Yandex → без эталона (аудио-модель сама)
-    kz_text = None
+    # ── Шаг 1: точные казахские слова (ISSAI → Yandex), только правдоподобные ──
+    kz_text = await _best_kazakh_transcript(wav_bytes)
 
-    if issai_stt.is_enabled():
-        issai_raw = await issai_stt.transcribe(wav_bytes)
-        if issai_raw and len(issai_raw.split()) >= 2:
-            kz_text = issai_raw
-            log.info(f"ISSAI STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
-        else:
-            log.info("ISSAI STT пусто/коротко — пробуем Yandex")
-
-    if kz_text is None and yandex_stt.is_enabled():
-        try:
-            yx_raw = await yandex_stt.transcribe(wav_bytes)
-        except Exception as e:
-            log.warning(f"Yandex STT ошибка: {e}")
-            yx_raw = ""
-        if yx_raw and len(yx_raw.split()) >= 2:
-            kz_text = yx_raw
-            log.info(f"Yandex STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
-        else:
-            log.info("Yandex STT пусто/коротко — без эталонного транскрипта")
-
-    # Совместимость с кодом ниже (использовал yx_text)
-    yx_text = kz_text
-
-    # ── Шаг 2: аудио-модель (с эталонным транскриптом, если он есть) ──
+    # ── Шаг 2: аудио-модель — главный судья. kz_text идёт как ПОДСКАЗКА. ──
     # Язык НЕ передаём — модель сама определяет из звука.
     audio_result = await analyze_audio(
-        wav_bytes, business_context=business_context, known_transcript=yx_text
+        wav_bytes, business_context=business_context, known_transcript=kz_text
     )
 
     if audio_result:
         status = audio_result.get("status", "OK")
 
-        # ── Защита от ложного IGNORE на реальной сделке ──────────────────
-        # Аудио-модель иногда метит запись как мусор (IGNORE), когда казахский
-        # распознаватель отдал кашу слов. Но если в этих словах есть СУММА или
-        # ОПЛАТА — кассир точно обслуживал клиента, это не мусор. Не выкидываем,
-        # а анализируем по тексту (тон по словам).
-        if status == "IGNORE" and yx_text and _looks_like_real_transaction(yx_text):
-            log.info(
-                f"IGNORE отменён — в тексте есть сумма/оплата, анализ по тексту: {yx_text[:80]!r}"
-            )
-            gpt = await gpt_analyze(yx_text, business_context=business_context)
-            if gpt and gpt.get("status") != "IGNORE" and gpt.get("is_business", True) \
-                    and not (gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk")):
-                return _normalize_text_result(gpt, yx_text, language)
-
-        # PERSONAL / IGNORE — возвращаем как есть
-        if status in ("PERSONAL", "IGNORE"):
+        # OK с реальным транскриптом — успех, главный путь.
+        if status == "OK" and audio_result.get("transcript"):
             return audio_result
-        # OK с реальным транскриптом — успех
-        if audio_result.get("transcript"):
+
+        # PERSONAL — доверяем (личный разговор, по звуку слышно).
+        if status == "PERSONAL":
             return audio_result
-        log.info(f"Аудио-модель вернула OK но без транскрипта: {audio_result.get('summary','')!r}")
 
-    # ── Фолбэк 1: аудио-модель не дала результат, но есть текст Yandex ──
-    # Анализируем по точному казахскому тексту (тон — по словам, без голоса).
-    if yx_text:
-        log.info("Аудио-модель без результата — анализ по тексту Yandex")
-        gpt = await gpt_analyze(yx_text, business_context=business_context)
-        if gpt:
-            if gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk"):
-                return {
-                    "status":           "PERSONAL",
-                    "is_business":      False,
-                    "is_personal_talk": True,
-                    "priority":         0,
-                    "transcript":       "",
-                    "summary":          gpt.get("summary", "Личный разговор сотрудника"),
-                }
-            if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
-                return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
-            return _normalize_text_result(gpt, yx_text, language)
+        # IGNORE — НЕ доверяем слепо. Если независимый распознаватель дал
+        # правдоподобный разговор — значит речь есть, аудио-модель ошиблась
+        # (часто из-за каши в подсказке). Сохраняем и анализируем по тексту.
+        if status == "IGNORE":
+            if kz_text and _is_plausible_conversation(kz_text):
+                log.info(f"IGNORE отменён — есть правдоподобная речь: {kz_text[:80]!r}")
+                by_text = await _analyze_by_text(kz_text, business_context, language)
+                if by_text.get("status") == "OK":
+                    return by_text
+            return audio_result
 
-    # ── Фолбэк 2: Whisper + текстовый GPT (если всё выше не сработало) ──
+        # OK, но без транскрипта — проваливаемся в текстовые фолбэки ниже.
+        log.info(f"Аудио-модель OK без транскрипта: {audio_result.get('summary','')!r}")
+
+    # ── Фолбэк 1: анализ по казахскому тексту (если он есть) ──
+    if kz_text:
+        log.info("Фолбэк: анализ по тексту распознавателя")
+        by_text = await _analyze_by_text(kz_text, business_context, language)
+        if by_text:
+            return by_text
+
+    # ── Фолбэк 2: Whisper + текстовый GPT ──
     log.info("Фолбэк на Whisper+text")
     text = await _transcribe_audio(wav_bytes, language)
     if not text or len(text) < 3:
         log.info("Whisper не распознал речь — пропуск")
         return {}
-
-    gpt = await gpt_analyze(text, business_context=business_context)
-    if not gpt:
-        return {}
-
-    # PERSONAL: личный разговор → сохранить как is_hidden=true в БД
-    if gpt.get("status") == "PERSONAL" or gpt.get("is_personal_talk"):
-        return {
-            "status":           "PERSONAL",
-            "is_business":      False,
-            "is_personal_talk": True,
-            "priority":         0,
-            "transcript":       "",
-            "summary":          gpt.get("summary", "Личный разговор сотрудника"),
-        }
-
-    # IGNORE: мусор
-    if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
-        return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
+    return await _analyze_by_text(text, business_context, language)
 
     return _normalize_text_result(gpt, text, language)
