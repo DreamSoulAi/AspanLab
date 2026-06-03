@@ -207,9 +207,12 @@ def wait_logged_in(driver):
     from selenium.webdriver.support import expected_conditions as EC
 
     driver.get("https://web.whatsapp.com")
-    print("Если попросит — отсканируй QR-код в WhatsApp на телефоне.")
-    print("Жду авторизацию (до 120 сек)...")
-    WebDriverWait(driver, 120).until(
+    print("\n>>> ОТСКАНИРУЙ QR-код в открывшемся окне Chrome:")
+    print(">>> Телефон → WhatsApp → Настройки → Связанные устройства → Привязать устройство")
+    print(">>> Жду авторизацию (до 5 минут)...\n")
+    # 300с: на ПЕРВЫЙ вход с QR 120с мало (найти окно, открыть телефон, отсканировать).
+    # После первого раза сессия в wa_session/ — вход мгновенный, ждать не придётся.
+    WebDriverWait(driver, 300).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, 'div[contenteditable="true"]'))
     )
     print("✓ WhatsApp авторизован")
