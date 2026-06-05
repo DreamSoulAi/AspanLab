@@ -1597,7 +1597,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <p style="font-size:13px;color:var(--muted);line-height:1.6">
             <b style="color:var(--txt)">По именам</b> — добавьте сотрудников и их смены в настройках кассы (⚙ Настройки),
             и тут появится качество каждого отдельно: тон, приветствия, нарушения.<br>
-            <b style="color:var(--txt)">По сменам</b> — автоматически по времени суток: утро (06–14), день (14–22), ночь (22–06).
+            <b style="color:var(--txt)">По сменам</b> — автоматически: если добавили сотрудников со временем смены — используются их часы; иначе стандарт утро (06–14), день (14–22), ночь (22–06).
           </p>
         </div>
         <div id="staffContent"></div>
@@ -1824,6 +1824,9 @@ textarea.f-input{resize:vertical;line-height:1.6}
       </button>
       <button class="mn-item" id="mn-locations" onclick="showPage('locations')">
         <span class="mn-ico">🏪</span><span>Кассы</span>
+      </button>
+      <button class="mn-item" id="mn-staff" onclick="showPage('staff')">
+        <span class="mn-ico">📈</span><span>Смены</span>
       </button>
       <button class="mn-item" id="mn-settings" onclick="showPage('settings')">
         <span class="mn-ico">⚙️</span><span>Настройки</span>
@@ -2818,15 +2821,41 @@ async function loadStaff(){
     el.innerHTML=empHtml||'<div class="staff-empty">Нет данных за выбранный период.<br>Данные появятся после первых разговоров на кассе.<br><br>💡 Чтобы видеть качество по именам — добавьте сотрудников в настройках кассы.</div>';
     return;
   }
-  const shifts=[
-    {n:1,label:'Смена 1',time:'06:00 – 14:00'},
-    {n:2,label:'Смена 2',time:'14:00 – 22:00'},
-    {n:3,label:'Смена 3',time:'22:00 – 06:00'},
-  ];
-  const groups={1:[],2:[],3:[]};
+  // Build shift definitions from location's employee config, or use default 3 shifts
+  let shifts;
+  const locs=await apiFetch('/locations/');
+  if(locs&&locs.length){
+    const seen=new Map();
+    locs.forEach(loc=>{
+      if(loc.employees&&loc.employees.length){
+        loc.employees.forEach(emp=>{
+          if(emp.start!=null&&emp.end!=null){
+            const k=emp.start+'-'+emp.end;
+            if(!seen.has(k))seen.set(k,{start:emp.start,end:emp.end});
+          }
+        });
+      }
+    });
+    if(seen.size){
+      shifts=Array.from(seen.values()).sort((a,b)=>a.start-b.start).map((s,i)=>({
+        n:i,label:'Смена '+(i+1),
+        time:String(s.start).padStart(2,'0')+':00 – '+String(s.end).padStart(2,'0')+':00',
+        start:s.start,end:s.end
+      }));
+    }
+  }
+  if(!shifts){
+    shifts=[
+      {n:0,label:'Смена 1',time:'06:00 – 14:00',start:6,end:14},
+      {n:1,label:'Смена 2',time:'14:00 – 22:00',start:14,end:22},
+      {n:2,label:'Смена 3',time:'22:00 – 06:00',start:22,end:6},
+    ];
+  }
+  function hourInShift(h,st,en){return st<en?(h>=st&&h<en):(h>=st||h<en);}
+  const groups=Object.fromEntries(shifts.map(s=>[s.n,[]]));
   d.forEach(r=>{
     const h=new Date(r.timestamp||r.created_at).getHours();
-    groups[h>=6&&h<14?1:h>=14&&h<22?2:3].push(r);
+    for(const s of shifts){if(hourInShift(h,s.start,s.end)){groups[s.n].push(r);break;}}
   });
   el.innerHTML=empHtml+shifts.map(s=>{
     const rows=groups[s.n];
