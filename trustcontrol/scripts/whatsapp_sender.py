@@ -60,10 +60,20 @@ JUNK_NAME_WORDS = [
     "shell", "шелл", "petrol", "петрол", "заправ",
 ]
 
+# Нет живого кассира → продукт бессмысленен (вендинг, самообслуживание,
+# онлайн, опт/поставщики). Защита для уже собранных списков лидов.
+NO_CASHIER_WORDS = [
+    "вендинг", "автомат", "кофемат", "самообслуж", "self-service",
+    "интернет-магазин", "онлайн-магазин", "маркетплейс",
+    "оптов", "поставщик", "поставк", "дистрибьютор", "производство",
+    "завод", "фабрика", "склад",
+]
+
 
 def is_junk_lead(lead: dict) -> bool:
-    name = (lead.get("name") or "").lower()
-    return any(w in name for w in JUNK_NAME_WORDS)
+    text = f"{lead.get('name') or ''} {lead.get('rubric') or ''}".lower()
+    return any(w in text for w in JUNK_NAME_WORDS) \
+        or any(w in text for w in NO_CASHIER_WORDS)
 
 
 # ── Телефоны ───────────────────────────────────────────────────────────────────
