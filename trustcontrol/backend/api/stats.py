@@ -8,7 +8,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time
 
 from backend.database import get_db
 from backend.models.report import Report
@@ -18,6 +18,26 @@ from backend.models.user import User
 from backend.api.auth import get_current_user
 
 router = APIRouter()
+
+# Казахстан — единый часовой пояс UTC+5. Сервер хранит время в UTC.
+# «Сегодня» и границы суток считаем по местному времени, иначе день
+# обнуляется в 05:00 КЗ, а ночные разговоры улетают в чужие сутки.
+KZ_OFFSET = timedelta(hours=5)
+
+
+def _kz_today() -> date:
+    """Текущая календарная дата по времени Казахстана."""
+    return (datetime.utcnow() + KZ_OFFSET).date()
+
+
+def _kz_day_bounds_utc(d: date) -> tuple[datetime, datetime]:
+    """UTC-границы [start, end) для календарного дня d по времени КЗ.
+
+    Portable: обычное сравнение datetime-диапазона работает одинаково
+    в SQLite (dev) и PostgreSQL (prod), в отличие от func.date с таймзоной.
+    """
+    start_utc = datetime.combine(d, time.min) - KZ_OFFSET
+    return start_utc, start_utc + timedelta(days=1)
 
 
 async def _get_user_location_ids(user_id: int, db: AsyncSession) -> list[int]:
@@ -54,13 +74,15 @@ async def dashboard(
     else:
         filter_ids = user_location_ids
 
-    today = date.today()
+    today = _kz_today()
+    today_start, today_end = _kz_day_bounds_utc(today)
 
-    # ── Отчёты за сегодня ────────────────────────────────────
+    # ── Отчёты за сегодня (границы суток по времени КЗ) ──────
     today_result = await db.execute(
         select(Report).where(
             Report.location_id.in_(filter_ids),
-            func.date(Report.timestamp) == today
+            Report.timestamp >= today_start,
+            Report.timestamp < today_end,
         )
     )
     today_reports = today_result.scalars().all()
@@ -94,7 +116,8 @@ async def dashboard(
     alerts_result = await db.execute(
         select(func.count(Alert.id)).where(
             Alert.location_id.in_(filter_ids),
-            func.date(Alert.timestamp) == today,
+            Alert.timestamp >= today_start,
+            Alert.timestamp < today_end,
             Alert.is_resolved == False,
         )
     )
@@ -104,10 +127,12 @@ async def dashboard(
     week_data = []
     for i in range(7):
         d = today - timedelta(days=i)
+        d_start, d_end = _kz_day_bounds_utc(d)
         day_result = await db.execute(
             select(Report).where(
                 Report.location_id.in_(filter_ids),
-                func.date(Report.timestamp) == d
+                Report.timestamp >= d_start,
+                Report.timestamp < d_end,
             )
         )
         day_reports = day_result.scalars().all()
