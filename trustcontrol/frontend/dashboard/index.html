@@ -2783,6 +2783,17 @@ function incName(t){return({KASPI_FRAUD:'Kaspi-мошенничество',FRAUD
 function toneName(t){return({positive:'😊 Позитив',neutral:'😐 Нейтральный',negative:'😤 Негатив'})[t]||t||'—';}
 
 /* ── STAFF / SHIFTS ── */
+// Час по местному времени Казахстана (UTC+5). Сервер хранит время в UTC
+// и отдаёт naive-строку без таймзоны — поэтому считаем offset вручную,
+// так же как backend/services/employee_matcher.py. Не зависит от часов браузера.
+const KZ_UTC_OFFSET=5;
+function kzHour(ts){
+  let s=String(ts);
+  if(!/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s))s+='Z';  // naive UTC → помечаем как UTC
+  const d=new Date(s);
+  if(isNaN(d))return new Date(ts).getHours();
+  return (d.getUTCHours()+KZ_UTC_OFFSET)%24;
+}
 async function loadStaff(){
   const days=document.getElementById('staffDays')?.value||'7';
   const el=document.getElementById('staffContent');if(!el)return;
@@ -2853,9 +2864,12 @@ async function loadStaff(){
   }
   function hourInShift(h,st,en){return st<en?(h>=st&&h<en):(h>=st||h<en);}
   const groups=Object.fromEntries(shifts.map(s=>[s.n,[]]));
+  groups._other=[];
   d.forEach(r=>{
-    const h=new Date(r.timestamp||r.created_at).getHours();
-    for(const s of shifts){if(hourInShift(h,s.start,s.end)){groups[s.n].push(r);break;}}
+    const h=kzHour(r.timestamp||r.created_at);
+    let placed=false;
+    for(const s of shifts){if(hourInShift(h,s.start,s.end)){groups[s.n].push(r);placed=true;break;}}
+    if(!placed)groups._other.push(r);  // время вне заданных смен — не теряем разговор
   });
   el.innerHTML=empHtml+shifts.map(s=>{
     const rows=groups[s.n];
@@ -2879,7 +2893,21 @@ async function loadStaff(){
         <div class="shift-stat"><div class="shift-stat-val" style="color:${bad>0?'#EF4444':'#10B981'}">${bad}</div><div class="shift-stat-lbl">Нарушений</div></div>
       </div>
     </div>`;
-  }).join('');
+  }).join('')+(groups._other.length?(()=>{
+    const rows=groups._other,total=rows.length;
+    const avg=Math.round(rows.reduce((a,r)=>a+(r.score||0),0)/total);
+    const sc=avg>=80?'g':avg>=60?'y':'r';
+    return`<div class="shift-card" style="opacity:.75">
+      <div class="shift-header">
+        <span class="shift-badge" style="background:rgba(255,255,255,.05);border-color:var(--bdr);color:var(--muted)">Вне смен</span>
+        <span class="shift-time">время без назначенной смены</span>
+        <span class="shift-score ${sc}">${avg}</span>
+      </div>
+      <div class="shift-stats">
+        <div class="shift-stat"><div class="shift-stat-val">${total}</div><div class="shift-stat-lbl">Разговоров</div></div>
+      </div>
+    </div>`;
+  })():'');
 }
 
 /* ── CSV EXPORT ── */
