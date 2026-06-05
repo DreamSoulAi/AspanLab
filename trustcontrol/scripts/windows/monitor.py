@@ -661,11 +661,12 @@ def run_rtsp(url: str):
             voiced = []; silence = 0; in_speech = False
             speech_segments = 0; last_was_speech = False
             return
-        # Turn-taking фильтр: реальный диалог = минимум 2 речевых сегмента
-        # (кассир говорит → пауза → клиент отвечает)
-        # Монолог/телефонный звонок = 1 сегмент без смен
-        if speech_segments < 2:
-            log.info(f"Монолог ({speech_segments} сегм.) — пропускаем локально, не тратим API")
+        # Turn-taking фильтр: реальный диалог = минимум 1 смена речи
+        # (кассир говорит → пауза → хоть что-то ещё)
+        # Порог намеренно низкий: лучше отправить лишний монолог (GPT разберётся),
+        # чем потерять реальную 2-ходовую транзакцию «Что берёте? — Кофе».
+        if speech_segments < 1:
+            log.info(f"Монолог без пауз ({speech_segments} сегм.) — пропускаем локально, не тратим API")
             voiced = []; silence = 0; in_speech = False
             speech_segments = 0; last_was_speech = False
             return
@@ -787,11 +788,12 @@ def run():
             voiced = []; silence = 0; in_speech = False
             speech_segments = 0; last_was_speech = False
             return
-        # Turn-taking фильтр: реальный диалог = минимум 2 речевых сегмента
-        # (кассир говорит → пауза → клиент отвечает)
-        # Монолог/телефонный звонок = 1 сегмент без смен
-        if speech_segments < 2:
-            log.info(f"Монолог ({speech_segments} сегм.) — пропускаем локально, не тратим API")
+        # Turn-taking фильтр: реальный диалог = минимум 1 смена речи
+        # (кассир говорит → пауза → хоть что-то ещё)
+        # Порог намеренно низкий: лучше отправить лишний монолог (GPT разберётся),
+        # чем потерять реальную 2-ходовую транзакцию «Что берёте? — Кофе».
+        if speech_segments < 1:
+            log.info(f"Монолог без пауз ({speech_segments} сегм.) — пропускаем локально, не тратим API")
             voiced = []; silence = 0; in_speech = False
             speech_segments = 0; last_was_speech = False
             return
