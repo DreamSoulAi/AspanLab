@@ -193,6 +193,10 @@ def make_driver():
     opts.add_argument(f"--user-data-dir={os.path.abspath(PROFILE_DIR)}")
     opts.add_argument("--disable-blink-features=AutomationControlled")
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--remote-debugging-port=9222")
     try:
         return webdriver.Chrome(options=opts)
     except Exception as e:

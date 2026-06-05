@@ -208,6 +208,10 @@ def _make_driver():
     opts.add_argument(f"--user-data-dir={PROFILE_DIR}")
     opts.add_argument("--profile-directory=Default")
     opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--remote-debugging-port=9223")
     driver = webdriver.Chrome(options=opts)
     driver.get("https://web.whatsapp.com")
     return driver
