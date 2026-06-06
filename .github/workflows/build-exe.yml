@@ -36,6 +36,7 @@ jobs:
           --hidden-import=noisereduce
           --hidden-import=scipy
           --hidden-import=scipy.signal
+          --hidden-import=scipy.signal.windows
           --hidden-import=scipy.fft
           --hidden-import=requests
           --hidden-import=certifi
