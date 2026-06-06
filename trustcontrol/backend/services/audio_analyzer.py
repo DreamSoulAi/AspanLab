@@ -434,8 +434,9 @@ def _looks_like_real_transaction(text: str) -> bool:
     tl = text.lower()
     if any(w in tl for w in ("мың", "тысяч", "тенге", "теңге", "₸", " тг")):
         return True
-    pay_words = ("оплат", "наличн", "картой", "картамен", "каспи", "kaspi",
-                 "сдач", "итого", "с вас", "төлейміз", "қолма-қол", "чек")
+    pay_words = ("оплат", "наличн", "карт", "каспи", "kaspi", "халык", "halyk",
+                 "сдач", "итого", "с вас", "төле", "қолма-қол", "чек", "терминал",
+                 "qr", "перевод", "аудар")
     return any(w in tl for w in pay_words)
 
 
@@ -570,12 +571,23 @@ async def analyze_audio_with_fallback(
                     "_stt_diag":        stt_diag,
                 }
             if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
-                # Страховка от ЛОЖНОГО IGNORE: распознаватель мог дать лишь обрывок
-                # (например одну цену), и text-GPT счёл это «не разговором». Если
-                # обрывок выглядит как реальная речь (сумма/оплата/маркер сервиса) —
-                # даём аудио-модели послушать звук напрямую. Срабатывает РЕДКО, так
-                # что экономика не страдает, но грубость/сделку при этом не теряем.
+                # Страховка от ЛОЖНОГО IGNORE: STT дал реальный текст, но text-GPT
+                # счёл его «не разговором» (часто из-за рваного шумного распознавания
+                # казахского). Если текст выглядит как реальная речь обслуживания —
+                # НЕ выбрасываем разговор.
                 if _is_plausible_conversation(yx_text):
+                    # Есть твёрдый признак сделки (сумма/оплата) → принудительно
+                    # анализируем текст как рабочий разговор (force_business).
+                    # Текст у нас уже точный — не тратим деньги на переслушку аудио.
+                    if _looks_like_real_transaction(yx_text):
+                        log.info(f"text-GPT IGNORE на явной сделке — форсируем разбор текста: {yx_text[:80]!r}")
+                        gpt2 = await gpt_analyze(yx_text, business_context=business_context, force_business=True)
+                        if gpt2 and gpt2.get("status") not in ("IGNORE", "PERSONAL") and gpt2.get("is_business", True):
+                            _r = _normalize_text_result(gpt2, yx_text, language)
+                            _r["_stt_diag"] = stt_diag
+                            return _r
+                    # Иначе (правдоподобно, но без явной суммы) — даём аудио-модели
+                    # послушать звук напрямую: вдруг тон/грубость различимы по голосу.
                     log.info(f"text-GPT IGNORE на правдоподобной речи — слушаем звук: {yx_text[:80]!r}")
                     ar = await analyze_audio(wav_bytes, business_context=business_context, known_transcript=None)
                     if ar and ar.get("status") == "OK" and ar.get("transcript"):

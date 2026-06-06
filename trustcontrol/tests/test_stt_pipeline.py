@@ -145,6 +145,46 @@ def test_garbage_text_ignore_not_rescued(_mock_models):
     assert audio_called["n"] == 0, "на неправдоподобной каше страховку не запускаем"
 
 
+@pytest.mark.parametrize("text", [
+    # Реальные транскрипты со скринов кассы — рваные, но это живые сделки.
+    "банан ааа сосын есеп содан берейін бе үш мың төрт жүз елу",
+    "давайте тогда не морожить на трикафельді жиыншы қалады ғой мына "
+    "ғашықшы баскер или карте ғашықшы мхм девяносто девяносто",
+])
+def test_real_noisy_screenshots_are_plausible(text):
+    """Рваный шумный казахский с суммой/оплатой — НЕ мусор, не должен теряться."""
+    assert A._is_plausible_conversation(text) is True
+
+
+def test_card_payment_variants_detected():
+    """Разные формы оплаты картой должны распознаваться как сделка."""
+    assert A._looks_like_real_transaction("оплата на карте") is True
+    assert A._looks_like_real_transaction("карта") is True
+    assert A._looks_like_real_transaction("через терминал") is True
+    assert A._looks_like_real_transaction("kaspi qr") is True
+
+
+def test_false_ignore_with_amount_rescued_by_text_not_audio(_mock_models):
+    """Явная сделка (озвучена сумма) + ложный IGNORE → спасаем через force_business
+    text-GPT, БЕЗ дорогой переслушки аудио-модели (текст уже точный)."""
+    _enable_issai(_mock_models, "есеп үш мың төрт жүз елу")          # есть сумма (мың)
+    audio_called = {"n": 0}
+    async def _gpt(text, force_business=False, **k):
+        # Модель уважает force_business: на втором проходе возвращает OK.
+        if force_business:
+            return {"status": "OK", "is_business": True, "score": 60, "events": {},
+                    "summary": "заказ + оплата", "tone": "neutral"}
+        return {"status": "IGNORE", "is_business": False}            # ложный IGNORE
+    async def _audio(*a, **k):
+        audio_called["n"] += 1
+        return {}
+    _mock_models.setattr(A, "gpt_analyze", _gpt)
+    _mock_models.setattr(A, "analyze_audio", _audio)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert res["status"] == "OK", "сделка с суммой не должна теряться в IGNORE"
+    assert audio_called["n"] == 0, "при явной сумме спасаем текстом, аудио-модель не зовём"
+
+
 def test_no_stt_falls_back_to_audio_model(_mock_models):
     """Нет ISSAI/Yandex → аудио-модель как фолбэк (свежий звук)."""
     async def _audio(wav, **k):
