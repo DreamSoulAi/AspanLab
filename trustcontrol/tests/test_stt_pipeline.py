@@ -194,6 +194,38 @@ def test_no_stt_falls_back_to_audio_model(_mock_models):
     assert res["status"] == "OK" and res["score"] == 80
 
 
+def test_audio_model_ignore_rescued_by_whisper(_mock_models):
+    """Главный кейс со скринов: ISSAI пусто + аудио-модель сказала IGNORE →
+    Whisper-1 расшифровывает речь и спасает разговор от потери."""
+    _enable_issai(_mock_models, "")                       # ISSAI вернул пусто
+    async def _audio(wav, **k):
+        return {"status": "IGNORE", "is_business": False}  # аудио-модель сдалась
+    async def _whisper(wav, lang=None):
+        return "здравствуйте два капучино с вас тысяча двести спасибо"
+    async def _gpt(text, **k):
+        return {"status": "OK", "is_business": True, "score": 78, "events": {},
+                "summary": "две чашки капучино", "tone": "neutral"}
+    _mock_models.setattr(A, "analyze_audio", _audio)
+    _mock_models.setattr(A, "_transcribe_audio", _whisper)
+    _mock_models.setattr(A, "gpt_analyze", _gpt)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert res["status"] == "OK", "Whisper-1 должен спасти разговор когда ISSAI пусто и аудио-модель IGNORE"
+
+
+def test_all_engines_silent_stays_ignore(_mock_models):
+    """Если ВСЕ движки молчат (ISSAI пусто, аудио IGNORE, Whisper тоже пусто) —
+    это честная тихая/нерелевантная запись, остаётся IGNORE."""
+    _enable_issai(_mock_models, "")
+    async def _audio(wav, **k):
+        return {"status": "IGNORE", "is_business": False}
+    async def _whisper(wav, lang=None):
+        return ""                                          # Whisper тоже ничего
+    _mock_models.setattr(A, "analyze_audio", _audio)
+    _mock_models.setattr(A, "_transcribe_audio", _whisper)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert res["status"] == "IGNORE"
+
+
 # ── calculate_score: детерминированный движок ─────────────────────────────────
 
 def test_score_hard_fraud_floors_to_5():

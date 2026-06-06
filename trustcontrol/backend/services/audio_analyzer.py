@@ -599,27 +599,38 @@ async def analyze_audio_with_fallback(
             return _r
 
     # ── Шаг 3: нет казахского текста → аудио-модель как фолбэк ──
-    # Это путь когда и ISSAI, и Yandex не сработали (туннель мёртв, ключи нет).
+    # Это путь когда и ISSAI, и Yandex не сработали (пустой ответ, туннель мёртв).
     log.info("STT текст недоступен — фолбэк на аудио-модель")
     audio_result = await analyze_audio(
         wav_bytes, business_context=business_context, known_transcript=None
     )
 
+    audio_said_ignore = False
     if audio_result:
         status = audio_result.get("status", "OK")
-        if status in ("PERSONAL", "IGNORE"):
+        if status == "PERSONAL":
             audio_result["_stt_diag"] = stt_diag
             return audio_result
-        if audio_result.get("transcript"):
+        if status == "OK" and audio_result.get("transcript"):
             audio_result["_stt_diag"] = stt_diag or {"engine": "audio_model", "stage": "no_kz_reference"}
             return audio_result
-        log.info(f"Аудио-модель вернула OK но без транскрипта: {audio_result.get('summary','')!r}")
+        # status=IGNORE или OK-без-транскрипта: НЕ доверяем сразу. Аудио-модель
+        # (gpt-4o-mini-audio) слаба на казахском/шала-казахском и часто рубит
+        # реальные разговоры в IGNORE. Даём Whisper-1 последний шанс расшифровать
+        # слова — он сильнее на смешанной речи. Только если и он молчит — сдаёмся.
+        audio_said_ignore = (status == "IGNORE")
+        log.info(f"Аудио-модель → {status}/без транскрипта — пробуем Whisper-1 перед сдачей")
 
-    # ── Фолбэк 2: Whisper + текстовый GPT (если всё выше не сработало) ──
+    # ── Фолбэк 2: Whisper-1 + текстовый GPT (последний шанс расшифровать) ──
     log.info("Фолбэк на Whisper+text")
     text = await _transcribe_audio(wav_bytes, language)
     if not text or len(text) < 3:
         log.info("Whisper не распознал речь — пропуск")
+        # Совсем ничего не услышали ни одним движком (ISSAI пусто, аудио-модель
+        # IGNORE, Whisper молчит) → это честно нерелевантная/тихая запись.
+        if audio_said_ignore:
+            return {"status": "IGNORE", "is_business": False, "priority": 0,
+                    "transcript": "", "summary": "Речь не распознана", "_stt_diag": stt_diag}
         return {}
 
     gpt = await gpt_analyze(text, business_context=business_context)
@@ -638,9 +649,19 @@ async def analyze_audio_with_fallback(
             "_stt_diag":        stt_diag or {"engine": "whisper", "stage": "fallback", "text": text[:160]},
         }
 
-    # IGNORE: мусор
+    # IGNORE: мусор — но с той же страховкой что и в ISSAI-пути.
     if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
-        return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", ""), "_stt_diag": stt_diag or {"engine": "whisper", "stage": "fallback", "text": text[:160]}}
+        _wdiag = stt_diag or {"engine": "whisper", "stage": "fallback", "text": text[:160]}
+        # Whisper расшифровал речь, но text-GPT счёл мусором. Если текст выглядит
+        # как реальный разговор (сумма/оплата/маркер сервиса) — не выбрасываем.
+        if _is_plausible_conversation(text):
+            log.info(f"Whisper+text-GPT IGNORE на правдоподобной речи — форсируем разбор: {text[:80]!r}")
+            gpt2 = await gpt_analyze(text, business_context=business_context, force_business=True)
+            if gpt2 and gpt2.get("status") not in ("IGNORE", "PERSONAL") and gpt2.get("is_business", True):
+                _r = _normalize_text_result(gpt2, text, language)
+                _r["_stt_diag"] = _wdiag
+                return _r
+        return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", ""), "_stt_diag": _wdiag}
 
     _r = _normalize_text_result(gpt, text, language)
     _r["_stt_diag"] = stt_diag or {"engine": "whisper", "stage": "fallback"}
