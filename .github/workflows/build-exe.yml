@@ -11,7 +11,9 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2019
+    # windows-2019 раннеры GitHub вывел из эксплуатации (2025) — джоба висла
+    # в очереди без исполнителя 24ч и авто-отменялась. windows-2022 актуален.
+    runs-on: windows-2022
 
     steps:
       - uses: actions/checkout@v4
