@@ -470,11 +470,16 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
     if samples is not None and getattr(samples, "size", 0):
         if DENOISE:
             samples = _denoise(samples, sr or 16000)
-        peak = float(np.max(np.abs(samples)))
+        # Нормализуем по 99-му перцентилю, а не по абсолютному пику.
+        # Проблема с np.max: один клик/стук аппарата (peak≈0.98) не даёт
+        # нормализации включиться, хотя реальная речь тихая (RMS 0.03-0.11).
+        # 99-й перцентиль игнорирует верхний 1% выбросов → нормализация
+        # работает корректно даже если в файле есть единичные спайки.
+        peak = float(np.percentile(np.abs(samples), 99))
         if 0 < peak < 0.5:
             gain = min(0.5 / peak, 8.0)   # тянем тихое к пику 0.5, максимум x8
-            samples = (samples * gain).astype("float32")
-            log.info(f"Усиление тихой записи x{gain:.1f} (пик был {peak:.3f})")
+            samples = np.clip(samples * gain, -1.0, 1.0).astype("float32")
+            log.info(f"Усиление тихой записи x{gain:.1f} (p99 был {peak:.3f})")
         audio_input = samples
     else:
         audio_input = io.BytesIO(audio_bytes)
