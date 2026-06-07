@@ -76,6 +76,20 @@ VAD_SPEECH_PAD_MS = int(os.getenv("ISSAI_VAD_SPEECH_PAD_MS", 400))
 # вместо тихого выкидывания. Это ВОЗВРАЩАЕТ потерянную речь. "0.0" = без фолбэка.
 TEMPERATURE    = tuple(float(t) for t in os.getenv("ISSAI_TEMPERATURE", "0.0,0.2,0.4,0.6,0.8,1.0").split(","))
 
+# ── Пороги пост-фильтра галлюцинаций (env-настраиваемые) ──────────────────────
+# КРИТИЧНО: эти пороги НЕ ДОЛЖНЫ быть строже порогов декодера выше. Раньше тут
+# был захардкожен `avg_logprob < -1.15`, который выкидывал ровно ту неуверенную
+# речь, что смягчённый log_prob_threshold=-2.0 специально оставлял. Тихая
+# казахская речь на int8-CPU имеет низкую уверенность (logprob ~-1.2..-1.8) —
+# фильтр стирал её → пустой транскрипт → ложный IGNORE на реальном разговоре.
+# Теперь фильтр ловит ТОЛЬКО бесспорные признаки галлюцинации:
+#   • no_speech очень высокий → модель «услышала тишину», но выдала текст;
+#   • compression_ratio высокий → зацикленный повтор («да да да…», субтитры).
+# Чистую низкую уверенность (= тихая реальная речь) больше НЕ трогаем — её
+# судьбу решает декодер (log_prob_threshold). Подбирать вживую через env.
+HALLUC_NO_SPEECH   = float(os.getenv("ISSAI_HALLUC_NO_SPEECH",   0.9))   # было 0.6
+HALLUC_COMPRESSION = float(os.getenv("ISSAI_HALLUC_COMPRESSION", 2.8))   # было 2.5
+
 # initial_prompt — «подсказка» декодеру: типовой казахский диалог обслуживания.
 # Whisper смещает распознавание к этим словам/написаниям. Это резко чинит
 # самые частые слова кассы ("Сәлеметсіз бе", "донер", "картамен", "дайын болады"),
@@ -328,6 +342,8 @@ async def health():
             "vad_filter":     VAD_FILTER,
             "vad_min_sil_ms": VAD_MIN_SIL_MS,
             "temperature":    list(TEMPERATURE),
+            "halluc_no_speech":   HALLUC_NO_SPEECH,
+            "halluc_compression": HALLUC_COMPRESSION,
         },
     }
 
@@ -506,20 +522,21 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
         if not text:
             continue
 
-        # ── Фильтр галлюцинаций ──────────────────────────────────
-        # На нечётком/тихом аудио Whisper выдаёт УВЕРЕННЫЙ бред
-        # ("Hejrancession", "staircase-карта"). Отсекаем по сигналам:
-        #   • no_speech_prob высокий → модель "слышала" тишину, но выдала текст
-        #   • avg_logprob очень низкий → декодер не уверен (угадывал)
+        # ── Фильтр галлюцинаций (СОГЛАСОВАН с порогами декодера) ──────────
+        # Ловим ТОЛЬКО бесспорную галлюцинацию, НЕ трогаем низкую уверенность:
+        #   • no_speech_prob очень высокий → модель «слышала» тишину, но выдала текст
         #   • compression_ratio высокий → зациклился/повторы (классика галлюц.)
+        # Чистый низкий avg_logprob — это НЕ галлюцинация, а тихая/неуверенная
+        # реальная речь (типичная для казахского на int8-CPU). Её отсев — задача
+        # декодера (log_prob_threshold), а не этого фильтра. Раньше порог -1.15
+        # здесь стирал реальные разговоры → ложный IGNORE.
         no_speech = getattr(seg, "no_speech_prob", 0.0) or 0.0
         avg_lp    = getattr(seg, "avg_logprob", 0.0) or 0.0
         comp_ratio = getattr(seg, "compression_ratio", 1.0) or 1.0
 
         is_hallucination = (
-            (no_speech > 0.6 and avg_lp < -0.8)   # тишина, но «распознал» текст
-            or avg_lp < -1.15                       # крайне неуверенный декод
-            or comp_ratio > 2.5                     # повторяющийся бред
+            no_speech > HALLUC_NO_SPEECH       # уверенно тишина, но «распознал» текст
+            or comp_ratio > HALLUC_COMPRESSION  # зацикленный повтор/бред
         )
         if is_hallucination:
             dropped += 1
@@ -529,6 +546,12 @@ def _run_inference(audio_bytes: bytes, language: Optional[str]) -> tuple:
             )
             continue
 
+        # Диагностика: логируем КАЖДЫЙ принятый сегмент с его метриками —
+        # видно почему речь раньше терялась (logprob ниже старого -1.15).
+        log.info(
+            f"✓ сегмент принят: {text[:60]!r} "
+            f"(no_speech={no_speech:.2f}, logprob={avg_lp:.2f}, comp={comp_ratio:.2f})"
+        )
         parts.append(text)
 
     if dropped:
