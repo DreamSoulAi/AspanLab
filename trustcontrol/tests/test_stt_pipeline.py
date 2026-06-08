@@ -77,8 +77,12 @@ def _mock_models(monkeypatch):
     monkeypatch.setattr(A.yandex_stt, "is_enabled", lambda: False)
     async def _audio(*a, **k):  return {}
     async def _gpt(*a, **k):    return {}
+    # По умолчанию первичный OpenAI-STT «молчит» — тесты проверяют маршрутизацию
+    # фолбэков (ISSAI/Yandex/whisper). Кто тестирует первичку — мокает сам.
+    async def _no_transcribe(*a, **k):  return ""
     monkeypatch.setattr(A, "analyze_audio", _audio)
     monkeypatch.setattr(A, "gpt_analyze", _gpt)
+    monkeypatch.setattr(A, "_transcribe_audio", _no_transcribe)
     return monkeypatch
 
 
@@ -200,7 +204,7 @@ def test_audio_model_ignore_rescued_by_whisper(_mock_models):
     _enable_issai(_mock_models, "")                       # ISSAI вернул пусто
     async def _audio(wav, **k):
         return {"status": "IGNORE", "is_business": False}  # аудио-модель сдалась
-    async def _whisper(wav, lang=None):
+    async def _whisper(wav, lang=None, model=None):
         return "здравствуйте два капучино с вас тысяча двести спасибо"
     async def _gpt(text, **k):
         return {"status": "OK", "is_business": True, "score": 78, "events": {},
@@ -218,7 +222,7 @@ def test_all_engines_silent_stays_ignore(_mock_models):
     _enable_issai(_mock_models, "")
     async def _audio(wav, **k):
         return {"status": "IGNORE", "is_business": False}
-    async def _whisper(wav, lang=None):
+    async def _whisper(wav, lang=None, model=None):
         return ""                                          # Whisper тоже ничего
     _mock_models.setattr(A, "analyze_audio", _audio)
     _mock_models.setattr(A, "_transcribe_audio", _whisper)
