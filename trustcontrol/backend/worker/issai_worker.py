@@ -56,7 +56,7 @@ API_KEY       = os.getenv("ISSAI_API_KEY", "")
 # Денойз стационарного шума (аппарат за кассой) перед распознаванием.
 # Включён по умолчанию; выключить — ISSAI_DENOISE=false. prop=насколько давить.
 DENOISE       = os.getenv("ISSAI_DENOISE", "true").lower() in ("1", "true", "yes", "on")
-DENOISE_PROP  = float(os.getenv("ISSAI_DENOISE_PROP", 0.9))
+DENOISE_PROP  = float(os.getenv("ISSAI_DENOISE_PROP", 0.5))
 
 # ── Пороги декодирования (настраиваются без правки кода) ──────────────────────
 # Дефолты СМЯГЧЕНЫ против прежних: на int8-CPU модель не уверена в казахском,
@@ -436,10 +436,11 @@ def _denoise(samples, sr):
     try:
         import noisereduce as nr
         out = nr.reduce_noise(y=samples, sr=sr, stationary=True, prop_decrease=DENOISE_PROP)
-        # лёгкая нормализация громкости после чистки
+        # НЕ нормализуем здесь — нормализация тихих записей делается снаружи
+        # по 99-му перцентилю. Если нормализовать здесь, пик станет 0.7 > 0.5
+        # и внешний усилитель не включится → тихая речь остаётся тихой → VAD=0.
         import numpy as _np
-        peak = float(_np.abs(out).max()) or 1.0
-        return (out / peak * 0.7).astype("float32")
+        return out.astype("float32")
     except Exception as e:
         log.warning(f"Денойз не удался — распознаю как есть: {e}")
         return samples
