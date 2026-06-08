@@ -33,7 +33,7 @@ from openai import OpenAI
 # ── Настройки (можно править прямо здесь или через переменные окружения) ──
 ISSAI_URL = os.getenv("ISSAI_WORKER_URL", "http://213.155.21.25:8010")
 ISSAI_KEY = os.getenv("ISSAI_API_KEY", "")     # пусто = без авторизации
-OPENAI_MODELS = ["gpt-4o-mini-transcribe", "whisper-1"]   # можно добавить "gpt-4o-transcribe"
+OPENAI_MODELS = ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"]
 LANGUAGE = None    # None = авто-детект (лучше для смешанной рус/каз речи)
 
 # Подсказка распознавателю: типичная касса в Казахстане (рус+каз вперемешку).
