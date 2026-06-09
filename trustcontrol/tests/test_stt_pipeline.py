@@ -356,6 +356,27 @@ def test_merge_one_word_issai_returns_openai():
     assert "рожок" in res
 
 
+def test_merge_concatenation_caught_by_length_guard(monkeypatch):
+    """Регрессия на БАГ СКЛЕЙКИ ВСТЫК: если GPT вернул весь ISSAI + весь OpenAI
+    подряд (разговор задвоен), страховка по длине отбрасывает склейку и берёт
+    ОДИН транскрипт, а не задвоенный."""
+    issai  = "сәлем бір кофе ия болады рахмет сау болыңыз"
+    openai = "здравствуйте один кофе да хорошо спасибо до свидания приходите"
+    glued  = issai + " " + openai            # имитируем склейку встык от GPT
+
+    class _Msg:    content = glued
+    class _Choice: message = _Msg()
+    class _Resp:   choices = [_Choice()]
+    async def _create(*a, **k):  return _Resp()
+    monkeypatch.setattr(A.client.chat.completions, "create", _create)
+
+    res = _run(A._merge_transcripts(issai, openai))
+    # Задвоения быть не должно: результат ~ длины одного транскрипта, не суммы
+    assert res != glued
+    assert len(res) <= int(max(len(issai), len(openai)) * 1.4)
+    assert res == openai          # берётся более длинный одиночный транскрипт
+
+
 # ── calculate_score: детерминированный движок ─────────────────────────────────
 
 def test_score_hard_fraud_floors_to_5():
