@@ -230,6 +230,69 @@ def test_all_engines_silent_stays_ignore(_mock_models):
     assert res["status"] == "IGNORE"
 
 
+# ── Посегментная логика: customers_served (несколько клиентов в одной записи) ──
+
+def test_normalize_result_carries_customers_served():
+    """Новое поле customers_served должно доходить до результата для отчёта."""
+    gpt = {"status": "OK", "is_business": True, "score": 70, "events": {},
+           "summary": "Обслужено 2 клиента", "tone": "neutral", "customers_served": 2}
+    res = A._normalize_text_result(gpt, "здравствуйте ... спасибо", "ru")
+    assert res["customers_served"] == 2
+
+
+def test_normalize_result_defaults_customers_served_to_one():
+    """Если модель не вернула счётчик — считаем минимум 1 клиента."""
+    gpt = {"status": "OK", "is_business": True, "score": 70, "events": {},
+           "summary": "заказ", "tone": "neutral"}
+    res = A._normalize_text_result(gpt, "два кофе с вас 900", "ru")
+    assert res["customers_served"] == 1
+
+
+def _mock_gpt_client(monkeypatch, payload: dict):
+    """Подменяет ответ OpenAI-клиента в gpt_analyzer фиксированным JSON."""
+    import json as _json
+    from backend.services import gpt_analyzer as G
+
+    class _Msg:      content = _json.dumps(payload)
+    class _Choice:   message = _Msg()
+    class _Resp:     choices = [_Choice()]
+    async def _create(**k):  return _Resp()
+
+    monkeypatch.setattr(G.settings, "OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(G.client.chat.completions, "create", _create)
+    return G
+
+
+def test_gpt_analyze_defaults_customers_served(monkeypatch):
+    """gpt_analyze проставляет customers_served=1 если GPT его не вернул."""
+    G = _mock_gpt_client(monkeypatch, {
+        "status": "OK", "is_business": True, "score": 65, "events": {},
+        "summary": "заказ", "tone": "neutral"})
+    res = _run(G.gpt_analyze("здравствуйте два кофе с вас девятьсот спасибо"))
+    assert res["status"] == "OK"
+    assert res["customers_served"] == 1
+
+
+def test_gpt_analyze_keeps_multiple_customers(monkeypatch):
+    """gpt_analyze сохраняет customers_served когда обслужено несколько клиентов."""
+    G = _mock_gpt_client(monkeypatch, {
+        "status": "OK", "is_business": True, "score": 65, "events": {},
+        "summary": "Обслужено 3 клиента", "tone": "neutral", "customers_served": 3})
+    res = _run(G.gpt_analyze("длинная запись с тремя клиентами подряд и болтовнёй"))
+    assert res["customers_served"] == 3
+
+
+def test_gpt_analyze_order_inside_gossip_stays_ok(monkeypatch):
+    """Ключевой кейс: заказ внутри болтовни персонала → OK, не PERSONAL."""
+    G = _mock_gpt_client(monkeypatch, {
+        "status": "OK", "is_business": True, "score": 60, "events": {"greeting": True},
+        "summary": "Болтовня персонала + 1 заказ", "tone": "neutral",
+        "customers_served": 1})
+    res = _run(G.gpt_analyze("эй где соус ... здравствуйте два донера с вас 1600 спасибо ... ну а потом что"))
+    assert res["status"] == "OK"
+    assert res.get("is_business") is True
+
+
 # ── calculate_score: детерминированный движок ─────────────────────────────────
 
 def test_score_hard_fraud_floors_to_5():
