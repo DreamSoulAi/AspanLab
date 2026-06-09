@@ -318,7 +318,7 @@ async def analyze_audio(
                     {"type": "text", "text": _PROMPT + biz_hint + transcript_hint},
                 ],
             }],
-            max_tokens=2000,
+            max_tokens=2500,
             temperature=0.1,
         )
 
@@ -489,7 +489,7 @@ async def _merge_transcripts(
         resp = await client.chat.completions.create(
             model=_MERGE_MODEL,
             messages=[{"role": "user", "content": user_msg}],
-            max_tokens=800,
+            max_tokens=1500,
             temperature=0.1,
         )
         merged = (resp.choices[0].message.content or "").strip()
