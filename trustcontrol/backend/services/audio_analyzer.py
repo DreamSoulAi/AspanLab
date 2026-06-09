@@ -12,6 +12,7 @@ import base64
 import json
 import logging
 import os
+import re
 from openai import AsyncOpenAI
 from backend.config import settings
 from backend.services.gpt_analyzer import gpt_analyze
@@ -378,6 +379,49 @@ async def analyze_audio(
         return {}
 
 
+def _strip_repeat_loops(text: str) -> str:
+    """
+    Убирает галлюцинации-зацикливания STT: модель «залипает» и повторяет один
+    и тот же токен/короткую фразу десятки раз («Сөйтеті. Сөйтеті. Сөйтеті…»),
+    что бывает у whisper / gpt-4o-transcribe на казахском. Схлопывает подряд
+    идущие повторы фразы (1-3 слова), оставляя одну копию. Реальная речь до/после
+    петли сохраняется. Без петель текст возвращается как есть.
+    """
+    if not text:
+        return text
+    tokens = text.split()
+    if len(tokens) < 6:
+        return text
+
+    def _norm(t: str) -> str:
+        return re.sub(r"\W+", "", t.lower(), flags=re.UNICODE)
+
+    out: list[str] = []
+    i, n = 0, len(tokens)
+    while i < n:
+        collapsed = False
+        # Ищем подряд-повтор фразы длиной 1, 2 или 3 токена.
+        for plen in (1, 2, 3):
+            if i + plen > n:
+                continue
+            phrase = [_norm(t) for t in tokens[i:i + plen]]
+            if not any(phrase):
+                continue
+            reps, j = 1, i + plen
+            while j + plen <= n and [_norm(t) for t in tokens[j:j + plen]] == phrase:
+                reps += 1
+                j += plen
+            if reps >= 3:                  # 3+ одинаковых фразы подряд = петля
+                out.extend(tokens[i:i + plen])   # оставляем одну копию
+                i = j
+                collapsed = True
+                break
+        if not collapsed:
+            out.append(tokens[i])
+            i += 1
+    return " ".join(out)
+
+
 async def _transcribe_audio(wav_bytes: bytes, language: str = None, model: str = _PRIMARY_STT_MODEL) -> str:
     """
     Транскрипция через OpenAI. По умолчанию gpt-4o-mini-transcribe —
@@ -412,7 +456,7 @@ async def _transcribe_audio(wav_bytes: bytes, language: str = None, model: str =
         )
 
         tr = await client.audio.transcriptions.create(**kwargs)
-        return (tr.text or "").strip()
+        return _strip_repeat_loops((tr.text or "").strip())
     except Exception as e:
         log.warning(f"Whisper транскрипция не удалась: {e}")
         return ""
@@ -599,6 +643,7 @@ async def analyze_audio_with_fallback(
     if issai_stt.is_enabled():
         issai_diag = {}
         issai_raw = await issai_stt.transcribe(wav_bytes, diag=issai_diag)
+        issai_raw = _strip_repeat_loops(issai_raw or "")
         if issai_raw and len(issai_raw.split()) >= 2:
             kz_text = issai_raw
             stt_diag = {"engine": "issai", "stage": "ok", "chars": len(kz_text), "text": kz_text[:160]}

@@ -230,6 +230,36 @@ def test_all_engines_silent_stays_ignore(_mock_models):
     assert res["status"] == "IGNORE"
 
 
+# ── Защита от галлюцинаций-зацикливаний STT ───────────────────────────────────
+
+def test_strip_loop_collapses_repeated_token():
+    """«Сөйтеті ×40» (петля gpt-4o-transcribe на казахском) схлопывается до одной."""
+    real = "сеттегін алдырмаймай деді ақша предлагает етіп"
+    loop = " ".join(["Сөйтеті."] * 40)
+    cleaned = A._strip_repeat_loops(real + " " + loop)
+    assert cleaned.lower().count("сөйтеті") <= 2
+    assert "алдырмаймай" in cleaned          # реальная речь до петли сохранена
+
+
+def test_strip_loop_collapses_repeated_phrase():
+    """Петля из фразы 2-3 слова тоже схлопывается."""
+    loop = " ".join(["касса в Казахстане"] * 10)
+    cleaned = A._strip_repeat_loops(loop)
+    assert cleaned.lower().count("касса") <= 2
+
+
+def test_strip_loop_keeps_normal_text():
+    """Нормальная речь без петель не трогается."""
+    txt = "здравствуйте два капучино с вас тысяча двести спасибо до свидания"
+    assert A._strip_repeat_loops(txt) == txt
+
+
+def test_strip_loop_keeps_natural_short_repeats():
+    """Естественный повтор «да да» (2 раза) — не петля, не режем агрессивно."""
+    txt = "да да один кофе пожалуйста"
+    assert "один кофе" in A._strip_repeat_loops(txt)
+
+
 # ── Посегментная логика: customers_served (несколько клиентов в одной записи) ──
 
 def test_normalize_result_carries_customers_served():
