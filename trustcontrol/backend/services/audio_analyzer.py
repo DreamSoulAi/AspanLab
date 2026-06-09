@@ -8,6 +8,7 @@
 #    • Фильтрация мусора IGNORE (TikTok / музыка / шум)
 # ════════════════════════════════════════════════════════════
 
+import asyncio
 import base64
 import json
 import logging
@@ -422,6 +423,92 @@ def _strip_repeat_loops(text: str) -> str:
     return " ".join(out)
 
 
+_MERGE_MODEL = "gpt-4o-mini"
+
+# Инструкция для гибридного слияния двух транскриптов одного аудио.
+# ISSAI точен на казахском, OpenAI — на русском. GPT-4o-mini объединяет
+# лучшее из обоих и заодно исправляет фонетические ошибки ISSAI по контексту.
+_MERGE_PROMPT = """Два варианта транскрипции одного аудио с кассы в Казахстане. Создай ОДИН объединённый транскрипт.
+
+ВАРИАНТ А — казахский распознаватель ISSAI (точнее на казахском, хуже на русских словах):
+Типичные ошибки: «врачок»/«брачок» → рожок; «кера»/«кюра»/«кьюар»/«кьйюар»/«кийюр» → QR;
+«сто кан» → стакан; прочие созвучные русские слова искажает фонетически;
+может пропустить или зашумить целые русские фразы.
+
+ВАРИАНТ Б — OpenAI (точнее на русском, хуже на чистом казахском):
+Типичные ошибки: на чистом казахском может придумывать несуществующие фразы;
+иногда пропускает тихий голос клиента (стоит дальше) или казахские вставки в русскую речь.
+
+ПРАВИЛА ОБЪЕДИНЕНИЯ:
+1. Казахские слова/фразы → предпочитай ВАРИАНТ А
+2. Русские слова/фразы → предпочитай ВАРИАНТ Б
+3. Есть реплика в одном варианте и нет в другом → включи если она правдоподобна
+4. Исправляй фонетические ошибки ISSAI по контексту (рожок, стаканчик, QR и подобные)
+5. Если один вариант явно галлюцинирует (несвязный текст, выдуманные фразы) — используй другой
+6. НЕ придумывай слова которых не было ни в одном варианте
+7. Сохраняй языки: казахское слово — на казахском, русское — на русском
+
+Верни ТОЛЬКО итоговый текст. Без объяснений, без кавычек, без JSON."""
+
+
+async def _merge_transcripts(
+    issai_text: str,
+    openai_text: str,
+    business_context: str | None = None,
+) -> str:
+    """
+    Гибридное объединение ISSAI (казахский) + OpenAI (русский) транскриптов одного аудио.
+    Заодно исправляет фонетические ошибки ISSAI по контексту (врачок→рожок, кера→QR).
+    GPT вызывается только когда ОБА дали текст — иначе возвращаем непустой напрямую.
+    """
+    issai_clean  = (issai_text  or "").strip()
+    openai_clean = (openai_text or "").strip()
+
+    # Быстрый путь: только один вариант есть
+    if not issai_clean:
+        return openai_clean
+    if not openai_clean:
+        return issai_clean
+    if issai_clean.lower() == openai_clean.lower():
+        return openai_clean
+
+    # Один вариант из одного слова — берём другой без GPT-вызова
+    if len(issai_clean.split()) < 2:
+        return openai_clean
+    if len(openai_clean.split()) < 2:
+        return issai_clean
+
+    # Оба содержательные → GPT объединяет и исправляет
+    try:
+        biz_hint = f"\n\nКонтекст точки: {business_context}" if business_context else ""
+        user_msg = (
+            f"{_MERGE_PROMPT}{biz_hint}\n\n"
+            f"ВАРИАНТ А (ISSAI):\n{issai_clean}\n\n"
+            f"ВАРИАНТ Б (OpenAI):\n{openai_clean}"
+        )
+        resp = await client.chat.completions.create(
+            model=_MERGE_MODEL,
+            messages=[{"role": "user", "content": user_msg}],
+            max_tokens=800,
+            temperature=0.1,
+        )
+        merged = (resp.choices[0].message.content or "").strip()
+        # убираем возможные кавычки от модели
+        if merged.startswith(("«", '"', "'")):
+            merged = merged.strip("«»\"'")
+        if merged and len(merged.split()) >= 2:
+            log.info(
+                f"Merge OK | issai={len(issai_clean)}ч openai={len(openai_clean)}ч "
+                f"→ {len(merged)}ч | {merged[:80]!r}"
+            )
+            return _strip_repeat_loops(merged)
+    except Exception as e:
+        log.warning(f"Merge GPT ошибка: {e}")
+
+    # Фолбэк: предпочитаем OpenAI (точнее на русском, который доминирует на кассе)
+    return openai_clean
+
+
 async def _transcribe_audio(wav_bytes: bytes, language: str = None, model: str = _PRIMARY_STT_MODEL) -> str:
     """
     Транскрипция через OpenAI. По умолчанию gpt-4o-mini-transcribe —
@@ -590,14 +677,15 @@ async def analyze_audio_with_fallback(
     """
     Универсальная точка входа.
 
-    Режим 1 — аудио: gpt-4o-mini-audio-preview → fallback transcribe + gpt-4o-mini.
-    Режим 2 — текст: сразу gpt-4o-mini (local-whisper режим).
+    Режим 1 — текст: сразу gpt-4o-mini (local-whisper режим).
+    Режим 2 — аудио + ISSAI: параллельный ISSAI+OpenAI → гибридный merge → gpt-4o-mini.
+    Режим 2 — аудио без ISSAI: primary STT → Yandex → аудио-модель → Whisper цепочкой.
 
     status="IGNORE"   — мусор, не сохранять
     status="PERSONAL" — личный разговор, сохранить как is_hidden=true
     status="OK"       — рабочий разговор, анализировать полностью
     """
-    # ── Режим 1: уже есть транскрипт (local-whisper на кассе) ───
+    # ── Режим 1: уже есть транскрипт (local-whisper на кассе) ───────────
     if transcript_text and transcript_text.strip():
         gpt = await gpt_analyze(transcript_text, business_context=business_context)
         if not gpt:
@@ -612,83 +700,98 @@ async def analyze_audio_with_fallback(
                 "summary":          gpt.get("summary", "Личный разговор сотрудника"),
             }
         if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
-            return {"status": "IGNORE", "is_business": False, "priority": 0, "transcript": "", "summary": gpt.get("summary", "")}
+            return {"status": "IGNORE", "is_business": False, "priority": 0,
+                    "transcript": "", "summary": gpt.get("summary", "")}
         return _normalize_text_result(gpt, transcript_text.strip(), language)
 
-    # ── Режим 2: есть аудио ──────────────────────────────────────────
+    # ── Режим 2: есть аудио ──────────────────────────────────────────────
     if not wav_bytes:
         return {}
 
-    # ── ПЕРВИЧНЫЙ STT: gpt-4o-mini-transcribe ──────────────────────────
-    # Универсальная многоязычная модель лучше всего держит смешанную
-    # русско-казахскую речь кассы (code-switching). Раньше первым шёл ISSAI
-    # (узко казахская модель) — на РУССКИХ разговорах он давал пустоту →
-    # ложный IGNORE. Теперь первичка — OpenAI, ISSAI остаётся фолбэком.
-    primary_text = await _transcribe_audio(wav_bytes, language, model=_PRIMARY_STT_MODEL)
-    if primary_text and len(primary_text.split()) >= 2:
-        diag = {"engine": _PRIMARY_STT_MODEL, "stage": "ok",
-                "chars": len(primary_text), "text": primary_text[:160]}
-        log.info(f"Первичный STT {_PRIMARY_STT_MODEL} OK | {len(primary_text)} симв | {primary_text[:80]!r}")
-        res = await _analyze_via_text_gpt(primary_text, wav_bytes, business_context, language, diag)
-        if res is not None:
-            return res
+    stt_diag: dict = {}
 
-    # ── ФОЛБЭК STT: ISSAI (self-hosted казахский) → Yandex ─────────────
-    # Срабатывает только если первичный OpenAI-STT не дал текста (API упал,
-    # пустой ключ, либо чистый казахский где казахская модель может помочь).
-    kz_text = None
-    stt_diag = {}   # диагностика STT для отображения (видно сработал ли казахский)
-
-    issai_failed_diag = None   # причина сбоя ISSAI — не теряем её при фолбэке на Yandex
+    # ── ГИБРИДНЫЙ ПУТЬ: ISSAI включён → параллельный ISSAI + primary STT ─
+    # ISSAI (abilmansplus/whisper-turbo-ksc2) точен на казахском, слаб на русском.
+    # OpenAI точен на русском, слаб на чистом казахском (галлюцинирует).
+    # Запускаем оба одновременно, GPT-4o-mini объединяет лучшее из двух
+    # и исправляет фонетические ошибки ISSAI по контексту: врачок→рожок, кера→QR.
     if issai_stt.is_enabled():
-        issai_diag = {}
-        issai_raw = await issai_stt.transcribe(wav_bytes, diag=issai_diag)
-        issai_raw = _strip_repeat_loops(issai_raw or "")
-        if issai_raw and len(issai_raw.split()) >= 2:
-            kz_text = issai_raw
-            stt_diag = {"engine": "issai", "stage": "ok", "chars": len(kz_text), "text": kz_text[:160]}
-            log.info(f"ISSAI STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
-        else:
-            # ISSAI — главный движок для казахского. Если он не сработал,
-            # сохраняем ТОЧНУЮ причину (timeout/connect_error/http) — без неё
-            # Yandex затирает диагностику и не видно что туннель мёртв.
-            issai_failed_diag = issai_diag or {"engine": "issai", "stage": "empty_or_short",
-                                               "chars": len(issai_raw or ""), "text": (issai_raw or "")[:160]}
-            stt_diag = issai_failed_diag
-            log.info(f"ISSAI STT не сработал ({issai_diag}) — пробуем Yandex")
+        issai_diag: dict = {}
+        issai_raw, primary_raw = await asyncio.gather(
+            issai_stt.transcribe(wav_bytes, diag=issai_diag),
+            _transcribe_audio(wav_bytes, language, model=_PRIMARY_STT_MODEL),
+        )
+        issai_raw   = _strip_repeat_loops(issai_raw  or "")
+        primary_raw = _strip_repeat_loops(primary_raw or "")
 
-    if kz_text is None and yandex_stt.is_enabled():
-        yx_diag = {}
-        try:
-            yx_raw = await yandex_stt.transcribe(wav_bytes, diag=yx_diag)
-        except Exception as e:
-            log.warning(f"Yandex STT ошибка: {e}")
-            yx_raw = ""
-            yx_diag = {"engine": "yandex", "stage": "exception", "error": str(e)[:200]}
-        if yx_raw and len(yx_raw.split()) >= 2:
-            kz_text = yx_raw
-            stt_diag = yx_diag
-            log.info(f"Yandex STT OK | {len(kz_text)} симв | {kz_text[:80]!r}")
-        else:
-            # И ISSAI, и Yandex молчат. Показываем причину ISSAI (он главный),
-            # а ошибку Yandex добавляем для справки.
-            stt_diag = issai_failed_diag or yx_diag
-            if issai_failed_diag:
-                stt_diag = {**issai_failed_diag, "yandex": yx_diag.get("stage") or yx_diag.get("error", "")}
-            log.info(f"Yandex STT не дал текст | diag={yx_diag} | issai={issai_failed_diag}")
+        log.info(
+            f"Гибрид STT | issai={len(issai_raw)}ч ({issai_raw[:60]!r}) "
+            f"| openai={len(primary_raw)}ч ({primary_raw[:60]!r})"
+        )
 
-    # Совместимость с кодом ниже (использовал yx_text)
-    yx_text = kz_text
+        if issai_raw or primary_raw:
+            merged = await _merge_transcripts(issai_raw, primary_raw, business_context)
+            if merged and len(merged.split()) >= 2:
+                stt_diag = {
+                    "engine": "hybrid",
+                    "issai":  issai_raw[:120],
+                    "openai": primary_raw[:120],
+                    "merged": merged[:120],
+                }
+                log.info(f"Гибрид merged | {merged[:80]!r}")
+                res = await _analyze_via_text_gpt(merged, wav_bytes, business_context, language, stt_diag)
+                if res is not None:
+                    return res
 
-    # ── Текст от ISSAI/Yandex → text-GPT (со страховкой от ложного IGNORE) ──
-    if yx_text:
-        log.info(f"Фолбэк STT текст получен ({len(yx_text)} симв) — анализ через text-GPT")
-        res = await _analyze_via_text_gpt(yx_text, wav_bytes, business_context, language, stt_diag)
-        if res is not None:
-            return res
+        # Оба пустые или анализ не дал результата → Yandex как запасной STT
+        if yandex_stt.is_enabled():
+            yx_diag: dict = {}
+            try:
+                yx_raw = await yandex_stt.transcribe(wav_bytes, diag=yx_diag)
+            except Exception as e:
+                log.warning(f"Yandex STT ошибка: {e}")
+                yx_raw = ""
+                yx_diag = {"engine": "yandex", "stage": "exception", "error": str(e)[:200]}
+            if yx_raw and len(yx_raw.split()) >= 2:
+                stt_diag = yx_diag
+                log.info(f"Yandex STT OK | {len(yx_raw)} симв | {yx_raw[:80]!r}")
+                res = await _analyze_via_text_gpt(yx_raw, wav_bytes, business_context, language, yx_diag)
+                if res is not None:
+                    return res
+            else:
+                stt_diag = {**issai_diag, "yandex": yx_diag.get("stage") or yx_diag.get("error", "")}
 
-    # ── Шаг 3: нет текста ни от одного STT → аудио-модель как фолбэк ──
-    # Это путь когда и ISSAI, и Yandex не сработали (пустой ответ, туннель мёртв).
+    else:
+        # ── СТАНДАРТНЫЙ ПУТЬ: ISSAI не включён → primary STT → Yandex ────────
+        primary_text = await _transcribe_audio(wav_bytes, language, model=_PRIMARY_STT_MODEL)
+        if primary_text and len(primary_text.split()) >= 2:
+            stt_diag = {"engine": _PRIMARY_STT_MODEL, "stage": "ok",
+                        "chars": len(primary_text), "text": primary_text[:160]}
+            log.info(f"Первичный STT {_PRIMARY_STT_MODEL} OK | {len(primary_text)} симв | {primary_text[:80]!r}")
+            res = await _analyze_via_text_gpt(primary_text, wav_bytes, business_context, language, stt_diag)
+            if res is not None:
+                return res
+
+        if yandex_stt.is_enabled():
+            yx_diag: dict = {}
+            try:
+                yx_raw = await yandex_stt.transcribe(wav_bytes, diag=yx_diag)
+            except Exception as e:
+                log.warning(f"Yandex STT ошибка: {e}")
+                yx_raw = ""
+                yx_diag = {"engine": "yandex", "stage": "exception", "error": str(e)[:200]}
+            if yx_raw and len(yx_raw.split()) >= 2:
+                stt_diag = yx_diag
+                log.info(f"Yandex STT OK | {len(yx_raw)} симв | {yx_raw[:80]!r}")
+                res = await _analyze_via_text_gpt(yx_raw, wav_bytes, business_context, language, yx_diag)
+                if res is not None:
+                    return res
+            else:
+                stt_diag = yx_diag
+
+    # ── Фолбэк 1: нет текста ни от одного STT → аудио-модель ────────────
+    # Аудио-модель (gpt-4o-mini-audio) слаба на казахском/шала-казахском,
+    # часто рубит реальные разговоры в IGNORE. Даём Whisper-1 последний шанс.
     log.info("STT текст недоступен — фолбэк на аудио-модель")
     audio_result = await analyze_audio(
         wav_bytes, business_context=business_context, known_transcript=None
@@ -701,22 +804,16 @@ async def analyze_audio_with_fallback(
             audio_result["_stt_diag"] = stt_diag
             return audio_result
         if status == "OK" and audio_result.get("transcript"):
-            audio_result["_stt_diag"] = stt_diag or {"engine": "audio_model", "stage": "no_kz_reference"}
+            audio_result["_stt_diag"] = stt_diag or {"engine": "audio_model", "stage": "ok"}
             return audio_result
-        # status=IGNORE или OK-без-транскрипта: НЕ доверяем сразу. Аудио-модель
-        # (gpt-4o-mini-audio) слаба на казахском/шала-казахском и часто рубит
-        # реальные разговоры в IGNORE. Даём Whisper-1 последний шанс расшифровать
-        # слова — он сильнее на смешанной речи. Только если и он молчит — сдаёмся.
         audio_said_ignore = (status == "IGNORE")
         log.info(f"Аудио-модель → {status}/без транскрипта — пробуем Whisper-1 перед сдачей")
 
-    # ── Фолбэк 2: Whisper-1 + текстовый GPT (последний шанс расшифровать) ──
+    # ── Фолбэк 2: Whisper-1 + text-GPT (последний шанс) ─────────────────
     log.info("Фолбэк на Whisper-1+text")
     text = await _transcribe_audio(wav_bytes, language, model="whisper-1")
     if not text or len(text) < 3:
         log.info("Whisper не распознал речь — пропуск")
-        # Совсем ничего не услышали ни одним движком (первичка пусто, ISSAI
-        # пусто, аудио-модель IGNORE, Whisper молчит) → честно нерелевантная запись.
         if audio_said_ignore:
             return {"status": "IGNORE", "is_business": False, "priority": 0,
                     "transcript": "", "summary": "Речь не распознана", "_stt_diag": stt_diag}
@@ -725,4 +822,3 @@ async def analyze_audio_with_fallback(
     _wdiag = stt_diag or {"engine": "whisper-1", "stage": "fallback", "text": text[:160]}
     res = await _analyze_via_text_gpt(text, wav_bytes, business_context, language, _wdiag)
     return res if res is not None else {}
-    return _r

@@ -323,6 +323,39 @@ def test_gpt_analyze_order_inside_gossip_stays_ok(monkeypatch):
     assert res.get("is_business") is True
 
 
+# ── _merge_transcripts: гибридное объединение двух STT ────────────────────────
+
+def test_merge_empty_issai_returns_openai():
+    """Если ISSAI пустой — возвращаем OpenAI без GPT-вызова."""
+    res = _run(A._merge_transcripts("", "два кофе с вас 900"))
+    assert res == "два кофе с вас 900"
+
+
+def test_merge_empty_openai_returns_issai():
+    """Если OpenAI пустой — возвращаем ISSAI без GPT-вызова."""
+    res = _run(A._merge_transcripts("бір кофе ия рахмет", ""))
+    assert res == "бір кофе ия рахмет"
+
+
+def test_merge_both_empty_returns_empty():
+    """Оба пустые — возвращаем пустую строку."""
+    res = _run(A._merge_transcripts("", ""))
+    assert res == ""
+
+
+def test_merge_identical_texts_no_gpt_call():
+    """Одинаковые тексты → возвращаем без дополнительного GPT-вызова."""
+    text = "здравствуйте два капучино с вас тысяча двести"
+    res = _run(A._merge_transcripts(text, text))
+    assert res == text
+
+
+def test_merge_one_word_issai_returns_openai():
+    """Один вариант из одного слова — берём более длинный без GPT-вызова."""
+    res = _run(A._merge_transcripts("ия", "рожок или стаканчик с вас 500"))
+    assert "рожок" in res
+
+
 # ── calculate_score: детерминированный движок ─────────────────────────────────
 
 def test_score_hard_fraud_floors_to_5():
