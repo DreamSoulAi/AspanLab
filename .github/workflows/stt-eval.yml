@@ -1,0 +1,55 @@
+# ════════════════════════════════════════════════════════════
+#  STT-сводка — прогон записей через реальный пайплайн
+#  Запускается ВРУЧНУЮ (кнопка Run workflow) — не на каждый пуш,
+#  чтобы не тратить деньги OpenAI зря. Ключи — в Secrets, в логи не попадают.
+#  Образцы записей: trustcontrol/tests/samples/*.wav
+# ════════════════════════════════════════════════════════════
+
+name: STT eval (сводка по записям)
+
+on:
+  workflow_dispatch:        # запуск по кнопке в Actions (или через API)
+
+defaults:
+  run:
+    working-directory: trustcontrol
+
+jobs:
+  eval:
+    name: Прогон и сводка
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: trustcontrol/requirements.txt
+
+      - name: Зависимости
+        run: |
+          pip install -r requirements.txt
+          pip install httpx aiosqlite
+
+      - name: Прогон записей → сводка
+        env:
+          # Заглушки (нужны только для импорта config), НЕ секреты:
+          SECRET_KEY:   "ci-eval-secret-key-minimum-32-characters!!"
+          DATABASE_URL: "sqlite+aiosqlite:///ci.db"
+          # Реальные ключи из GitHub Secrets — в логах маскируются, мне не видны:
+          OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
+          ISSAI_WORKER_URL: ${{ secrets.ISSAI_WORKER_URL }}
+          ISSAI_WORKER_KEY: ${{ secrets.ISSAI_WORKER_KEY }}
+        run: |
+          python scripts/hybrid_eval.py tests/samples
+
+      - name: Сохранить сводку как артефакт
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stt-scorecard
+          path: trustcontrol/hybrid_result.md
+          if-no-files-found: ignore

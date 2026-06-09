@@ -36,11 +36,12 @@ import logging
 import os
 import shutil
 import time
+from collections import deque
 from contextlib import asynccontextmanager
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 
 log = logging.getLogger("issai_worker")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -52,6 +53,13 @@ COMPUTE_TYPE  = os.getenv("ISSAI_COMPUTE", "int8" if DEVICE == "cpu" else "float
 PORT          = int(os.getenv("ISSAI_PORT",    8010))
 NUM_WORKERS   = int(os.getenv("ISSAI_WORKERS", 1))
 API_KEY       = os.getenv("ISSAI_API_KEY", "")
+
+# Рейт-лимит на /transcribe (защита CPU от флуда / утёкшего ключа).
+# Скользящее окно по IP: не больше RATE_LIMIT запросов за RATE_WINDOW секунд.
+# Дефолт щедрый под легитимный трафик (один разговор = один запрос), но режет флуд.
+# Выключить: ISSAI_RATE_LIMIT=0.
+RATE_LIMIT    = int(os.getenv("ISSAI_RATE_LIMIT", 30))
+RATE_WINDOW   = int(os.getenv("ISSAI_RATE_WINDOW", 60))
 
 # Денойз стационарного шума (аппарат за кассой) перед распознаванием.
 # Включён по умолчанию; выключить — ISSAI_DENOISE=false. prop=насколько давить.
@@ -321,6 +329,39 @@ def _check_auth(x_api_key: Optional[str]):
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 
+# ── Рейт-лимит (in-memory, скользящее окно по IP) ────────────
+_rate_state: dict[str, deque] = {}
+
+
+def _client_ip(request: Request) -> str:
+    # За cloudflared/прокси реальный IP — в X-Forwarded-For (первый хоп).
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _check_rate(request: Request):
+    if RATE_LIMIT <= 0:
+        return
+    ip  = _client_ip(request)
+    now = time.monotonic()
+    dq  = _rate_state.setdefault(ip, deque())
+    while dq and now - dq[0] > RATE_WINDOW:
+        dq.popleft()
+    if len(dq) >= RATE_LIMIT:
+        log.warning(f"Rate limit: {ip} превысил {RATE_LIMIT}/{RATE_WINDOW}с")
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many requests (limit {RATE_LIMIT}/{RATE_WINDOW}s)",
+        )
+    dq.append(now)
+    # Лёгкая уборка, чтобы словарь не рос от случайных IP
+    if len(_rate_state) > 1000:
+        for k in [k for k, v in _rate_state.items() if not v or now - v[-1] > RATE_WINDOW]:
+            _rate_state.pop(k, None)
+
+
 # ── Эндпоинты ────────────────────────────────────────────────
 
 @app.get("/health")
@@ -344,12 +385,14 @@ async def health():
             "temperature":    list(TEMPERATURE),
             "halluc_no_speech":   HALLUC_NO_SPEECH,
             "halluc_compression": HALLUC_COMPRESSION,
+            "rate_limit":         f"{RATE_LIMIT}/{RATE_WINDOW}s" if RATE_LIMIT > 0 else "off",
         },
     }
 
 
 @app.post("/transcribe")
 async def transcribe(
+    request:   Request,
     audio:     UploadFile = File(...),
     language:  str        = Form(default="kk"),
     x_api_key: Optional[str] = Header(default=None),
@@ -365,6 +408,7 @@ async def transcribe(
     Response:
       {"text": "...", "language": "kk", "duration": 12.3, "segments": 3}
     """
+    _check_rate(request)
     _check_auth(x_api_key)
 
     if _model is None:
