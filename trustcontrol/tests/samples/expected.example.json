@@ -1,0 +1,24 @@
+{
+  "_комментарий": "Переименуй в expected.json. Это 'ключ ответов' — что РЕАЛЬНО было в каждой записи. Пиши ТОЛЬКО то, что знаешь точно; лишние поля можно не указывать. Харнесс сверит факт с этим и поставит ✅/❌.",
+
+  "primer1.wav": {
+    "status": "OK",
+    "customers": 1,
+    "greeting": true,
+    "farewell": true,
+    "upsell": false,
+    "rudeness": false,
+    "fraud": false,
+    "tone": "positive"
+  },
+
+  "primer2_boltovnya.wav": {
+    "status": "PERSONAL"
+  },
+
+  "primer3_dvoe_klientov.wav": {
+    "status": "OK",
+    "customers": 2,
+    "rudeness": false
+  }
+}
