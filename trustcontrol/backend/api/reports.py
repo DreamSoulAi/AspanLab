@@ -718,6 +718,7 @@ async def _process_submission(
                 upsell=upsell_attempt,
                 greeting=has_greeting,
                 audio_url=s3_url,
+                summary=gpt_summary,
             )
 
         # Email for fraud incidents

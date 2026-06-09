@@ -2499,11 +2499,11 @@ async function resolveAlert(id,btn){
 let _reportsCache=[];
 function showReportModal(idx){
   const r=_reportsCache[idx];if(!r)return;
-  document.getElementById('rmTranscript').textContent=r.transcript||'Нет транскрипта';
-  const meta=[];
-  if(r.employee_name)meta.push('Сотрудник: '+r.employee_name);
-  if(r.gpt_summary)meta.push(r.gpt_summary);
-  document.getElementById('rmMeta').textContent=meta.join(' · ');
+  // Главное — чистый анализ (summary). Сырую авто-расшифровку прячем под спойлер:
+  // распознавание казахского с кассы рваное, его косяки не должны быть на виду.
+  document.getElementById('rmSummary').textContent=r.gpt_summary||'Анализ по этому разговору недоступен.';
+  document.getElementById('rmTranscript').textContent=r.transcript||'Нет расшифровки';
+  document.getElementById('rmMeta').textContent=r.employee_name?('Сотрудник: '+r.employee_name):'';
   const sc=Math.round(r.score||0);
   document.getElementById('rmScore').textContent=sc+'/100';
   document.getElementById('rmScore').style.color=sc>=80?'#10B981':sc>=60?'#F59E0B':'#EF4444';
@@ -2534,7 +2534,7 @@ async function loadReportsPage(){
         <div class="rc-top"><span class="rc-time">${fmt(r.timestamp||r.created_at)}</span>
           <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:${r.score>=80?'#10B981':r.score>=60?'#F59E0B':'#EF4444'}">${Math.round(r.score||0)}</span>
         </div>
-        <p class="rc-quote">${esc((r.transcript||'Нет текста разговора').slice(0,200))}</p>
+        <p class="rc-quote">${esc((r.gpt_summary||r.transcript||'Нет данных').slice(0,200))}</p>
         <div class="rc-footer">${statusFlags(r)}<span style="margin-left:auto;font-size:11px;color:var(--muted)">читать →</span></div>
       </div>`).join('');
   }else{
@@ -2543,12 +2543,12 @@ async function loadReportsPage(){
     document.getElementById('reportsCards').style.display='none';
     if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет отчётов за период</p>';return;}
     el.innerHTML=d.map((r,i)=>`
-      <div class="rep-row" onclick="showReportModal(${i})" style="cursor:pointer" title="Нажмите для просмотра полного транскрипта">
+      <div class="rep-row" onclick="showReportModal(${i})" style="cursor:pointer" title="Нажмите для просмотра анализа и записи">
         <span class="rep-time">${fmt(r.timestamp||r.created_at)}</span>
         <span class="rep-score ${r.score>=80?'g':r.score>=60?'y':'r'}">${Math.round(r.score||0)}</span>
         <span class="rep-tone">${toneName(r.tone)}</span>
         <span class="rep-flags">${statusFlags(r)}</span>
-        <span class="rep-text">${esc((r.transcript||'').slice(0,120))}</span>
+        <span class="rep-text">${esc((r.gpt_summary||r.transcript||'').slice(0,120))}</span>
       </div>`).join('');
   }
 }
@@ -3095,7 +3095,11 @@ async function unlinkTelegram(){
     </div>
     <div style="padding:20px;overflow-y:auto;flex:1">
       <div id="rmAudio" style="display:none;margin-bottom:16px;padding:12px;background:rgba(255,255,255,.04);border-radius:8px"></div>
-      <p id="rmTranscript" style="font-size:14px;line-height:1.75;color:#e2e8f0;white-space:pre-wrap;margin:0"></p>
+      <div id="rmSummary" style="font-size:15px;line-height:1.7;color:#e2e8f0;margin:0 0 16px"></div>
+      <details style="border-top:1px solid rgba(255,255,255,.08);padding-top:12px">
+        <summary style="cursor:pointer;font-size:12px;color:var(--muted);user-select:none;list-style:revert">Черновая авто-расшифровка (может содержать ошибки распознавания)</summary>
+        <p id="rmTranscript" style="font-size:13px;line-height:1.7;color:#94a3b8;white-space:pre-wrap;margin:10px 0 0"></p>
+      </details>
     </div>
     <div id="rmMeta" style="padding:12px 20px;border-top:1px solid rgba(255,255,255,.08);font-size:12px;color:var(--muted)"></div>
   </div>

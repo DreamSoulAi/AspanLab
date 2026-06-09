@@ -638,6 +638,129 @@ def _is_plausible_conversation(text: str) -> bool:
     return len(words) >= 6 and len({w.lower() for w in words}) >= 4
 
 
+# ── Контекстная аудио-проверка тона/грубости ─────────────────────────
+# Дорогую аудио-модель зовём ТОЛЬКО когда текст уже заподозрил негатив/грубость —
+# чтобы по ГОЛОСУ подтвердить или СНЯТЬ обвинение. Главное: не наказать кассира
+# ложно за телефонный звонок, ругань персонала между собой, болтовню или фон.
+_TONE_CONFIRM_PROMPT = """Ты аудитор ТОНА голоса на кассе в Казахстане. Слова уже расшифрованы — заново их НЕ распознавай. Твоя единственная задача — по ЗВУКУ оценить тон кассира и была ли грубость К КЛИЕНТУ.
+
+⛔ ЧТО НЕ СЧИТАЕТСЯ грубостью к клиенту (rudeness=false), даже если звучит резко:
+• Кассир говорит по ТЕЛЕФОНУ (личный звонок) — у стойки нет клиента, которого он обслуживает.
+• Перепалка/ругань МЕЖДУ сотрудниками (кассир ↔ повар ↔ кассир), не в адрес покупателя.
+• Болтовня, шутки, эмоции между своими.
+• Мат/крик из ТВ, музыки, видео в телефоне рядом — это фон.
+• Раздражение или жалоба самого КЛИЕНТА — это не грубость кассира.
+
+✅ rudeness=true ТОЛЬКО когда кассир резок/презрителен/огрызается В АДРЕС стоящего у кассы клиента, которого он обслуживает.
+
+tone — общий тон кассира при обслуживании клиента:
+• positive — тёплый, доброжелательный, живой
+• neutral — спокойный деловой, без тепла и без грубости (это НОРМА для быстрой кассы)
+• negative — холодный/раздражённый/враждебный именно к клиенту
+
+При сомнении: rudeness=false, tone=neutral. Лучше не обвинить, чем обвинить ложно.
+
+Верни ТОЛЬКО JSON:
+{"tone":"positive|neutral|negative","rudeness":<true|false>,"energy_level":<1-5>,"reason":"коротко почему, на русском"}"""
+
+
+async def _confirm_tone_via_audio(
+    wav_bytes: bytes | None,
+    known_text: str | None,
+    business_context: str | None = None,
+) -> dict | None:
+    """Слушает звук и судит ТОЛЬКО тон/грубость к клиенту. None при ошибке."""
+    if not settings.OPENAI_API_KEY or not wav_bytes:
+        return None
+    try:
+        audio_b64    = base64.b64encode(wav_bytes).decode()
+        audio_format = _detect_audio_format(wav_bytes)
+        biz = f"\n\nКонтекст точки: {business_context}" if business_context else ""
+        ref = (
+            f"\n\nРасшифровка слов (для контекста, заново НЕ распознавай):\n"
+            f"«{(known_text or '').strip()[:1500]}»"
+            if known_text and known_text.strip() else ""
+        )
+        resp = await client.chat.completions.create(
+            model=_AUDIO_MODEL,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "input_audio",
+                     "input_audio": {"data": audio_b64, "format": audio_format}},
+                    {"type": "text", "text": _TONE_CONFIRM_PROMPT + biz + ref},
+                ],
+            }],
+            max_tokens=300,
+            temperature=0.1,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        d = json.loads(raw.strip())
+        tone = d.get("tone")
+        return {
+            "tone":     tone if tone in ("positive", "neutral", "negative") else None,
+            "rudeness": bool(d.get("rudeness")),
+            "energy_level": d.get("energy_level"),
+            "reason":   (d.get("reason") or "")[:200],
+        }
+    except Exception as e:
+        log.warning(f"Аудио-проверка тона не удалась: {e}")
+        return None
+
+
+async def _apply_audio_tone_check(
+    result: dict | None,
+    wav_bytes: bytes | None,
+    business_context: str | None,
+) -> dict | None:
+    """
+    Подтверждает/снимает негатив и грубость по ГОЛОСУ.
+    Зовёт аудио-модель ТОЛЬКО если текст уже флагнул negative или rudeness —
+    спокойные разговоры аудио не трогает (экономия). Голос — арбитр: он различает
+    грубость к клиенту от телефона/ругани персонала/болтовни, которых текст не слышит.
+    """
+    if not wav_bytes or not result or result.get("status") != "OK":
+        return result
+
+    events = result.get("events") or {}
+    text_rude     = bool(events.get("rudeness"))
+    text_negative = result.get("tone") == "negative"
+    if not (text_rude or text_negative):
+        return result  # спокойный разговор → аудио не нужно, не тратим деньги
+
+    conf = await _confirm_tone_via_audio(wav_bytes, result.get("transcript", ""), business_context)
+    if not conf:
+        return result  # аудио не ответило → доверяем тексту как есть
+
+    audio_rude = conf["rudeness"]
+    reason     = conf.get("reason", "")
+
+    # Снимаем ЛОЖНУЮ грубость: текст счёл грубым, но по голосу это телефон/персонал/фон
+    if text_rude and not audio_rude:
+        events["rudeness"] = False
+        result["events"] = events
+        log.info(f"Аудио СНЯЛО ложную грубость (не к клиенту) | {reason!r}")
+    elif text_rude and audio_rude:
+        log.info(f"Аудио ПОДТВЕРДИЛО грубость к клиенту | {reason!r}")
+
+    # Тон берём по голосу — интонацию аудио слышит точнее текста
+    if conf.get("tone"):
+        result["tone"] = conf["tone"]
+    if conf.get("energy_level") is not None:
+        try:
+            result["energy_level"] = max(1, min(5, int(conf["energy_level"])))
+        except (TypeError, ValueError):
+            pass
+
+    ev = result.get("events") or {}
+    result["priority"] = 1 if (ev.get("fraud_attempt") or ev.get("rudeness")) else 0
+    return result
+
+
 async def _analyze_via_text_gpt(
     text: str,
     wav_bytes: bytes | None,
@@ -676,6 +799,7 @@ async def _analyze_via_text_gpt(
                 gpt2 = await gpt_analyze(text, business_context=business_context, force_business=True)
                 if gpt2 and gpt2.get("status") not in ("IGNORE", "PERSONAL") and gpt2.get("is_business", True):
                     _r = _normalize_text_result(gpt2, text, language)
+                    _r = await _apply_audio_tone_check(_r, wav_bytes, business_context)
                     _r["_stt_diag"] = stt_diag
                     return _r
             # Правдоподобно, но без явной суммы — даём аудио-модели послушать тон.
@@ -688,6 +812,7 @@ async def _analyze_via_text_gpt(
                 "transcript": "", "summary": gpt.get("summary", ""), "_stt_diag": stt_diag}
 
     _r = _normalize_text_result(gpt, text, language)
+    _r = await _apply_audio_tone_check(_r, wav_bytes, business_context)
     _r["_stt_diag"] = stt_diag
     return _r
 
@@ -726,7 +851,8 @@ async def analyze_audio_with_fallback(
         if gpt.get("status") == "IGNORE" or not gpt.get("is_business", True):
             return {"status": "IGNORE", "is_business": False, "priority": 0,
                     "transcript": "", "summary": gpt.get("summary", "")}
-        return _normalize_text_result(gpt, transcript_text.strip(), language)
+        _r1 = _normalize_text_result(gpt, transcript_text.strip(), language)
+        return await _apply_audio_tone_check(_r1, wav_bytes, business_context)
 
     # ── Режим 2: есть аудио ──────────────────────────────────────────────
     if not wav_bytes:

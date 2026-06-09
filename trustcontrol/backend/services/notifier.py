@@ -199,6 +199,7 @@ async def send_ok_report(
     upsell: bool,
     greeting: bool,
     audio_url: str | None = None,
+    summary: str = "",
 ):
     score_icon = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
     tone_ru = {"positive": "позитивный", "neutral": "нейтральный", "negative": "негативный"}.get(tone, "нейтральный")
@@ -210,20 +211,16 @@ async def send_ok_report(
         flags.append("нет допродажи")
     flags_line = f"\n_{', '.join(flags)}_" if flags else ""
 
-    # Показываем транскрипт только если он выглядит как настоящий разговор.
-    # Мусор (2 слова на длинном аудио, галлюцинация-повтор) владельцу не показываем.
-    _t = (transcript or "").strip()
-    _words = _t.split()
-    _is_clean = (
-        len(_words) >= 3
-        and not (len(_words) >= 6 and len({w.lower() for w in _words}) <= 2)
-    )
-    transcript_line = f"\n_{_t[:300]}_" if _is_clean else ""
+    # Показываем КЛИЕНТУ чистый анализ (summary на русском), а НЕ сырую расшифровку:
+    # авто-транскрипция казахского с кассы часто рваная — её косяки подрывают доверие.
+    # Кнопка «Слушать запись» даёт первоисточник, кому нужно проверить дословно.
+    _sum = (summary or "").strip()
+    summary_line = f"\n{_sum[:400]}" if _sum else ""
     text = (
         f"{score_icon} *{location_name}* — {score:.0f}/100\n"
         f"Тон: {tone_ru}"
         f"{flags_line}"
-        f"{transcript_line}"
+        f"{summary_line}"
     )
     await _send(chat_id, text, reply_markup=_listen_button(audio_url) if audio_url else None)
 
