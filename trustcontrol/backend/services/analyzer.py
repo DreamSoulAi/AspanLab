@@ -153,8 +153,10 @@ def calculate_score(
     score = 60.0
 
     # ── Позитивные сигналы — только бонусы за наличие ────────
-    if track_greeting and greeting:   score += 8
-    if track_goodbye and farewell:    score += 6
+    # Вежливость должна заметно поднимать балл над базой: вежливый разговор
+    # (приветствие + прощание/спасибо) ≈ 78, чтобы не сливался с пустыми 60.
+    if track_greeting and greeting:   score += 10
+    if track_goodbye and farewell:    score += 8
     if track_upsell and upsell:       score += 8     # «ещё круче», не обязанность
     if resolved:                      score += 8
 

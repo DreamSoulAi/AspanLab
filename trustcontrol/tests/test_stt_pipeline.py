@@ -379,6 +379,14 @@ def test_score_short_visit_not_punished():
     assert s >= 55   # тихий короткий визит = нейтрально, не минус
 
 
+def test_score_polite_visit_clears_base():
+    """Вежливый разговор (приветствие + прощание) должен заметно превышать базу 60,
+    чтобы не сливаться с пустыми визитами на дашборде."""
+    polite = calculate_score(events={"greeting": True, "farewell": True})
+    assert polite >= 75   # 60 + 10 + 8 = 78
+    assert polite > calculate_score(events={})   # явно выше пустого визита
+
+
 def test_score_clamped_0_100():
     hi = calculate_score(events={"greeting": True, "farewell": True, "upsell": True,
                                  "issue_resolved": True}, tone="positive",

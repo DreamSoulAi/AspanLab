@@ -519,8 +519,21 @@ async def _process_submission(
         # GPT-события (greeting/upsell/rudeness/…) уже учитывают track_*
         # на уровне наличия; здесь движок применяет настройки владельца
         # к итоговому баллу и не штрафует дважды.
+        #
+        # ВАЖНО: в балл отдаём события, ОБОГАЩЁННЫЕ regex-резервом. GPT нередко
+        # пропускает явное «здравствуйте/спасибо/рахмет/сау болыңыз» в шумном
+        # транскрипте и ставит greeting/farewell=false — тогда вежливый разговор
+        # несправедливо застревает на базовых 60. Если вежливое слово реально
+        # есть в тексте (regex его поймал) — засчитываем бонус. Это согласуется
+        # с принципом «при сомнении трактуй в пользу кассира».
+        score_events = dict(events)
+        if has_greeting:
+            score_events["greeting"] = True
+        if has_goodbye or has_thanks:
+            score_events["farewell"] = True
+
         final_score = calculate_score(
-            events=events,
+            events=score_events,
             tone=effective_tone,
             fraud_confidence=fraud_confidence,
             customer_satisfaction=customer_satisfaction,
