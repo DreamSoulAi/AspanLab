@@ -123,7 +123,7 @@ def merge(issai_text, openai_text):
             model="gpt-4o-mini",
             messages=[{"role": "user", "content":
                        f"{MERGE_PROMPT}\n\nВАРИАНТ А (ISSAI):\n{a}\n\nВАРИАНТ Б (OpenAI):\n{b}"}],
-            temperature=0.1, max_tokens=800,
+            temperature=0.1, max_tokens=2000,
         )
         out = (resp.choices[0].message.content or "").strip().strip("«»\"'")
         return out or b
