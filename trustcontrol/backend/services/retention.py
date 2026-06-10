@@ -42,19 +42,6 @@ def _is_evidence(report: Report) -> bool:
     return report.fraud_status == "critical_fraud_risk" or report.is_priority
 
 
-def _s3_key_from_url(url: str, bucket: str) -> str | None:
-    """Извлекает ключ объекта из S3-URL."""
-    if not url:
-        return None
-    # https://bucket.s3.region.amazonaws.com/key  или  endpoint/bucket/key
-    try:
-        if f"/{bucket}/" in url:
-            return url.split(f"/{bucket}/", 1)[1]
-        return url.split("/", 3)[-1]
-    except Exception:
-        return None
-
-
 async def run_retention() -> dict:
     """
     Основная функция очистки. Вызывается из main.py каждые 4 часа.
@@ -78,14 +65,14 @@ async def run_retention() -> dict:
         # Ищем отчёты с S3-файлами которые ещё не удалены
         result = await db.execute(
             select(Report).where(
-                Report.s3_url       != None,
+                Report.s3_key       != None,
                 Report.s3_deleted_at == None,
             )
         )
         reports = result.scalars().all()
 
         for report in reports:
-            key = _s3_key_from_url(report.s3_url, bucket)
+            key = report.s3_key
             if not key:
                 stats["skipped"] += 1
                 continue
@@ -103,8 +90,7 @@ async def run_retention() -> dict:
                         )
                         s3.delete_object(Bucket=bucket, Key=key)
 
-                        new_url = report.s3_url.replace(key, new_key)
-                        report.s3_url = new_url
+                        report.s3_key = new_key
                         log.info(f"[report={report.id}] Архивирован: {new_key}")
                         stats["archived"] += 1
                     except Exception as e:

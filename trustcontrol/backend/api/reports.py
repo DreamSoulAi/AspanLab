@@ -355,14 +355,15 @@ async def _process_submission(
 
         # ── Архив аудио в R2/S3 для прослушки + SHA-256 ──────────
         # Сохраняем КАЖДУЮ запись (не только priority=1), чтобы владелец
-        # мог прослушать любой разговор (по s3_key строится публичная ссылка).
-        # Если S3 не настроен — тихо пропускаем (upload_evidence вернёт s3_url=None).
-        audio_sha256 = s3_url = s3_key = None
+        # мог прослушать любой разговор. Храним ТОЛЬКО s3_key — ссылку на
+        # запись выдаёт presigned-эндпоинт get_report_audio с проверкой прав.
+        # Публичную (вечную) ссылку не строим и не храним.
+        # Если S3 не настроен — тихо пропускаем (upload_evidence вернёт key=None).
+        audio_sha256 = s3_key = None
         if wav_bytes:
             tmp_id         = int(datetime.utcnow().timestamp())
             storage_result = await upload_evidence(wav_bytes, location_id, tmp_id)
             audio_sha256   = storage_result.get("sha256")
-            s3_url         = storage_result.get("s3_url")
             s3_key         = storage_result.get("key")
 
         # ── Анализ фраз (regex резерв) + GPT events ──────────────
@@ -456,7 +457,7 @@ async def _process_submission(
                 gpt_details={"positives": result.get("positives", []), "issues": result.get("issues", []), "events": events},
                 speakers=speakers,
                 is_priority=is_priority_flag,
-                audio_sha256=audio_sha256,  s3_url=s3_url,  s3_key=s3_key,
+                audio_sha256=audio_sha256,  s3_key=s3_key,
                 payment_confirmed=payment_confirmed,
                 upsell_attempt=upsell_attempt,
                 customer_satisfaction=customer_satisfaction,
@@ -574,7 +575,6 @@ async def _process_submission(
                 "telegram_chat": telegram_chat,
                 "location_name": location_name,
                 "summary":       gpt_summary,
-                "audio_url":     s3_url,
                 "sha256":        audio_sha256,
                 "report_id":     report_id,
             })
@@ -583,7 +583,6 @@ async def _process_submission(
                 chat_id=telegram_chat, location_name=location_name,
                 transcript=transcript, found=found,
                 tone=effective_tone, score=final_score,
-                audio_url=s3_url,
                 report_id=report_id,
             )
         elif telegram_chat and not suppress_alert and notify_ok_conversations:
@@ -595,7 +594,6 @@ async def _process_submission(
                 score=final_score,
                 upsell=upsell_attempt,
                 greeting=has_greeting,
-                audio_url=s3_url,
                 report_id=report_id,
             )
 
@@ -612,7 +610,6 @@ async def _process_submission(
                                 location_name=location_name,
                                 incident_type="FRAUD",
                                 description=gpt_summary or "Обнаружено GPT-анализом",
-                                audio_url=s3_url,
                                 report_id=report_id,
                             )
             except Exception as _e:
@@ -896,9 +893,8 @@ async def get_reports(
             "upsell_attempt":        r.upsell_attempt,
             "customer_satisfaction": r.customer_satisfaction,
             "energy_level":          r.energy_level,
-            "s3_url":                r.s3_url,
             "audio_sha256":          r.audio_sha256,
-            "has_audio":             bool(r.s3_key or r.s3_url),
+            "has_audio":             bool(r.s3_key),
         }
         for r in rows
     ]
