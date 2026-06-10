@@ -148,6 +148,7 @@ async def _match_transaction(
                         ),
                         "audio_url": report.s3_url,
                         "sha256":    report.audio_sha256,
+                        "report_id": report.id,
                     })
 
         await db.commit()

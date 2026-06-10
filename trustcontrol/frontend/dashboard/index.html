@@ -2076,7 +2076,14 @@ function startDashboard(){
   const dc=document.getElementById('dashContent');
   if(dc)dc.style.display='none';
   loadUserInfo();
-  showPage('overview');
+  // Deep-link from an alert: open the requested report once we're in.
+  const pendReport=localStorage.getItem('tc_pending_report');
+  if(pendReport){
+    localStorage.removeItem('tc_pending_report');
+    setTimeout(()=>openReportById(pendReport), 400);
+  }else{
+    showPage('overview');
+  }
   setTimeout(checkOnboarding, 1800);
   clearInterval(_pollTimer);
   _pollTimer=setInterval(()=>{
@@ -2526,6 +2533,13 @@ function showReportModal(idx){
     audioWrap.style.display='none';
   }
   document.getElementById('reportModal').style.display='flex';
+}
+async function openReportById(reportId){
+  if(!reportId){showPage('overview');return;}
+  showPage('reports');                        // switch view (also kicks a load)
+  try{ await loadReportsPage(); }catch(e){}   // ensure _reportsCache is ready
+  const idx=_reportsCache.findIndex(r=>String(r.id)===String(reportId));
+  if(idx>=0)showReportModal(idx);             // fresh alert reports are in the latest page
 }
 async function loadReportsPage(){
   const days=document.getElementById('reportDays')?.value||'7';
@@ -3063,8 +3077,18 @@ async function unlinkTelegram(){
     document.getElementById('appWrap').style.display='none';
     document.getElementById('landingPage').style.display='';  // always show landing first
 
-    // Handle ?login_token= from Telegram /gettoken command
+    // Deep-link from a Telegram/email alert: ?report=<id>. Persist it so it
+    // survives the login redirect regardless of how the user signs in
+    // (password, OTP, Telegram). Consumed in startDashboard() after auth.
     const urlParams=new URLSearchParams(window.location.search);
+    const wantReport=urlParams.get('report');
+    if(wantReport&&/^\d+$/.test(wantReport)){
+      localStorage.setItem('tc_pending_report',wantReport);
+      const clean=window.location.pathname+window.location.hash;
+      window.history.replaceState({},'',clean);
+    }
+
+    // Handle ?login_token= from Telegram /gettoken command
     const loginToken=urlParams.get('login_token');
     if(loginToken){
       window.history.replaceState({},'','/');

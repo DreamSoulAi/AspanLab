@@ -504,6 +504,7 @@ async def _process_submission(
                         description=incident.description,
                         proof_s3_url=incident.proof_s3_url,
                         detected_phone=hit["phone"],
+                        report_id=report.id,
                     )
                 # Email alert for fraud — send to location owner
                 try:
@@ -518,6 +519,7 @@ async def _process_submission(
                                     incident_type="KASPI_FRAUD",
                                     description=incident.description,
                                     audio_url=incident.proof_s3_url,
+                                    report_id=report.id,
                                 )
                 except Exception as _e:
                     log.warning(f"Fraud email not sent: {_e}")
@@ -574,6 +576,7 @@ async def _process_submission(
                 "summary":       gpt_summary,
                 "audio_url":     s3_url,
                 "sha256":        audio_sha256,
+                "report_id":     report_id,
             })
         elif telegram_chat and (has_fraud or has_bad):
             await notifier.send_report(
@@ -581,6 +584,7 @@ async def _process_submission(
                 transcript=transcript, found=found,
                 tone=effective_tone, score=final_score,
                 audio_url=s3_url,
+                report_id=report_id,
             )
         elif telegram_chat and not suppress_alert and notify_ok_conversations:
             await notifier.send_ok_report(
@@ -592,6 +596,7 @@ async def _process_submission(
                 upsell=upsell_attempt,
                 greeting=has_greeting,
                 audio_url=s3_url,
+                report_id=report_id,
             )
 
         # Email for fraud incidents
@@ -608,6 +613,7 @@ async def _process_submission(
                                 incident_type="FRAUD",
                                 description=gpt_summary or "Обнаружено GPT-анализом",
                                 audio_url=s3_url,
+                                report_id=report_id,
                             )
             except Exception as _e:
                 log.warning(f"Fraud email not sent: {_e}")
