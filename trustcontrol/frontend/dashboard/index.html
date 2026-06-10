@@ -2510,10 +2510,18 @@ function showReportModal(idx){
   document.getElementById('rmTime').textContent=fmt(r.timestamp||r.created_at);
   document.getElementById('rmFlags').innerHTML=statusFlags(r);
   const audioWrap=document.getElementById('rmAudio');
-  if(r.s3_url){
-    audioWrap.innerHTML=`<audio controls style="width:100%;margin-bottom:4px"><source src="${esc(r.s3_url)}" type="audio/wav"></audio>`
-      +`<a href="${esc(r.s3_url)}" download style="font-size:12px;color:var(--accent2)">⬇ Скачать запись</a>`;
+  if(r.has_audio||r.s3_url){
     audioWrap.style.display='';
+    audioWrap.innerHTML='<span style="font-size:12px;color:var(--muted)">Загрузка записи…</span>';
+    // Свежая presigned-ссылка (живёт 15 мин). Прямую вечную ссылку больше не используем.
+    apiFetch('/reports/'+r.id+'/audio').then(res=>{
+      if(res&&res.url){
+        audioWrap.innerHTML=`<audio controls style="width:100%;margin-bottom:4px"><source src="${esc(res.url)}" type="audio/wav"></audio>`
+          +`<a href="${esc(res.url)}" download style="font-size:12px;color:var(--accent2)">⬇ Скачать запись</a>`;
+      }else{
+        audioWrap.innerHTML='<span style="font-size:12px;color:var(--muted)">Запись недоступна</span>';
+      }
+    }).catch(()=>{audioWrap.innerHTML='<span style="font-size:12px;color:var(--muted)">Запись недоступна</span>';});
   }else{
     audioWrap.style.display='none';
   }
