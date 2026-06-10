@@ -17,6 +17,7 @@
 
 import os
 import re
+import hmac
 import time
 import string
 import hashlib
@@ -95,6 +96,43 @@ def normalize_phone(raw: str) -> str | None:
 
 def _hash_otp(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
+
+
+# ── Telegram Login Widget — проверка подписи ──────────────────────────────────
+# https://core.telegram.org/widgets/login#checking-authorization
+# Ядро безопасности: НИКОГДА не доверяем данным от Telegram без верификации HMAC.
+
+TELEGRAM_AUTH_MAX_AGE = 86400   # 24 часа — данные старше отклоняются
+
+
+def verify_telegram_auth(data: dict, bot_token: str | None = None) -> bool:
+    """
+    Проверяет подпись данных Telegram Login Widget.
+
+    1. secret_key = SHA256(bot_token)
+    2. data_check_string = "\\n".join(sorted("key=value")) по всем полям кроме hash
+    3. HMAC-SHA256(data_check_string, secret_key) == hash  (constant-time)
+
+    Возвращает True только если подпись валидна. Любая ошибка → False.
+    """
+    token = bot_token or settings.TELEGRAM_BOT_TOKEN
+    recv_hash = str(data.get("hash", ""))
+    if not token or not recv_hash:
+        return False
+
+    pairs = [
+        f"{k}={v}"
+        for k, v in data.items()
+        if k != "hash" and v is not None
+    ]
+    data_check_string = "\n".join(sorted(pairs))
+
+    secret_key = hashlib.sha256(token.encode()).digest()
+    computed = hmac.new(
+        secret_key, data_check_string.encode(), hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(computed, recv_hash)
 
 
 # ── Pydantic schemas ───────────────────────────────────────────────────────────
@@ -433,6 +471,106 @@ async def tg_unlink(
     user.telegram_id   = None
     await db.commit()
     return {"status": "ok"}
+
+
+@router.post("/telegram-login", response_model=TokenResponse)
+async def telegram_login(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Вход / самозапись через Telegram Login Widget.
+
+    Тело запроса — JSON с полями виджета: id, first_name, last_name?,
+    username?, photo_url?, auth_date, hash.
+
+    Безопасность:
+      - rate limit по IP (как у /login)
+      - ОБЯЗАТЕЛЬНАЯ проверка HMAC-подписи (verify_telegram_auth)
+      - auth_date не старше 24 часов
+
+    Логика:
+      - найден по telegram_id → выдаём JWT (вход)
+      - найден по telegram_chat (привязал бота раньше) → дописываем
+        telegram_id и выдаём JWT (без дубля)
+      - не найден → создаём trial-клиента и сразу выдаём JWT
+    """
+    client_ip = _get_client_ip(request)
+    _check_rate_limit(client_ip)
+
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Некорректные данные Telegram")
+
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Некорректные данные Telegram")
+
+    # 1. Подпись — ядро безопасности
+    if not verify_telegram_auth(data):
+        _log.warning(f"telegram_login: invalid signature from ip={client_ip}")
+        raise HTTPException(status_code=401, detail="Подпись Telegram недействительна")
+
+    # 2. Свежесть данных
+    try:
+        auth_date = int(data.get("auth_date", 0))
+    except (TypeError, ValueError):
+        auth_date = 0
+    if auth_date <= 0 or (time.time() - auth_date) > TELEGRAM_AUTH_MAX_AGE:
+        raise HTTPException(status_code=401, detail="Данные Telegram устарели — войдите заново")
+
+    tg_id = str(data.get("id", "")).strip()
+    if not tg_id:
+        raise HTTPException(status_code=400, detail="Не передан Telegram ID")
+
+    # 3. Поиск существующего клиента по telegram_id
+    result = await db.execute(select(User).where(User.telegram_id == tg_id))
+    user = result.scalar()
+
+    # Фолбэк: клиент уже привязал этот Telegram через бота (telegram_chat),
+    # но без telegram_id — подхватываем его, чтобы не плодить дубль.
+    if not user:
+        result = await db.execute(select(User).where(User.telegram_chat == tg_id))
+        user = result.scalar()
+        if user and not user.telegram_id:
+            user.telegram_id = tg_id
+
+    # 4. Самозапись нового клиента
+    if not user:
+        first = (data.get("first_name") or "").strip()
+        last  = (data.get("last_name") or "").strip()
+        uname = (data.get("username") or "").strip()
+        name  = (f"{first} {last}".strip()) or uname or f"tg{tg_id}"
+        user = User(
+            name=name[:100],
+            telegram_id=tg_id,
+            telegram_chat=tg_id,   # id == chat_id личного чата с ботом
+            plan="trial",
+            plan_expires=datetime.utcnow() + timedelta(days=TRIAL_DAYS),
+            is_verified=True,
+            is_active=True,
+            is_admin=False,
+        )
+        db.add(user)
+        _log.info(f"telegram_login: new client tg_id={tg_id} name={name!r}")
+    else:
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
+        # держим личный чат в актуальном состоянии для уведомлений
+        if not user.telegram_chat:
+            user.telegram_chat = tg_id
+
+    user.last_login = datetime.utcnow()
+    _login_attempts.pop(client_ip, None)
+    await db.commit()
+    await db.refresh(user)
+
+    return TokenResponse(
+        access_token=create_token(user.id),
+        user_id=user.id,
+        name=user.name,
+        plan=user.plan,
+    )
 
 
 class TokenLoginRequest(BaseModel):

@@ -3,62 +3,50 @@
 #  Самое важное — multi-tenant изоляция данных.
 # ════════════════════════════════════════════════════════════
 
+import time
+
 import pytest
 from httpx import AsyncClient
 
-from tests.conftest import auth_headers, register_user
+from tests.conftest import auth_headers, register_user, telegram_widget_payload
 
 
 @pytest.mark.asyncio
-class TestAuth:
-    """Тесты авторизации (phone + OTP)."""
+class TestTelegramAuth:
+    """Тесты входа и самозаписи через Telegram Login Widget."""
 
-    async def test_register_sends_otp(self, client: AsyncClient):
-        r = await client.post("/api/auth/register", json={
-            "name":     "Данил",
-            "phone":    "+77001112201",
-            "password": "strongpass123",
-        })
-        assert r.status_code == 200
-        data = r.json()
-        # OTP_BYPASS=true → возвращается otp_code, статус otp_sent
-        assert data["status"] == "otp_sent"
-        assert data["otp_code"] == "000000"
-
-    async def test_verify_otp_returns_token(self, client: AsyncClient):
-        data = await register_user(client)
+    async def test_self_register_creates_trial_client(self, client: AsyncClient):
+        """Новый человек → создаётся trial-аккаунт + выдаётся токен."""
+        data = await register_user(client, name="Данил")
         assert "access_token" in data
         assert data["plan"] == "trial"
+        assert data["name"] == "Данил"
 
-    async def test_register_weak_password(self, client: AsyncClient):
-        """Пароль меньше 8 символов — ошибка валидации."""
-        r = await client.post("/api/auth/register", json={
-            "name":     "Test",
-            "phone":    "+77001112202",
-            "password": "123",
-        })
-        assert r.status_code == 422
+    async def test_repeat_login_same_user(self, client: AsyncClient):
+        """Повторный вход с тем же telegram_id → тот же аккаунт, не дубль."""
+        first = await register_user(client, tg_id=555001, name="Айгуль")
+        second = await register_user(client, tg_id=555001, name="Айгуль")
+        assert first["user_id"] == second["user_id"]
 
-    async def test_register_duplicate_phone(self, client: AsyncClient):
-        """Нельзя зарегистрироваться повторно с тем же номером после верификации."""
-        phone = "+77001112203"
-        await register_user(client, phone=phone)  # верифицирован
-
-        r = await client.post("/api/auth/register", json={
-            "name":     "User",
-            "phone":    phone,
-            "password": "strongpass123",
-        })
-        assert r.status_code == 400
-
-    async def test_login_wrong_password(self, client: AsyncClient):
-        """Неверный пароль → 401."""
-        data = await register_user(client)
-        r = await client.post("/api/auth/login", data={
-            "username": data["phone"],
-            "password": "wrongpassword",
-        })
+    async def test_invalid_signature_rejected(self, client: AsyncClient):
+        """Битая подпись → 401, аккаунт не создаётся."""
+        payload = telegram_widget_payload(tg_id=555002, sign=False)
+        r = await client.post("/api/auth/telegram-login", json=payload)
         assert r.status_code == 401
+
+    async def test_stale_auth_date_rejected(self, client: AsyncClient):
+        """Данные старше 24 часов → 401."""
+        old = int(time.time()) - 86400 - 60   # 24ч + минута назад
+        payload = telegram_widget_payload(tg_id=555003, auth_date=old)
+        r = await client.post("/api/auth/telegram-login", json=payload)
+        assert r.status_code == 401
+
+    async def test_new_client_sees_empty_dashboard(self, client: AsyncClient):
+        """Самозаписанный клиент видит только свои данные (пусто на старте)."""
+        headers = await auth_headers(client, tg_id=555004)
+        r = await client.get("/api/locations/", headers=headers)
+        assert r.status_code == 200
+        assert r.json() == []
 
     async def test_access_without_token(self, client: AsyncClient):
         """Нельзя получить данные без токена."""

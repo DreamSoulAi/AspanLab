@@ -15,14 +15,20 @@ class User(Base):
     name            = Column(String(100), nullable=False)
     company_name    = Column(String(150), nullable=True)
 
-    # Телефон — основной идентификатор (уникальный)
-    phone           = Column(String(20), unique=True, index=True, nullable=False)
+    # Телефон — опционален. Для Telegram-самозаписи первичный идентификатор —
+    # telegram_id. Телефон может быть заполнен позже в профиле (или задан
+    # админом при ручном создании клиента). unique допускает несколько NULL.
+    phone           = Column(String(20), unique=True, index=True, nullable=True)
 
     # Email — опциональный (для уведомлений, не для авторизации)
     email           = Column(String(150), nullable=True)
 
-    hashed_password = Column(String(255), nullable=False)
-    telegram_id     = Column(String(50))
+    # Пароль опционален: Telegram-клиенты входят без пароля (подпись виджета).
+    # Заполнен только у клиентов, заведённых админом (CLI / create-client).
+    hashed_password = Column(String(255), nullable=True)
+
+    # telegram_id — первичный идентификатор для входа через Telegram Login Widget
+    telegram_id     = Column(String(50), unique=True, index=True)
     telegram_chat   = Column(String(50))
 
     # Phone verification (OTP)

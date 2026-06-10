@@ -360,6 +360,54 @@ async def _fix_schema():
                 await db.rollback()
                 print(f"⚠️ schema fix users.phone index: {e}", flush=True)
 
+        # ── users.phone → nullable (Telegram-самозапись без телефона) ───────
+        if is_pg:
+            try:
+                r = await db.execute(sa.text(
+                    "SELECT is_nullable FROM information_schema.columns "
+                    "WHERE table_name='users' AND column_name='phone'"
+                ))
+                row = r.fetchone()
+                if row and row[0] == "NO":
+                    await _run(db, "ALTER TABLE users ALTER COLUMN phone DROP NOT NULL",
+                               "users.phone → nullable")
+            except Exception as e:
+                print(f"⚠️ schema fix users.phone nullable: {e}", flush=True)
+
+        # ── users.hashed_password → nullable (Telegram-вход без пароля) ──────
+        if is_pg:
+            try:
+                r = await db.execute(sa.text(
+                    "SELECT is_nullable FROM information_schema.columns "
+                    "WHERE table_name='users' AND column_name='hashed_password'"
+                ))
+                row = r.fetchone()
+                if row and row[0] == "NO":
+                    await _run(db, "ALTER TABLE users ALTER COLUMN hashed_password DROP NOT NULL",
+                               "users.hashed_password → nullable")
+            except Exception as e:
+                print(f"⚠️ schema fix users.hashed_password nullable: {e}", flush=True)
+
+        # ── users.telegram_id → unique index (первичный ид. для Telegram-входа) ─
+        if is_pg:
+            try:
+                r = await db.execute(sa.text(
+                    "SELECT 1 FROM pg_indexes WHERE indexname='ix_users_telegram_id'"
+                ))
+                if not r.fetchone():
+                    # Обнуляем пустые строки, чтобы они не конфликтовали в unique
+                    await db.execute(sa.text(
+                        "UPDATE users SET telegram_id = NULL WHERE telegram_id = ''"
+                    ))
+                    await db.execute(sa.text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_telegram_id ON users(telegram_id)"
+                    ))
+                    await db.commit()
+                    print("✅ schema fix: users.telegram_id unique index added", flush=True)
+            except Exception as e:
+                await db.rollback()
+                print(f"⚠️ schema fix users.telegram_id index: {e}", flush=True)
+
         # ── otp_codes.phone ─────────────────────────────────────────────────
         try:
             if not await _check_col(db, "otp_codes", "phone"):

@@ -1078,23 +1078,37 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <!-- LOGIN -->
       <div id="loginForm">
         <div class="auth-title">Добро пожаловать</div>
-        <div class="auth-sub">Войдите в свой аккаунт</div>
-        <div class="f-group">
-          <label class="f-label">Номер телефона</label>
-          <input class="f-input" type="tel" id="loginPhone" placeholder="+7 7XX XXX XX XX" maxlength="18" autocomplete="tel" autocorrect="off" autocapitalize="off">
+        <div class="auth-sub">Вход и регистрация — через Telegram, без пароля</div>
+
+        <!-- Telegram Login Widget монтируется сюда из JS (mountTelegramLogin) -->
+        <div id="tgLoginBox" style="display:flex;justify-content:center;min-height:48px;margin:18px 0 6px"></div>
+        <div id="tgLoginHint" style="font-size:12px;color:var(--muted);text-align:center;line-height:1.5">
+          Нажмите кнопку выше — Telegram подтвердит вашу личность.<br>Новый аккаунт создаётся автоматически (7 дней бесплатно).
         </div>
-        <div class="f-group">
-          <label class="f-label">Пароль</label>
-          <div class="pw-wrap">
-            <input class="f-input" type="password" id="loginPassword" placeholder="••••••••"
-                   autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
-            <button type="button" class="pw-eye" onclick="togglePw('loginPassword',this)" tabindex="-1">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
+        <div id="tgLoginError" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:13px;color:#FCA5A5;text-align:center"></div>
+
+        <!-- Вход по паролю — запасной путь для администратора -->
+        <div style="text-align:center;margin-top:22px">
+          <a id="adminLoginToggle" onclick="toggleAdminLogin()" style="font-size:12px;color:var(--muted);cursor:pointer;text-decoration:underline">Вход для администратора →</a>
+        </div>
+        <div id="adminLoginBox" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)">
+          <div class="f-group">
+            <label class="f-label">Номер телефона</label>
+            <input class="f-input" type="tel" id="loginPhone" placeholder="+7 7XX XXX XX XX" maxlength="18" autocomplete="tel" autocorrect="off" autocapitalize="off">
           </div>
+          <div class="f-group">
+            <label class="f-label">Пароль</label>
+            <div class="pw-wrap">
+              <input class="f-input" type="password" id="loginPassword" placeholder="••••••••"
+                     autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+              <button type="button" class="pw-eye" onclick="togglePw('loginPassword',this)" tabindex="-1">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <button class="f-btn" id="loginBtn" onclick="doLogin()">Войти →</button>
+          <div id="loginError" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:13px;color:#FCA5A5;text-align:center"></div>
         </div>
-        <button class="f-btn" id="loginBtn" onclick="doLogin()">Войти →</button>
-        <div id="loginError" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:13px;color:#FCA5A5;text-align:center"></div>
         <div class="auth-back-link" onclick="goBackToLanding()">← На главную</div>
       </div>
 
@@ -1894,7 +1908,69 @@ function goBackToLanding(){
 function showLogin(){
   document.getElementById('loginForm').style.display='';
   _hideLoginErr();
+  mountTelegramLogin();
 }
+
+function toggleAdminLogin(){
+  const box=document.getElementById('adminLoginBox');
+  if(!box)return;
+  box.style.display=(box.style.display==='none'||!box.style.display)?'':'none';
+}
+
+/* ── TELEGRAM LOGIN WIDGET ── */
+let _tgWidgetMounted=false;
+async function mountTelegramLogin(){
+  if(_tgWidgetMounted)return;
+  const box=document.getElementById('tgLoginBox');
+  if(!box)return;
+  const cfg=await loadAppConfig();
+  const bot=(cfg&&cfg.tg_bot_username||'').replace(/^@/,'').trim();
+  if(!bot){
+    const hint=document.getElementById('tgLoginHint');
+    if(hint)hint.textContent='Telegram-вход временно недоступен — используйте вход для администратора.';
+    return;
+  }
+  // Официальный скрипт виджета сам заменяет себя на кнопку-iframe.
+  // Работает только на домене, заданном в @BotFather (/setdomain).
+  const s=document.createElement('script');
+  s.async=true;
+  s.src='https://telegram.org/js/telegram-widget.js?22';
+  s.setAttribute('data-telegram-login',bot);
+  s.setAttribute('data-size','large');
+  s.setAttribute('data-radius','10');
+  s.setAttribute('data-onauth','onTelegramAuth(user)');
+  s.setAttribute('data-request-access','write');
+  box.appendChild(s);
+  _tgWidgetMounted=true;
+}
+
+function _showTgErr(msg){
+  const el=document.getElementById('tgLoginError');
+  if(el){el.textContent=msg;el.style.display='block';}
+}
+
+// Глобальный колбэк, вызывается виджетом Telegram после успешной авторизации.
+window.onTelegramAuth=async function(user){
+  try{
+    const res=await fetch(API+'/auth/telegram-login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(user)
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok){
+      let err=data.detail||'Не удалось войти через Telegram';
+      if(Array.isArray(err))err=err.map(e=>e.msg||String(e)).join(', ');
+      _showTgErr(typeof err==='string'?err:'Не удалось войти через Telegram');
+      return;
+    }
+    if(data.access_token){
+      _token=data.access_token;localStorage.setItem('tc_token',_token);startDashboard();
+    }
+  }catch(e){
+    _showTgErr('Сервер не отвечает — попробуйте ещё раз');
+  }
+};
 
 function _showLoginErr(msg){
   const el=document.getElementById('loginError');
