@@ -58,7 +58,9 @@
   wa_sent.log). Общая сессия — `marketing/wa_session/`.
 
 **ИНФРАСТРУКТУРА ПРОДА (поднята 02.06.2026 — НЕ ПЕРЕНАСТРАИВАТЬ):**
+- **Домен:** `trustcontrol.kz` — купленный домен. BotFather `/setdomain` = `trustcontrol.kz`.
 - **Бэкенд:** Render, деплоит ветку **main** → `https://aspanlab.onrender.com`
+  (или `https://trustcontrol.kz` если DNS уже привязан к Render).
   (free tier — спит при простое, первый запрос после паузы +50с, это норма).
 - **БД:** Neon PostgreSQL (free, AWS Frankfurt). `DATABASE_URL` в Render.
   `database.py` сам нормализует URL. Данные больше НЕ теряются.
