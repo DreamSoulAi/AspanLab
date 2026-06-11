@@ -509,15 +509,12 @@ async def _merge_transcripts(
     return openai_clean
 
 
-async def _transcribe_audio(wav_bytes: bytes, language: str = None, model: str = _PRIMARY_STT_MODEL) -> str:
+async def _transcribe_audio(wav_bytes: bytes, model: str = _PRIMARY_STT_MODEL) -> str:
     """
-    Транскрипция через OpenAI. По умолчанию gpt-4o-mini-transcribe —
+    Транскрипция через OpenAI. По умолчанию gpt-4o-transcribe —
     универсальная многоязычная модель, лучшая на смешанной русско-казахской
     речи. model="whisper-1" — последний фолбэк.
-
-    Если language передан явно как "kk" или "en" — используем подсказку.
-    Иначе (включая дефолтный "ru" локации) — даём авто-детект,
-    т.к. в Казахстане в одном разговоре может быть смесь языков.
+    Язык не передаём — авто-детект лучше для смешанной речи Казахстана.
     """
     if not settings.OPENAI_API_KEY:
         return ""
@@ -719,7 +716,7 @@ async def analyze_audio_with_fallback(
         issai_diag: dict = {}
         issai_raw, primary_raw = await asyncio.gather(
             issai_stt.transcribe(wav_bytes, diag=issai_diag),
-            _transcribe_audio(wav_bytes, language, model=_PRIMARY_STT_MODEL),
+            _transcribe_audio(wav_bytes, model=_PRIMARY_STT_MODEL),
         )
         issai_raw   = _strip_repeat_loops(issai_raw  or "")
         primary_raw = _strip_repeat_loops(primary_raw or "")
@@ -763,7 +760,7 @@ async def analyze_audio_with_fallback(
 
     else:
         # ── СТАНДАРТНЫЙ ПУТЬ: ISSAI не включён → primary STT → Yandex ────────
-        primary_text = await _transcribe_audio(wav_bytes, language, model=_PRIMARY_STT_MODEL)
+        primary_text = await _transcribe_audio(wav_bytes, model=_PRIMARY_STT_MODEL)
         if primary_text and len(primary_text.split()) >= 2:
             stt_diag = {"engine": _PRIMARY_STT_MODEL, "stage": "ok",
                         "chars": len(primary_text), "text": primary_text[:160]}
@@ -811,7 +808,7 @@ async def analyze_audio_with_fallback(
 
     # ── Фолбэк 2: Whisper-1 + text-GPT (последний шанс) ─────────────────
     log.info("Фолбэк на Whisper-1+text")
-    text = await _transcribe_audio(wav_bytes, language, model="whisper-1")
+    text = await _transcribe_audio(wav_bytes, model="whisper-1")
     if not text or len(text) < 3:
         log.info("Whisper не распознал речь — пропуск")
         if audio_said_ignore:

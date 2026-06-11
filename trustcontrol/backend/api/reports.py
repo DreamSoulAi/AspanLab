@@ -367,7 +367,7 @@ async def _process_submission(
             s3_key         = storage_result.get("key")
 
         # ── Анализ фраз (regex резерв) + GPT events ──────────────
-        found = analyze(transcript, business_type=business_type, custom_phrases=custom_phrases or [])
+        found = analyze(transcript, business_type=business_type)
 
         # ── Фрод с порогом уверенности ───────────────────────────
         # GPT различает явный фрод (90-100) и косвенный намёк (50-89).

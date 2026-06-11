@@ -26,7 +26,17 @@ class Location(Base):
     vad_level       = Column(Integer, default=2)            # 0-3
     silence_seconds = Column(Integer, default=3)
     language        = Column(String(10), default="ru")
-    custom_phrases  = Column(JSON, default=list)            # доп. фразы владельца
+    # Плоский глоссарий точки для промпта транскрипции STT:
+    # названия позиций меню, размеры, имена сотрудников, местные слова.
+    # Формат: список строк ["капучино", "американо", "S", "M", "Айгуль"].
+    # Подмешивается в prompt gpt-4o-transcribe — снижает ошибки распознавания.
+    custom_phrases  = Column(JSON, default=list)
+
+    # Структурированное меню (для анализа допродаж — Блок 4):
+    # [{"name": "Капучино", "variants": ["S", "M", "L"], "price": 800}, ...]
+    # Используется в анализе: детектить размеры, цены, допродажи.
+    # Плоский список названий из этого поля автоматически добавляется в custom_phrases.
+    menu_json       = Column(JSON, nullable=True)
 
     # Антифрод: настройки владельца
     allowed_phones   = Column(JSON, default=list)           # белый список Каспи-номеров
