@@ -35,6 +35,7 @@ from backend.services.analyzer import (
     FRAUD_HARD_THRESHOLD, FRAUD_SOFT_THRESHOLD,
 )
 from backend.services.audio_analyzer import analyze_audio_with_fallback
+from backend.services.stt_prompt import flatten_menu_glossary
 from backend.services.storage import upload_evidence
 from backend.services.pos_matcher import match_report_with_pos
 from backend.services.kaspi_detector import check_kaspi_fraud
@@ -162,6 +163,7 @@ async def _process_submission(
     track_greeting: bool = True,
     track_goodbye: bool = True,
     employees: Optional[list] = None,
+    menu_json: Optional[list] = None,
 ) -> None:
     """
     Полный цикл обработки одного аудио-сегмента.
@@ -194,11 +196,16 @@ async def _process_submission(
             business_context_parts.append(f"Желательные допродажи (бонус к оценке, НЕ обязанность): {upsell_script}")
         business_context = "\n".join(business_context_parts) or None
 
+        # Плоский глоссарий для STT-промпта: custom_phrases + названия/размеры из меню.
+        # business_context (описание, скрипты) → в GPT-анализ. Это → в транскрипцию.
+        location_glossary = list(custom_phrases or []) + flatten_menu_glossary(menu_json)
+
         result = await analyze_audio_with_fallback(
             wav_bytes=wav_bytes,
             transcript_text=transcript_text,
             language=language,
             business_context=business_context,
+            location_glossary=location_glossary or None,
         )
 
         # ── OpenAI не ответил → в очередь повторов ───────────────
@@ -812,6 +819,7 @@ async def submit_audio(
         track_greeting=bool(getattr(location, 'track_greeting', True)),
         track_goodbye=bool(getattr(location, 'track_goodbye', True)),
         employees=getattr(location, 'employees', None) or [],
+        menu_json=getattr(location, 'menu_json', None),
     )
 
     return {"status": "ok", "message": "Принято в обработку"}

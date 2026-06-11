@@ -18,6 +18,7 @@ from openai import AsyncOpenAI
 from backend.config import settings
 from backend.services.gpt_analyzer import gpt_analyze
 from backend.services import issai_stt, yandex_stt
+from backend.services.stt_prompt import build_transcription_prompt
 
 log = logging.getLogger("audio_analyzer")
 # timeout=90s — режем зависание (с запасом на GPT-4o-mini-audio 5-30s),
@@ -509,12 +510,17 @@ async def _merge_transcripts(
     return openai_clean
 
 
-async def _transcribe_audio(wav_bytes: bytes, model: str = _PRIMARY_STT_MODEL) -> str:
+async def _transcribe_audio(
+    wav_bytes: bytes,
+    model: str = _PRIMARY_STT_MODEL,
+    location_glossary: list[str] | None = None,
+) -> str:
     """
     Транскрипция через OpenAI. По умолчанию gpt-4o-transcribe —
     универсальная многоязычная модель, лучшая на смешанной русско-казахской
     речи. model="whisper-1" — последний фолбэк.
     Язык не передаём — авто-детект лучше для смешанной речи Казахстана.
+    Промпт собирается через build_transcription_prompt (единая точка).
     """
     if not settings.OPENAI_API_KEY:
         return ""
@@ -523,21 +529,11 @@ async def _transcribe_audio(wav_bytes: bytes, model: str = _PRIMARY_STT_MODEL) -
         buf = _io.BytesIO(wav_bytes)
         buf.name = "audio.wav"
 
-        # Казахстан = 130+ национальностей. На кассе в Алматы могут говорить
-        # на узбекском, корейском, английском, дунганском, любом.
-        # Всегда даём автоопределение языка — модель сама решит.
-        kwargs = {"model": model, "file": buf}
-        # Подсказываем Whisper реальный контекст: большинство речи —
-        # шала-казахский (русская лексика + казахский акцент/синтаксис).
-        # Языки не перечисляем — Whisper сам распознаёт все 99 языков.
-        kwargs["prompt"] = (
-            "Запись разговора с кассы в Казахстане. "
-            "Транскрибируй ВСЕ голоса: кассира (близко к микрофону) И клиента "
-            "(стоит дальше, голос тише — это не фон, это живой человек). "
-            "Шала-казахский: русские слова с казахским акцентом и вставками "
-            "сәлем, рахмет, ия, жоқ, теңге, картамен, не аласыз. "
-            "Сохраняй оригинальный язык каждой фразы, не переводи."
-        )
+        kwargs = {
+            "model":  model,
+            "file":   buf,
+            "prompt": build_transcription_prompt(location_glossary),
+        }
 
         tr = await client.audio.transcriptions.create(**kwargs)
         return _strip_repeat_loops((tr.text or "").strip())
@@ -670,6 +666,7 @@ async def analyze_audio_with_fallback(
     transcript_text: str | None,
     language: str = None,
     business_context: str = None,
+    location_glossary: list[str] | None = None,
 ) -> dict:
     """
     Универсальная точка входа.
@@ -716,7 +713,7 @@ async def analyze_audio_with_fallback(
         issai_diag: dict = {}
         issai_raw, primary_raw = await asyncio.gather(
             issai_stt.transcribe(wav_bytes, diag=issai_diag),
-            _transcribe_audio(wav_bytes, model=_PRIMARY_STT_MODEL),
+            _transcribe_audio(wav_bytes, model=_PRIMARY_STT_MODEL, location_glossary=location_glossary),
         )
         issai_raw   = _strip_repeat_loops(issai_raw  or "")
         primary_raw = _strip_repeat_loops(primary_raw or "")
@@ -760,7 +757,7 @@ async def analyze_audio_with_fallback(
 
     else:
         # ── СТАНДАРТНЫЙ ПУТЬ: ISSAI не включён → primary STT → Yandex ────────
-        primary_text = await _transcribe_audio(wav_bytes, model=_PRIMARY_STT_MODEL)
+        primary_text = await _transcribe_audio(wav_bytes, model=_PRIMARY_STT_MODEL, location_glossary=location_glossary)
         if primary_text and len(primary_text.split()) >= 2:
             stt_diag = {"engine": _PRIMARY_STT_MODEL, "stage": "ok",
                         "chars": len(primary_text), "text": primary_text[:160]}
@@ -808,7 +805,7 @@ async def analyze_audio_with_fallback(
 
     # ── Фолбэк 2: Whisper-1 + text-GPT (последний шанс) ─────────────────
     log.info("Фолбэк на Whisper-1+text")
-    text = await _transcribe_audio(wav_bytes, model="whisper-1")
+    text = await _transcribe_audio(wav_bytes, model="whisper-1", location_glossary=location_glossary)
     if not text or len(text) < 3:
         log.info("Whisper не распознал речь — пропуск")
         if audio_said_ignore:

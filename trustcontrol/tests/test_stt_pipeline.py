@@ -204,7 +204,7 @@ def test_audio_model_ignore_rescued_by_whisper(_mock_models):
     _enable_issai(_mock_models, "")                       # ISSAI вернул пусто
     async def _audio(wav, **k):
         return {"status": "IGNORE", "is_business": False}  # аудио-модель сдалась
-    async def _whisper(wav, lang=None, model=None):
+    async def _whisper(wav, model=None, **kwargs):
         return "здравствуйте два капучино с вас тысяча двести спасибо"
     async def _gpt(text, **k):
         return {"status": "OK", "is_business": True, "score": 78, "events": {},
@@ -222,7 +222,7 @@ def test_all_engines_silent_stays_ignore(_mock_models):
     _enable_issai(_mock_models, "")
     async def _audio(wav, **k):
         return {"status": "IGNORE", "is_business": False}
-    async def _whisper(wav, lang=None, model=None):
+    async def _whisper(wav, model=None, **kwargs):
         return ""                                          # Whisper тоже ничего
     _mock_models.setattr(A, "analyze_audio", _audio)
     _mock_models.setattr(A, "_transcribe_audio", _whisper)
