@@ -68,6 +68,13 @@ class Settings:
     WHISPER_MODEL:    str = "whisper-1"
     WHISPER_LANGUAGE: str = os.getenv("WHISPER_LANGUAGE", "ru")
 
+    # ── RMS фильтр тишины ────────────────────────────────────
+    # Аудио тише этого порога (16-bit PCM, 0-32768) считается тишиной
+    # и не отправляется в API. 0 = фильтр отключён.
+    # Типичные значения: тишина ~0-50, фон ~100-400, речь ~500+.
+    # Дефолт 300 — отсекает только настоящую тишину/статику.
+    RMS_SILENCE_THRESHOLD: int = int(os.getenv("RMS_SILENCE_THRESHOLD", "300"))
+
     # ── ISSAI STT — self-hosted faster-whisper (whisper-turbo-ksc2) ────
     # Лучшая открытая модель для казахского (9.16% WER, KSC2 + code-switching).
     # Запустить воркер: docker-compose -f docker-compose.issai.yml up -d
