@@ -95,10 +95,9 @@ async def dashboard(
     ]
     qualified = len(qualified_reports)
 
-    if total == 0:
-        return {"today": {"total": 0, "qualified": 0, "score": 0, "greetings_pct": 0, "bonus_pct": 0,
-                          "bad_count": 0, "fraud_count": 0, "positive_tone": 0, "negative_tone": 0},
-                "week": [], "alerts_today": 0, "recent_reports": []}
+    # ВАЖНО: не делаем ранний return когда сегодня 0 разговоров —
+    # иначе график за 7 дней и «Последние разговоры» обнуляются, хотя
+    # данные за прошлые дни есть. Все расчёты ниже корректно работают на пустом today.
 
     def pct(lst, flag):
         return round(sum(1 for r in lst if getattr(r, flag)) / len(lst) * 100) if lst else 0
@@ -146,12 +145,14 @@ async def dashboard(
             "fraud_count":   sum(1 for r in day_qualified if r.has_fraud),
         })
 
-    # ── Последние разговоры (для таблицы на обзоре) ─────────
-    _recent = sorted(
-        [r for r in today_reports if not r.is_hidden],
-        key=lambda r: r.timestamp or datetime.min,
-        reverse=True,
-    )[:10]
+    # ── Последние разговоры (свежие, не только сегодня) ─────
+    recent_q = await db.execute(
+        select(Report)
+        .where(Report.location_id.in_(filter_ids), Report.is_hidden == False)  # noqa: E712
+        .order_by(Report.timestamp.desc())
+        .limit(10)
+    )
+    _recent = recent_q.scalars().all()
     recent_reports = [
         {
             "id":           r.id,

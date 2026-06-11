@@ -2478,7 +2478,7 @@ async function resolveInc(id,btn){
 
 function renderRecentReports(reports){
   const el=document.getElementById('reportsTable');if(!el)return;
-  if(!reports.length){el.innerHTML='<tr><td colspan="5" class="empty-state">Нет разговоров сегодня</td></tr>';return;}
+  if(!reports.length){el.innerHTML='<tr><td colspan="5" class="empty-state">Разговоров пока нет</td></tr>';return;}
   el.innerHTML=reports.slice(0,10).map(r=>`
     <tr>
       <td>${fmt(r.timestamp||r.created_at)}</td>
