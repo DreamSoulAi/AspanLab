@@ -177,6 +177,37 @@ np.max — один стук аппарата (peak≈0.98) блокировал
 **ЯНДЕКС — ТУПИК:** новые ключи AQWJ не работают на REST v2 (нужен gRPC v3).
 Остаётся в коде как авто-фолбэк если появится рабочий ключ.
 
+**ЗВУКОВОЙ ПАЙПЛАЙН + ГЛОССАРИЙ — ПЕРЕСБОРКА (11.06.2026, Блок 3):**
+Единая логика словаря и двухступенчатой транскрипции. Что изменилось:
+1. **Глоссарий точки (ожившее поле `Location.custom_phrases`):** плоский список
+   слов точки (названия меню, размеры, имена кассиров) — идёт в ПРОМПТ
+   ТРАНСКРИПЦИИ. Раньше поле было мёртвым. Бизнес-контекст (business_description/
+   скрипты) по-прежнему идёт в АНАЛИЗ, не путать.
+2. **`Location.menu_json`** (миграция 0007): структура меню
+   `[{"name","variants":["S","M","L"],"price"}]`. Названия+размеры → глоссарий
+   транскрипции; структура с ценами → доступна анализу (допродажи).
+3. **`backend/services/stt_prompt.py`** — ЕДИНАЯ сборка промпта STT.
+   База 69 слов: CRITICAL (платёж/фрод, не режется) + STANDARD (деньги/каз.).
+   Глоссарий точки добавляется с дедупликацией, жёсткий обрез на 180 словах
+   (длинный промпт → галлюцинации). build_transcription_prompt() — точка входа.
+4. **RMS-фильтр тишины** (`_compute_rms` в audio_analyzer): мёртвый эфир
+   (RMS < `RMS_SILENCE_THRESHOLD`, дефолт 120) не идёт в STT — экономия денег.
+   120 = безопасный пол, тихую речь/телефон (RMS 150+) не трогает. audioop+numpy.
+5. **Стадия 2 — реконструкция** (`reconstruct_transcript`): gpt-4o-mini чистит
+   ошибки STT (kera→QR), возвращает {text, confidence 0-1, corrections[],
+   needs_review}. Уверенность <0.5 → пометка ручной проверки, текст НЕ теряется.
+   Retry 3× с backoff на сбои API. `_merge_transcripts` (гибрид ISSAI+OpenAI)
+   сведён к тому же формату — один GPT-вызов реконструкции на запись.
+   confidence/corrections/needs_review лежат в result["_stt_diag"].
+6. **Дашборд:** в настройках точки секция «Меню и словарь» — поле глоссария +
+   кнопка «📷 Загрузить фото меню» (1-3 фото → gpt-4o-mini vision →
+   `backend/services/menu_vision.py` → редактируемый список → PUT /glossary).
+   Vision только при ручной загрузке, не на каждую запись.
+7. **`test_pipeline.py`** (корень): прогон одного аудио через реальный пайплайн
+   с выводом времени и стоимости($) по шагам. `python test_pipeline.py rec.wav`.
+Тесты STT: 55 passed (`pytest tests/test_stt_pipeline.py`). Env-тюнинг:
+`RMS_SILENCE_THRESHOLD`, `STT_MODEL`. Деплоится на Render из main/ветки.
+
 **Обслуживание VPS:**
 - Логи: `docker compose -f docker-compose.issai.yml logs -f`
 - Обновить воркер: `cd ~/AspanLab/trustcontrol && git checkout main && git pull && docker compose -f docker-compose.issai.yml --env-file issai.env up -d --build`
