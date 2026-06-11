@@ -1594,31 +1594,34 @@ textarea.f-input{resize:vertical;line-height:1.6}
 
       <!-- ── SETTINGS ── -->
       <div class="page" id="page-settings">
-        <div class="topbar"><div class="page-title">Настройки</div></div>
+        <div class="topbar" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div class="page-title">Настройки</div>
+          <button onclick="showPayInfo()" style="background:rgba(16,185,129,.12);color:var(--green,#10B981);border:1px solid rgba(16,185,129,.3);padding:9px 16px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">💳 Оплатить / продлить</button>
+        </div>
 
-        <!-- Step indicator: 5 steps -->
+        <!-- Step indicator: 5 steps (кликабельны — можно прыгнуть на любой) -->
         <div class="wiz-steps">
-          <div class="wiz-step active" id="wizStep1">
+          <div class="wiz-step active" id="wizStep1" onclick="wizGo(1)" style="cursor:pointer">
             <div class="wiz-step-num">1</div>
             <div class="wiz-step-label">Профиль</div>
           </div>
           <div class="wiz-connector" id="wizConn1"></div>
-          <div class="wiz-step" id="wizStep2">
+          <div class="wiz-step" id="wizStep2" onclick="wizGo(2)" style="cursor:pointer">
             <div class="wiz-step-num">2</div>
             <div class="wiz-step-label">Бизнес</div>
           </div>
           <div class="wiz-connector" id="wizConn2"></div>
-          <div class="wiz-step" id="wizStep3">
+          <div class="wiz-step" id="wizStep3" onclick="wizGo(3)" style="cursor:pointer">
             <div class="wiz-step-num">3</div>
             <div class="wiz-step-label">Telegram</div>
           </div>
           <div class="wiz-connector" id="wizConn3"></div>
-          <div class="wiz-step" id="wizStep4">
+          <div class="wiz-step" id="wizStep4" onclick="wizGo(4)" style="cursor:pointer">
             <div class="wiz-step-num">4</div>
             <div class="wiz-step-label">Тариф</div>
           </div>
           <div class="wiz-connector" id="wizConn4"></div>
-          <div class="wiz-step" id="wizStep5">
+          <div class="wiz-step" id="wizStep5" onclick="wizGo(5)" style="cursor:pointer">
             <div class="wiz-step-num">5</div>
             <div class="wiz-step-label">Касса</div>
           </div>
