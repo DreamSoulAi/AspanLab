@@ -2,12 +2,12 @@
 #  Сборка промпта для STT (gpt-4o-transcribe / whisper-1)
 #
 #  Единственное место где формируется prompt параметр для
-#  Whisper-совместимых моделей. Два уровня глоссария:
-#    1. Базовый — платёжная лексика + казахские вставки (все точки)
+#  Whisper-совместимых моделей. Два уровня:
+#    1. Базовый — CRITICAL + STANDARD (общий для всех точек)
 #    2. Точки   — custom_phrases + names/variants из menu_json
 #
-#  Предупреждает если промпт > 200 слов: длинный prompt вызывает
-#  галлюцинации в gpt-4o-transcribe / whisper-1.
+#  Жёсткий лимит 180 слов: глоссарий точки обрезается если
+#  не влезает, CRITICAL никогда не режется.
 # ════════════════════════════════════════════════════════════
 
 import logging
@@ -15,31 +15,29 @@ from typing import Any
 
 log = logging.getLogger("stt_prompt")
 
-# ── Базовый глоссарий (уровень 1) ────────────────────────────
-# Слова, наиболее часто искажаемые STT на казахских кассах.
-# Платёжная лексика особенно важна: ошибки здесь → пропущенный фрод.
-_BASE_GLOSSARY: list[str] = [
-    # Платёжные слова (критично для антифрода)
-    "Каспи", "Kaspi", "KaspiQR", "Халык", "Halyk",
-    "QR", "терминал", "наличные", "налом",
-    "карта", "картой", "картамен", "чек", "сдача",
+# ── CRITICAL — платёжные / фрод-термины (никогда не урезаем) ─
+# Если STT исказит эти слова → фрод не детектируется.
+# Убраны дубли: карта (→ картамен), налом (→ наличные),
+# Halyk (менее критично чем Халык).
+_CRITICAL: list[str] = [
+    "Каспи", "Kaspi", "KaspiQR", "Халык",
+    "QR", "терминал", "наличные",
+    "картой", "картамен", "чек", "сдача",
     "перевод", "аударыңыз", "аудар", "төлеу", "төле",
-    # Казахские вставки (шала-казахский / code-switching)
-    "сәлем", "салам", "рахмет", "рақмет",
-    "ия", "жоқ", "болды", "болады", "жақсы",
-    "сау болыңыз", "не аласыз", "не берейін", "тағы не",
-    # Числа / деньги
-    "теңге", "тенге", "мың", "жүз", "елу",
-    "отыз", "жиырма", "он",
-    "бір", "екі", "үш", "төрт", "бес",
-    # Размеры (кафе / фастфуд / магазин)
-    "S", "M", "L", "XL",
-    "маленький", "средний", "большой",
-    "кіші", "орта", "үлкен",
 ]
 
-# Базовая инструкция (из прежнего хардкода в _transcribe_audio):
-# code-switching — норма, не переводить, транскрибировать всех.
+# ── STANDARD — деньги + казахские вставки ──────────────────
+# Нужны для корректного восприятия шала-казахского контекста.
+# Числа (бір-бес, елу, отыз...) убраны — Whisper их знает сам.
+# Размеры (S/M/L, маленький...) убраны — идут из menu_json точки.
+_STANDARD: list[str] = [
+    "теңге", "мың", "жүз",
+    "сәлем", "рахмет", "ия", "жоқ", "болды", "жақсы",
+    "сау болыңыз",
+]
+
+_BASE_GLOSSARY: list[str] = _CRITICAL + _STANDARD  # CRITICAL стоит первым
+
 _BASE_INSTRUCTION = (
     "Запись разговора с кассы в Казахстане. "
     "Транскрибируй ВСЕ голоса: кассира (близко к микрофону) И клиента "
@@ -48,16 +46,18 @@ _BASE_INSTRUCTION = (
     "пиши каждое слово на языке оригинала, не переводи."
 )
 
-_WARN_WORDS = 200  # Whisper prompt ≈224 токена; выше — риск галлюцинаций
+# Whisper prompt ≈224 токена. Держим запас — после 180 слов растёт
+# риск галлюцинаций (модель «дополняет» глоссарий).
+_MAX_TOTAL_WORDS = 180
 
 
 def flatten_menu_glossary(menu_json: Any) -> list[str]:
     """
     Извлекает плоский список слов из menu_json для промпта транскрипции.
-    Берёт name + все variants каждой позиции. price игнорируется (не нужен STT).
+    Берёт name + все variants каждой позиции. price игнорируется.
 
     Пример:
-      [{"name": "Капучино", "variants": ["S","M","L"], "price": 800}]
+      [{"name": "Капучино", "variants": ["S", "M", "L"], "price": 800}]
       → ["Капучино", "S", "M", "L"]
     """
     if not menu_json or not isinstance(menu_json, list):
@@ -80,22 +80,28 @@ def build_transcription_prompt(location_glossary: list[str] | None = None) -> st
     """
     Единая точка сборки STT prompt.
 
-    location_glossary — плоский список слов точки:
-      custom_phrases (заполненные владельцем) +
-      flatten_menu_glossary(location.menu_json).
-    Если None/пустой — используется только базовый глоссарий.
+    Уровень 1 — базовый глоссарий (CRITICAL + STANDARD):
+      ~26 элементов ≈ 67 слов в промпте.
+      CRITICAL (платёж/фрод) никогда не урезается.
 
-    Дедуплицирует: слова уже присутствующие в базовом глоссарии не дублируются.
+    Уровень 2 — глоссарий точки:
+      custom_phrases + flatten_menu_glossary(menu_json).
+      Дедуплицируется относительно базы. Обрезается по словам
+      если суммарный промпт превысит _MAX_TOTAL_WORDS (180).
+      Логирует сколько слов отброшено.
     """
-    parts = [
+    base_lower = {w.lower() for w in _BASE_GLOSSARY}
+
+    base_parts = [
         _BASE_INSTRUCTION,
         "Опорные слова: " + ", ".join(_BASE_GLOSSARY) + ".",
     ]
+    base_words = len(" ".join(base_parts).split())
 
+    extra_part = ""
     if location_glossary:
-        base_lower = {w.lower() for w in _BASE_GLOSSARY}
         seen: set[str] = set()
-        extras: list[str] = []
+        deduped: list[str] = []
         for w in location_glossary:
             w = w.strip()
             if not w:
@@ -104,20 +110,31 @@ def build_transcription_prompt(location_glossary: list[str] | None = None) -> st
             if wl in base_lower or wl in seen:
                 continue
             seen.add(wl)
-            extras.append(w)
-        if extras:
-            parts.append("Слова заведения: " + ", ".join(extras) + ".")
+            deduped.append(w)
 
+        if deduped:
+            # «Слова заведения: » + «.» стоят ~3 слова — закладываем в бюджет
+            budget = _MAX_TOTAL_WORDS - base_words - 3
+            included: list[str] = []
+            used = 0
+            for w in deduped:
+                w_len = len(w.split())
+                if used + w_len > budget:
+                    break
+                included.append(w)
+                used += w_len
+
+            skipped = len(deduped) - len(included)
+            if skipped > 0:
+                log.warning(
+                    f"STT prompt: глоссарий точки обрезан — "
+                    f"добавлено {len(included)}, отброшено {skipped} слов "
+                    f"(лимит {_MAX_TOTAL_WORDS}). Сократите custom_phrases."
+                )
+            if included:
+                extra_part = "Слова заведения: " + ", ".join(included) + "."
+
+    parts = base_parts + ([extra_part] if extra_part else [])
     prompt = " ".join(parts)
-
-    word_count = len(prompt.split())
-    if word_count > _WARN_WORDS:
-        log.warning(
-            f"STT prompt: {word_count} слов > {_WARN_WORDS} — "
-            "длинный глоссарий может вызвать галлюцинации. "
-            "Сократите custom_phrases точки."
-        )
-    else:
-        log.debug(f"STT prompt: {word_count} слов")
-
+    log.debug(f"STT prompt: {len(prompt.split())} слов (лимит {_MAX_TOTAL_WORDS})")
     return prompt
