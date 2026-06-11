@@ -1635,7 +1635,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <div class="f-group">
             <label class="f-label">Номер телефона</label>
             <input class="f-input" type="tel" id="settingsPhone" readonly style="opacity:.5">
-            <div style="font-size:11px;color:var(--muted);margin-top:4px">Изменить нельзя — это ваш логин</div>
+            <div id="settingsPhoneHint" style="font-size:11px;color:var(--muted);margin-top:4px">Изменить нельзя — телефон задан</div>
           </div>
           <div class="f-group">
             <label class="f-label">Название бизнеса</label>
@@ -2071,9 +2071,22 @@ async function loadUserInfo(){
   const ui=document.getElementById('userInfo');
   if(ui)ui.innerHTML=`<b>${esc(d.name||d.phone||'')}</b><br>${esc(d.plan||'trial')}`;
   setVal('settingsName',d.name);
-  setVal('settingsPhone',d.phone);
+  setVal('settingsPhone',d.phone||'');
   setVal('settingsCompany',d.company_name);
   setVal('settingsEmail',d.email);
+  // Telegram-юзеры без телефона могут его задать сами
+  const phoneInput=document.getElementById('settingsPhone');
+  const phoneHint=document.getElementById('settingsPhoneHint');
+  if(phoneInput){
+    if(d.has_phone){
+      phoneInput.readOnly=true;phoneInput.style.opacity='.5';
+      if(phoneHint)phoneHint.textContent='Изменить нельзя — телефон задан';
+    }else{
+      phoneInput.readOnly=false;phoneInput.style.opacity='1';
+      phoneInput.placeholder='+7 7XX XXX XX XX';
+      if(phoneHint)phoneHint.textContent='Необязательно — нужен для уведомлений об оплате';
+    }
+  }
   set('sPlanBadge',(d.plan||'trial').toUpperCase());
   document.getElementById('sPlanBadge').className='plan-badge';
   // Plan expiry
@@ -2141,13 +2154,17 @@ async function showPayInfo(){
   const kaspi   = c.kaspi_number    || '(номер ещё не настроен)';
   const name    = c.kaspi_name      || 'TrustControl';
   const support = c.support_telegram|| 'trustcontrol_support';
+  const me=await apiFetch('/auth/me',{},true);
+  const hasPhone=me&&me.has_phone;
+  const commentLine=hasPhone
+    ?"2. В комментарии укажите номер телефона,\n   на который вы зарегистрированы."
+    :"2. В комментарии напишите ваш Telegram username\n   (или просто «Telegram»).";
   alert(
     "ОПЛАТА ПОДПИСКИ\n\n" +
     "1. Переведите на Kaspi Gold:\n" +
     "   " + kaspi + "\n" +
     "   Получатель: " + name + "\n\n" +
-    "2. В комментарии укажите номер телефона,\n" +
-    "   на который вы зарегистрированы.\n\n" +
+    commentLine + "\n\n" +
     "3. Пришлите скриншот чека в Telegram:\n" +
     "   @" + support + "\n\n" +
     "Подписка активируется в течение 15 минут\n" +
@@ -2177,6 +2194,9 @@ async function saveSettings(advance){
     email:val('settingsEmail'),
   };
   const p=val('settingsPassword');if(p)payload.password=p;
+  // Телефон — только если поле редактируемо (Telegram-юзер без телефона)
+  const phoneEl=document.getElementById('settingsPhone');
+  if(phoneEl&&!phoneEl.readOnly&&phoneEl.value.trim())payload.phone=phoneEl.value.trim();
   const d=await apiFetch('/auth/me',{method:'PATCH',body:JSON.stringify(payload)});
   if(d){showErr('Сохранено ✓');loadUserInfo();if(advance)wizGo(2);}
 }

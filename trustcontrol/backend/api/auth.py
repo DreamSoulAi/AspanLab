@@ -261,7 +261,8 @@ async def me(
         "id":                  user.id,
         "name":                user.name,
         "company_name":        user.company_name or "",
-        "phone":               user.phone,
+        "phone":               user.phone or "",
+        "has_phone":           bool(user.phone),
         "email":               user.email or "",
         "telegram_chat":       user.telegram_chat or "",
         "plan":                user.plan,
@@ -394,6 +395,8 @@ class UpdateMeRequest(BaseModel):
     email:         EmailStr | None = None
     telegram_chat: str | None      = Field(None, max_length=50)
     password:      str | None      = None
+    # Телефон: Telegram-пользователи могут задать номер, если он ещё не заполнен
+    phone:         str | None      = None
 
 
 @router.patch("/me")
@@ -407,13 +410,22 @@ async def update_me(
     if data.company_name is not None:
         user.company_name = data.company_name.strip() or None
     if data.email is not None:
-        user.email = str(data.email)  # EmailStr already validated
+        user.email = str(data.email)
     if data.telegram_chat is not None:
         user.telegram_chat = data.telegram_chat.strip() or None
     if data.password:
         if len(data.password) < 8:
             raise HTTPException(status_code=400, detail="Пароль минимум 8 символов")
         user.hashed_password = hash_password(data.password)
+    if data.phone is not None and not user.phone:
+        # Разрешаем задать телефон только если он ещё не задан (Telegram-юзер)
+        normed = normalize_phone(data.phone)
+        if not normed:
+            raise HTTPException(status_code=400, detail="Неверный формат телефона. Ожидается: +7 7XX XXX XX XX")
+        existing = await db.execute(select(User).where(User.phone == normed, User.id != user.id))
+        if existing.scalar():
+            raise HTTPException(status_code=400, detail="Этот номер уже привязан к другому аккаунту")
+        user.phone = normed
     await db.commit()
     return {"status": "ok"}
 
