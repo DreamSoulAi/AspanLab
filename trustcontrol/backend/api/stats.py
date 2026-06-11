@@ -64,7 +64,7 @@ async def dashboard(
     if not user_location_ids:
         return {"today": {"total": 0, "score": 0, "greetings_pct": 0, "bonus_pct": 0,
                           "bad_count": 0, "fraud_count": 0, "positive_tone": 0, "negative_tone": 0},
-                "week": [], "alerts_today": 0}
+                "week": [], "alerts_today": 0, "recent_reports": []}
 
     # ── SECURITY: проверяем что запрошенная точка принадлежит юзеру
     if location_id:
@@ -98,7 +98,7 @@ async def dashboard(
     if total == 0:
         return {"today": {"total": 0, "qualified": 0, "score": 0, "greetings_pct": 0, "bonus_pct": 0,
                           "bad_count": 0, "fraud_count": 0, "positive_tone": 0, "negative_tone": 0},
-                "week": [], "alerts_today": 0}
+                "week": [], "alerts_today": 0, "recent_reports": []}
 
     def pct(lst, flag):
         return round(sum(1 for r in lst if getattr(r, flag)) / len(lst) * 100) if lst else 0
@@ -146,6 +146,28 @@ async def dashboard(
             "fraud_count":   sum(1 for r in day_qualified if r.has_fraud),
         })
 
+    # ── Последние разговоры (для таблицы на обзоре) ─────────
+    _recent = sorted(
+        [r for r in today_reports if not r.is_hidden],
+        key=lambda r: r.timestamp or datetime.min,
+        reverse=True,
+    )[:10]
+    recent_reports = [
+        {
+            "id":           r.id,
+            "timestamp":    r.timestamp.isoformat() if r.timestamp else None,
+            "tone":         r.tone,
+            "score":        r.score if r.score is not None else r.gpt_score,
+            "has_greeting": bool(r.has_greeting),
+            "has_bonus":    bool(r.has_bonus),
+            "has_bad":      bool(r.has_bad),
+            "has_fraud":    bool(r.has_fraud),
+            # Превью = чистый анализ (gpt_summary), иначе сырой транскрипт
+            "transcript":   (r.gpt_summary or r.transcript or ""),
+        }
+        for r in _recent
+    ]
+
     return {
         "today": {
             "total":         total,
@@ -160,8 +182,9 @@ async def dashboard(
             "negative_tone": sum(1 for r in qualified_reports if r.tone == "negative"),
             "score":         max(0, min(100, round(score))),
         },
-        "week":         week_data,
-        "alerts_today": alerts_count,
+        "week":           week_data,
+        "alerts_today":   alerts_count,
+        "recent_reports": recent_reports,
     }
 
 
