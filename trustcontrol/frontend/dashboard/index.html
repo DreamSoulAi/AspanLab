@@ -2959,7 +2959,7 @@ async function checkOnboarding(){
   const hasTg=me&&!!me.telegram_chat;
   const steps=[
     {done:hasLoc,title:'Создайте первую кассу',    desc:'Раздел «Кассы» → кнопка «+ Добавить»'},
-    {done:hasTg, title:'Подключите Telegram',       desc:'«Настройки» → «Подключить через Telegram»'},
+    {done:hasTg, title:'Запустите Telegram-бота',    desc:'Откройте настройки → нажмите ссылку бота → Start'},
     {done:false, title:'Запустите программу на кассе', desc:'Скачайте установщик в разделе «Кассы»'},
   ];
   document.getElementById('onboardSteps').innerHTML=steps.map(s=>`
@@ -2981,15 +2981,21 @@ function closeOnboard(){
 /* ── TELEGRAM LINK / UNLINK ── */
 function renderTgStatus(d){
   const el=document.getElementById('tgStatusBlock');if(!el)return;
-  // Health warning — если Telegram сломан, показываем красным
   const health = d && d.telegram_health;
   const healthWarn = (health && health.at && health.msg)
     ? `<div style="margin-top:8px;padding:10px 12px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;font-size:12px;color:#fca5a5"><b>⚠ Последняя отправка не прошла:</b> ${esc((health.msg||'').slice(0,140))}<br><span style="opacity:.7">Проверьте что бот не заблокирован у вас в Telegram.</span></div>`
     : '';
   if(d&&d.telegram_chat){
+    // Получить имя бота из конфига для кнопки «Открыть бот»
+    const botName=(_appConfig&&_appConfig.tg_bot_username||'trustcontrol_kzbot').replace(/^@/,'');
     el.innerHTML=`<div class="tg-status-box linked">
       <span>✅ Отчёты приходят в Telegram</span>
       <button class="tg-unlink-btn" onclick="unlinkTelegram()">Отключить</button>
+    </div>
+    <div style="margin-top:10px;padding:10px 12px;background:rgba(34,158,217,.06);border:1px solid rgba(34,158,217,.15);border-radius:8px;font-size:12px;color:var(--muted);line-height:1.6">
+      📱 Если уведомления не приходят — убедитесь что запустили бота:<br>
+      <a href="https://t.me/${esc(botName)}" target="_blank" style="color:#229ED9;font-weight:600">@${esc(botName)}</a>
+      &nbsp;→ нажмите <b>Start / Запустить</b>
     </div>${healthWarn}`;
   }else{
     el.innerHTML=`<div class="tg-status-box unlinked">⚡ Telegram ещё не подключён — отчёты и тревоги не придут</div>
