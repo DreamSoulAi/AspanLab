@@ -137,12 +137,15 @@ async def dashboard(
         day_reports = day_result.scalars().all()
         day_qualified = [r for r in day_reports if r.conversation_context == 'customer_service']
         week_data.append({
-            "date":          str(d),
-            "total":         len(day_reports),
-            "qualified":     len(day_qualified),
-            "greetings_pct": pct(day_qualified, "has_greeting"),
-            "bonus_pct":     pct(day_qualified, "has_bonus"),
-            "fraud_count":   sum(1 for r in day_qualified if r.has_fraud),
+            "date":             str(d),
+            "total":            len(day_reports),
+            "qualified":        len(day_qualified),
+            "greetings_pct":    pct(day_qualified, "has_greeting"),
+            "bonus_pct":        pct(day_qualified, "has_bonus"),
+            "fraud_count":      sum(1 for r in day_qualified if r.has_fraud),
+            # ── Счётчики в штуках (для графика — единая величина) ──
+            "upsell_count":     sum(1 for r in day_qualified if r.has_bonus),
+            "violations_count": sum(1 for r in day_qualified if r.has_bad or r.has_fraud),
         })
 
     # ── Последние разговоры (свежие, не только сегодня) ─────

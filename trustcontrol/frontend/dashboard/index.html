@@ -2436,9 +2436,9 @@ function buildWeekChart(week){
     data:{
       labels,
       datasets:[
-        {label:'Разговоры',data:rev.map(d=>d.total||0),borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.1)',tension:.4,fill:true,pointRadius:3},
-        {label:'Приветствия %',data:rev.map(d=>d.greetings_pct||0),borderColor:'#10B981',backgroundColor:'transparent',tension:.4,pointRadius:3},
-        {label:'Мошенничество',data:rev.map(d=>d.fraud_count||0),borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.06)',tension:.4,fill:true,pointRadius:3},
+        {label:'Разговоры',data:rev.map(d=>d.total||0),borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.1)',tension:.15,fill:true,pointRadius:3},
+        {label:'Допродажи',data:rev.map(d=>d.upsell_count||0),borderColor:'#10B981',backgroundColor:'transparent',tension:.15,pointRadius:3},
+        {label:'Нарушения',data:rev.map(d=>d.violations_count||0),borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.06)',tension:.15,fill:true,pointRadius:3},
       ],
     },
     options:{
@@ -2446,7 +2446,7 @@ function buildWeekChart(week){
       plugins:{legend:{labels:{font:{family:'DM Sans'},color:'#6B7280',boxWidth:12}}},
       scales:{
         x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6B7280',font:{family:'DM Sans',size:11}}},
-        y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6B7280',font:{family:'DM Sans',size:11}},beginAtZero:true},
+        y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6B7280',font:{family:'DM Sans',size:11},precision:0},beginAtZero:true},
       },
     },
   });
