@@ -1471,6 +1471,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <select class="loc-select" id="filterType" onchange="loadAlerts()">
             <option value="">Все типы</option>
             <option value="fraud">Мошенничество</option>
+            <option value="suspected_fraud">⚠️ Подозрения на фрод</option>
             <option value="bad_language">Грубость</option>
             <option value="negative_tone">Негатив</option>
             <option value="no_greeting">Без приветствия</option>
@@ -2438,10 +2439,33 @@ function statusFlags(r){
 async function loadAlerts(){
   const type=document.getElementById('filterType')?.value||'';
   const days=document.getElementById('filterDays')?.value||'7';
+  const el=document.getElementById('alertsList');if(!el)return;
+
+  // Подозрения на фрод — это не тревоги, а отчёты в «серой зоне» (уверенность 50-74).
+  if(type==='suspected_fraud'){
+    const d=await apiFetch('/alerts/suspected-fraud?days='+Math.max(days,30));
+    if(!d||!d.length){el.innerHTML='<p class="empty-state">Подозрительных разговоров нет ✓</p>';return;}
+    el.innerHTML='<p style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.5">'
+      +'Это разговоры с <b style="color:var(--txt)">косвенными</b> признаками увода денег мимо кассы. '
+      +'Система не уверена — проверьте сами, послушав запись.</p>'
+      +d.map(r=>`
+      <div class="alert-card">
+        <div class="alert-card-hdr">
+          <span class="at-badge">⚠️ Проверьте</span>
+          <span class="sev-badge medium">подозрение</span>
+          <time>${fmt(r.timestamp)}</time>
+        </div>
+        ${r.employee_name?`<p style="font-size:12px;color:var(--muted);margin-bottom:4px">Сотрудник: ${esc(r.employee_name)}</p>`:''}
+        ${r.summary?`<p class="alert-phrase">${esc(r.summary)}</p>`:''}
+        ${r.transcript?`<p class="alert-text">${esc(r.transcript.slice(0,300))}</p>`:''}
+        <button class="btn-sm" onclick="openReportById(${r.id})">Открыть и послушать</button>
+      </div>`).join('');
+    return;
+  }
+
   let qs='?days='+days+'&unresolved_only=true';
   if(type)qs+='&alert_type='+type;
   const d=await apiFetch('/alerts/'+qs);
-  const el=document.getElementById('alertsList');if(!el)return;
   if(!d||!d.length){el.innerHTML='<p class="empty-state">Нет тревог — всё спокойно ✓</p>';return;}
   el.innerHTML=d.map(a=>`
     <div class="alert-card">

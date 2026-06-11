@@ -15,6 +15,7 @@ from typing import Optional
 
 from backend.database import get_db
 from backend.models.alert import Alert
+from backend.models.report import Report
 from backend.models.location import Location
 from backend.api.auth import get_current_user
 from backend.models.user import User
@@ -95,6 +96,59 @@ async def list_alerts(
             "resolved_at":    a.resolved_at.isoformat() if a.resolved_at else None,
         }
         for a in alerts
+    ]
+
+
+@router.get("/suspected-fraud")
+async def list_suspected_fraud(
+    location_id: int = None,
+    days: int = 30,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Разговоры с КОСВЕННЫМ подозрением на фрод (уверенность 50-74).
+
+    Это НЕ критические тревоги (те уходят сразу в Telegram), а «серая зона» —
+    намёки на увод денег мимо кассы, которые нельзя обвинять автоматически,
+    но владельцу стоит просмотреть глазами. Помечены fraud_status='suspected'.
+    """
+    days = min(days, 90)
+    since = datetime.utcnow() - timedelta(days=days)
+
+    user_location_ids = await _get_user_location_ids(user.id, db)
+    if not user_location_ids:
+        return []
+
+    if location_id and location_id not in user_location_ids:
+        raise HTTPException(status_code=403, detail="Нет доступа к этой точке")
+
+    filter_ids = [location_id] if location_id else user_location_ids
+
+    result = await db.execute(
+        select(Report)
+        .where(
+            Report.location_id.in_(filter_ids),
+            Report.fraud_status == "suspected",
+            Report.timestamp >= since,
+            Report.is_hidden == False,  # noqa: E712
+        )
+        .order_by(Report.timestamp.desc())
+        .limit(200)
+    )
+    reports = result.scalars().all()
+
+    return [
+        {
+            "id":           r.id,
+            "location_id":  r.location_id,
+            "timestamp":    r.timestamp.isoformat() if r.timestamp else None,
+            "score":        r.score if r.score is not None else r.gpt_score,
+            "employee_name": r.employee_name,
+            "summary":      (r.gpt_summary or "")[:300],
+            "transcript":   (r.transcript or "")[:400],
+        }
+        for r in reports
     ]
 
 
