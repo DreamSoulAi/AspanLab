@@ -51,6 +51,23 @@ def _listen_button(audio_url: str | None) -> InlineKeyboardMarkup | None:
     ]])
 
 
+def _dashboard_url(report_id: int | None) -> str | None:
+    """Ссылка на конкретный отчёт в дашборде. Аудио там подтянется свежей
+    presigned-ссылкой после входа — вечную публичную ссылку наружу не отдаём."""
+    if not report_id:
+        return None
+    base = (settings.APP_URL or "https://aspanlab.onrender.com").rstrip("/")
+    return f"{base}/app/?report={report_id}"
+
+
+def _dashboard_button(report_id: int | None,
+                      label: str = "Открыть в дашборде") -> InlineKeyboardMarkup | None:
+    url = _dashboard_url(report_id)
+    if not url:
+        return None
+    return InlineKeyboardMarkup([[InlineKeyboardButton(label, url=url)]])
+
+
 async def send_report(
     chat_id: str,
     location_name: str,
@@ -59,6 +76,7 @@ async def send_report(
     tone: str,
     score: float,
     audio_url: str | None = None,
+    report_id: int | None = None,
 ):
     ts = datetime.now().strftime("%d.%m, %H:%M")
 
@@ -78,7 +96,7 @@ async def send_report(
     if detail:
         lines += ["", detail]
 
-    await _send(chat_id, "\n".join(lines), reply_markup=_listen_button(audio_url))
+    await _send(chat_id, "\n".join(lines), reply_markup=_dashboard_button(report_id))
 
 
 async def send_critical_alert(data: dict):
@@ -87,7 +105,7 @@ async def send_critical_alert(data: dict):
         return
 
     summary       = data.get("summary", "—")
-    audio_url     = data.get("audio_url") or ""
+    report_id     = data.get("report_id")
     location_name = data.get("location_name", "—")
     ts = datetime.now().strftime("%d.%m, %H:%M")
 
@@ -96,7 +114,7 @@ async def send_critical_alert(data: dict):
         f"_{ts}_\n\n"
         f"{summary}"
     )
-    await _send(chat_id, text, reply_markup=_listen_button(audio_url) if audio_url else None)
+    await _send(chat_id, text, reply_markup=_dashboard_button(report_id))
 
 
 async def send_incident_alert(
@@ -110,6 +128,7 @@ async def send_incident_alert(
     tx_amount: float | None = None,
     tx_receipt_id: str | None = None,
     tx_items: list | None = None,
+    report_id: int | None = None,
 ):
     if not chat_id:
         return
@@ -145,7 +164,8 @@ async def send_incident_alert(
                 price = item.get("price") or item.get("sum") or "—"
                 lines.append(f"  {name} × {qty} = {price} ₸")
 
-    row1 = [InlineKeyboardButton("Прослушать запись", url=proof_s3_url)] if proof_s3_url else []
+    _dash = _dashboard_url(report_id)
+    row1 = [InlineKeyboardButton("Открыть в дашборде", url=_dash)] if _dash else []
     row2 = []
     if incident_id:
         row2.append(InlineKeyboardButton("✅ Подтвердить", callback_data=f"tc_confirm:{incident_id}"))
@@ -198,8 +218,8 @@ async def send_ok_report(
     score: float,
     upsell: bool,
     greeting: bool,
-    audio_url: str | None = None,
     summary: str = "",
+    report_id: int | None = None,
 ):
     score_icon = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
     tone_ru = {"positive": "позитивный", "neutral": "нейтральный", "negative": "негативный"}.get(tone, "нейтральный")
@@ -222,7 +242,7 @@ async def send_ok_report(
         f"{flags_line}"
         f"{summary_line}"
     )
-    await _send(chat_id, text, reply_markup=_listen_button(audio_url) if audio_url else None)
+    await _send(chat_id, text, reply_markup=_dashboard_button(report_id))
 
 
 async def send_shift_summary(chat_id: str, location_name: str, shift_data: dict):
@@ -263,6 +283,7 @@ async def send_fraud_email(
     incident_type: str,
     description: str,
     audio_url: str | None = None,
+    report_id: int | None = None,
 ):
     """Sends email alert for fraud incidents via Resend API or SMTP fallback."""
     if not user_email:
@@ -279,13 +300,14 @@ async def send_fraud_email(
     }
     title = _TYPE_LABELS.get(incident_type, f"Инцидент: {incident_type}")
 
+    _dash = _dashboard_url(report_id)
     body_html = f"""
 <html><body style="font-family:sans-serif;max-width:600px">
 <h2 style="color:#dc2626">🚨 {title}</h2>
 <p><strong>Точка:</strong> {location_name}<br>
 <strong>Время:</strong> {ts}</p>
 <p>{description}</p>
-{"<p><a href='" + audio_url + "'>▶ Прослушать запись</a></p>" if audio_url else ""}
+{"<p><a href='" + _dash + "'>▶ Открыть в дашборде</a></p>" if _dash else ""}
 <hr>
 <p style="color:#6b7280;font-size:12px">TrustControl — AI-мониторинг качества обслуживания</p>
 </body></html>

@@ -146,8 +146,8 @@ async def _match_transaction(
                             f"POS-разрыв: голос подтверждает оплату, "
                             f"но чека на сумму нет в кассе (±2 мин)"
                         ),
-                        "audio_url": report.s3_url,
                         "sha256":    report.audio_sha256,
+                        "report_id": report.id,
                     })
 
         await db.commit()
@@ -340,7 +340,7 @@ async def get_fraud_gaps(
             "transcript":   (r.transcript or "")[:300],
             "fraud_status": r.fraud_status,
             "gpt_summary":  r.gpt_summary,
-            "s3_url":       r.s3_url,
+            "has_audio":    bool(r.s3_key),
             "audio_sha256": r.audio_sha256,
         }
         for r in rows

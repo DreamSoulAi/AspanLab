@@ -1039,7 +1039,6 @@ textarea.f-input{resize:vertical;line-height:1.6}
         <a onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Тарифы</a>
         <a onclick="document.getElementById('faq').scrollIntoView({behavior:'smooth'})">Вопросы</a>
         <a onclick="goToAuth(false)">Войти</a>
-        <a onclick="goToAuth(true)">Регистрация</a>
       </div>
       <div class="lp-footer-copy">© 2026 AspanLab</div>
     </div>
@@ -1079,71 +1078,38 @@ textarea.f-input{resize:vertical;line-height:1.6}
       <!-- LOGIN -->
       <div id="loginForm">
         <div class="auth-title">Добро пожаловать</div>
-        <div class="auth-sub">Войдите в свой аккаунт</div>
-        <div class="f-group">
-          <label class="f-label">Номер телефона</label>
-          <input class="f-input" type="tel" id="loginPhone" placeholder="+7 7XX XXX XX XX" maxlength="18" autocomplete="tel" autocorrect="off" autocapitalize="off">
-        </div>
-        <div class="f-group">
-          <label class="f-label">Пароль</label>
-          <div class="pw-wrap">
-            <input class="f-input" type="password" id="loginPassword" placeholder="••••••••"
-                   autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
-            <button type="button" class="pw-eye" onclick="togglePw('loginPassword',this)" tabindex="-1">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
-          </div>
-        </div>
-        <button class="f-btn" id="loginBtn" onclick="doLogin()">Войти →</button>
-        <div id="loginError" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:13px;color:#FCA5A5;text-align:center"></div>
-        <div class="f-switch">Нет аккаунта? <a onclick="showRegister()">Зарегистрироваться</a></div>
-        <div class="auth-back-link" onclick="goBackToLanding()">← На главную</div>
-      </div>
+        <div class="auth-sub">Вход и регистрация — через Telegram, без пароля</div>
 
-      <!-- REGISTER -->
-      <div id="registerForm" style="display:none">
-        <div class="auth-title">Создать аккаунт</div>
-        <div class="auth-sub">7 дней бесплатно — без карты</div>
-        <div class="f-group">
-          <label class="f-label">Ваше имя</label>
-          <input class="f-input" type="text" id="regName" placeholder="Иван Иванов" autocomplete="name" autocorrect="off">
+        <!-- Telegram Login Widget монтируется сюда из JS (mountTelegramLogin) -->
+        <div id="tgLoginBox" style="display:flex;justify-content:center;min-height:48px;margin:18px 0 6px"></div>
+        <div id="tgLoginHint" style="font-size:12px;color:var(--muted);text-align:center;line-height:1.5">
+          Нажмите кнопку выше — Telegram подтвердит вашу личность.<br>Новый аккаунт создаётся автоматически (7 дней бесплатно).
         </div>
-        <div class="f-group">
-          <label class="f-label">Номер телефона</label>
-          <input class="f-input" type="tel" id="regPhone" placeholder="+7 7XX XXX XX XX" maxlength="18" autocomplete="tel" autocorrect="off" autocapitalize="off">
-        </div>
-        <div class="f-group">
-          <label class="f-label">Пароль</label>
-          <div class="pw-wrap">
-            <input class="f-input" type="password" id="regPassword" placeholder="минимум 8 символов" autocomplete="new-password">
-            <button type="button" class="pw-eye" onclick="togglePw('regPassword',this)" tabindex="-1">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
-          </div>
-        </div>
-        <button class="f-btn" id="registerBtn" onclick="doRegister()">Зарегистрироваться — 7 дней бесплатно</button>
-        <div class="f-switch">Уже есть аккаунт? <a onclick="showLogin()">Войти</a></div>
-        <div class="auth-back-link" onclick="goBackToLanding()">← На главную</div>
-      </div>
+        <div id="tgLoginError" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:13px;color:#FCA5A5;text-align:center"></div>
 
-      <!-- OTP -->
-      <div id="otpForm" style="display:none">
-        <div style="text-align:center;margin-bottom:24px">
-          <div style="font-size:36px;margin-bottom:10px">📱</div>
-          <div class="auth-title">Код подтверждения</div>
-          <div class="auth-sub" style="color:var(--accent2);font-weight:600;font-size:15px" id="otpPhoneLabel"></div>
+        <!-- Вход по паролю — запасной путь для администратора -->
+        <div style="text-align:center;margin-top:22px">
+          <a id="adminLoginToggle" onclick="toggleAdminLogin()" style="font-size:12px;color:var(--muted);cursor:pointer;text-decoration:underline">Вход для администратора →</a>
         </div>
-        <div class="bypass-banner" id="otpBypassBanner">Тестовый режим — код всегда <b>000000</b></div>
-        <div class="f-group" style="margin-top:16px">
-          <label class="f-label">6-значный код из SMS</label>
-          <input class="f-input otp-big" type="text" id="otpCode" placeholder="000000"
-                 maxlength="6" inputmode="numeric" autocomplete="one-time-code"
-                 oninput="this.value=this.value.replace(/\D/g,'')"
-                 onkeydown="if(event.key==='Enter')doVerifyOtp()">
+        <div id="adminLoginBox" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)">
+          <div class="f-group">
+            <label class="f-label">Номер телефона</label>
+            <input class="f-input" type="tel" id="loginPhone" placeholder="+7 7XX XXX XX XX" maxlength="18" autocomplete="tel" autocorrect="off" autocapitalize="off">
+          </div>
+          <div class="f-group">
+            <label class="f-label">Пароль</label>
+            <div class="pw-wrap">
+              <input class="f-input" type="password" id="loginPassword" placeholder="••••••••"
+                     autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+              <button type="button" class="pw-eye" onclick="togglePw('loginPassword',this)" tabindex="-1">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <button class="f-btn" id="loginBtn" onclick="doLogin()">Войти →</button>
+          <div id="loginError" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:13px;color:#FCA5A5;text-align:center"></div>
         </div>
-        <button class="f-btn" id="verifyOtpBtn" onclick="doVerifyOtp()">Подтвердить →</button>
-        <div class="f-switch" style="margin-top:14px"><a onclick="doResendOtp()">Отправить код ещё раз</a></div>
-        <div class="f-switch" style="margin-top:6px"><a onclick="showLogin()">← Назад</a></div>
+        <div class="auth-back-link" onclick="goBackToLanding()">← На главную</div>
       </div>
 
     </div>
@@ -1931,7 +1897,7 @@ function goToAuth(reg){
   document.getElementById('landingPage').style.display='none';
   const s=document.getElementById('authSection');
   s.style.display='flex';
-  if(reg)showRegister();else showLogin();
+  showLogin();
 }
 function goBackToLanding(){
   document.getElementById('authSection').style.display='none';
@@ -1941,20 +1907,70 @@ function goBackToLanding(){
 /* ── AUTH FORMS ── */
 function showLogin(){
   document.getElementById('loginForm').style.display='';
-  document.getElementById('registerForm').style.display='none';
-  document.getElementById('otpForm').style.display='none';
   _hideLoginErr();
+  mountTelegramLogin();
 }
-function showRegister(){
-  document.getElementById('loginForm').style.display='none';
-  document.getElementById('registerForm').style.display='';
-  document.getElementById('otpForm').style.display='none';
+
+function toggleAdminLogin(){
+  const box=document.getElementById('adminLoginBox');
+  if(!box)return;
+  box.style.display=(box.style.display==='none'||!box.style.display)?'':'none';
 }
-function showOtp(){
-  document.getElementById('loginForm').style.display='none';
-  document.getElementById('registerForm').style.display='none';
-  document.getElementById('otpForm').style.display='';
+
+/* ── TELEGRAM LOGIN WIDGET ── */
+let _tgWidgetMounted=false;
+async function mountTelegramLogin(){
+  if(_tgWidgetMounted)return;
+  const box=document.getElementById('tgLoginBox');
+  if(!box)return;
+  const cfg=await loadAppConfig();
+  const bot=(cfg&&cfg.tg_bot_username||'').replace(/^@/,'').trim();
+  if(!bot){
+    const hint=document.getElementById('tgLoginHint');
+    if(hint)hint.textContent='Telegram-вход временно недоступен — используйте вход для администратора.';
+    return;
+  }
+  // Официальный скрипт виджета сам заменяет себя на кнопку-iframe.
+  // Работает только на домене, заданном в @BotFather (/setdomain).
+  const s=document.createElement('script');
+  s.async=true;
+  s.src='https://telegram.org/js/telegram-widget.js?22';
+  s.setAttribute('data-telegram-login',bot);
+  s.setAttribute('data-size','large');
+  s.setAttribute('data-radius','10');
+  s.setAttribute('data-onauth','onTelegramAuth(user)');
+  s.setAttribute('data-request-access','write');
+  box.appendChild(s);
+  _tgWidgetMounted=true;
 }
+
+function _showTgErr(msg){
+  const el=document.getElementById('tgLoginError');
+  if(el){el.textContent=msg;el.style.display='block';}
+}
+
+// Глобальный колбэк, вызывается виджетом Telegram после успешной авторизации.
+window.onTelegramAuth=async function(user){
+  try{
+    const res=await fetch(API+'/auth/telegram-login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(user)
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok){
+      let err=data.detail||'Не удалось войти через Telegram';
+      if(Array.isArray(err))err=err.map(e=>e.msg||String(e)).join(', ');
+      _showTgErr(typeof err==='string'?err:'Не удалось войти через Telegram');
+      return;
+    }
+    if(data.access_token){
+      _token=data.access_token;localStorage.setItem('tc_token',_token);startDashboard();
+    }
+  }catch(e){
+    _showTgErr('Сервер не отвечает — попробуйте ещё раз');
+  }
+};
 
 function _showLoginErr(msg){
   const el=document.getElementById('loginError');
@@ -1981,13 +1997,7 @@ async function doLogin(){
       body:new URLSearchParams({username:phone,password})
     });
     const data=await res.json().catch(()=>({}));
-    if(res.status===403&&String(data.detail||'').includes('PHONE_NOT_VERIFIED')){
-      localStorage.setItem('tc_otp_phone',phone);
-      localStorage.setItem('tc_otp_pass',password);
-      const lbl=document.getElementById('otpPhoneLabel');
-      if(lbl)lbl.textContent=phone;
-      showOtp();
-    }else if(!res.ok){
+    if(!res.ok){
       let err=data.detail||'Неверный номер или пароль';
       if(Array.isArray(err))err=err.map(e=>e.msg||String(e)).join(', ');
       _showLoginErr(typeof err==='string'?err:'Неверный номер или пароль');
@@ -1998,66 +2008,6 @@ async function doLogin(){
     _showLoginErr('Сервер не отвечает — попробуйте ещё раз');
   }
   btn.disabled=false;btn.textContent='Войти →';
-}
-
-async function doRegister(){
-  const name=document.getElementById('regName').value.trim();
-  const phone=document.getElementById('regPhone').value.trim();
-  const password=document.getElementById('regPassword').value;
-  if(!name||!phone||!password)return showErr('Заполните все поля');
-  if(password.length<8)return showErr('Пароль минимум 8 символов');
-  const btn=document.getElementById('registerBtn');
-  btn.disabled=true;btn.textContent='Регистрация...';
-  const d=await apiFetch('/auth/register',{method:'POST',body:JSON.stringify({name,phone,password})});
-  btn.disabled=false;btn.textContent='Зарегистрироваться — 7 дней бесплатно';
-  if(!d)return;
-  if(d.access_token){_token=d.access_token;localStorage.setItem('tc_token',_token);startDashboard();}
-  else{
-    localStorage.setItem('tc_otp_phone',phone);
-    localStorage.setItem('tc_otp_pass',password);
-    const lbl=document.getElementById('otpPhoneLabel');
-    if(lbl)lbl.textContent=phone;
-    // Show dev bypass banner if server is in bypass mode
-    const banner=document.getElementById('otpBypassBanner');
-    if(banner&&d.otp_code){banner.style.display='block';}
-    showOtp();
-    if(d.otp_code){
-      const inp=document.getElementById('otpCode');
-      if(inp)inp.value=d.otp_code;
-      setTimeout(doVerifyOtp,400);
-    }
-  }
-}
-
-async function doVerifyOtp(){
-  const code=document.getElementById('otpCode').value.trim();
-  const phone=localStorage.getItem('tc_otp_phone')||'';
-  const password=localStorage.getItem('tc_otp_pass')||'';
-  if(!code)return showErr('Введите код');
-  const btn=document.getElementById('verifyOtpBtn');
-  btn.disabled=true;btn.textContent='Проверка...';
-  const d=await apiFetch('/auth/verify-otp',{method:'POST',body:JSON.stringify({phone,code})});
-  btn.disabled=false;btn.textContent='Подтвердить →';
-  if(!d)return;
-  if(d.access_token){
-    _token=d.access_token;localStorage.setItem('tc_token',_token);
-    localStorage.removeItem('tc_otp_phone');localStorage.removeItem('tc_otp_pass');
-    startDashboard();
-  }
-}
-
-async function doResendOtp(){
-  const phone=localStorage.getItem('tc_otp_phone')||'';
-  const password=localStorage.getItem('tc_otp_pass')||'';
-  if(!phone)return showErr('Сначала войдите');
-  try{
-    await fetch(API+'/auth/login',{
-      method:'POST',
-      headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body:new URLSearchParams({username:phone,password})
-    });
-  }catch(e){}
-  showErr('Код отправлен повторно');
 }
 
 function doLogout(){
@@ -2076,7 +2026,14 @@ function startDashboard(){
   const dc=document.getElementById('dashContent');
   if(dc)dc.style.display='none';
   loadUserInfo();
-  showPage('overview');
+  // Deep-link from an alert: open the requested report once we're in.
+  const pendReport=localStorage.getItem('tc_pending_report');
+  if(pendReport){
+    localStorage.removeItem('tc_pending_report');
+    setTimeout(()=>openReportById(pendReport), 400);
+  }else{
+    showPage('overview');
+  }
   setTimeout(checkOnboarding, 1800);
   clearInterval(_pollTimer);
   _pollTimer=setInterval(()=>{
@@ -2510,14 +2467,29 @@ function showReportModal(idx){
   document.getElementById('rmTime').textContent=fmt(r.timestamp||r.created_at);
   document.getElementById('rmFlags').innerHTML=statusFlags(r);
   const audioWrap=document.getElementById('rmAudio');
-  if(r.s3_url){
-    audioWrap.innerHTML=`<audio controls style="width:100%;margin-bottom:4px"><source src="${esc(r.s3_url)}" type="audio/wav"></audio>`
-      +`<a href="${esc(r.s3_url)}" download style="font-size:12px;color:var(--accent2)">⬇ Скачать запись</a>`;
+  if(r.has_audio){
     audioWrap.style.display='';
+    audioWrap.innerHTML='<span style="font-size:12px;color:var(--muted)">Загрузка записи…</span>';
+    // Свежая presigned-ссылка (живёт 15 мин). Прямую вечную ссылку больше не используем.
+    apiFetch('/reports/'+r.id+'/audio').then(res=>{
+      if(res&&res.url){
+        audioWrap.innerHTML=`<audio controls style="width:100%;margin-bottom:4px"><source src="${esc(res.url)}" type="audio/wav"></audio>`
+          +`<a href="${esc(res.url)}" download style="font-size:12px;color:var(--accent2)">⬇ Скачать запись</a>`;
+      }else{
+        audioWrap.innerHTML='<span style="font-size:12px;color:var(--muted)">Запись недоступна</span>';
+      }
+    }).catch(()=>{audioWrap.innerHTML='<span style="font-size:12px;color:var(--muted)">Запись недоступна</span>';});
   }else{
     audioWrap.style.display='none';
   }
   document.getElementById('reportModal').style.display='flex';
+}
+async function openReportById(reportId){
+  if(!reportId){showPage('overview');return;}
+  showPage('reports');                        // switch view (also kicks a load)
+  try{ await loadReportsPage(); }catch(e){}   // ensure _reportsCache is ready
+  const idx=_reportsCache.findIndex(r=>String(r.id)===String(reportId));
+  if(idx>=0)showReportModal(idx);             // fresh alert reports are in the latest page
 }
 async function loadReportsPage(){
   const days=document.getElementById('reportDays')?.value||'7';
@@ -3055,8 +3027,18 @@ async function unlinkTelegram(){
     document.getElementById('appWrap').style.display='none';
     document.getElementById('landingPage').style.display='';  // always show landing first
 
-    // Handle ?login_token= from Telegram /gettoken command
+    // Deep-link from a Telegram/email alert: ?report=<id>. Persist it so it
+    // survives the login redirect regardless of how the user signs in
+    // (password, OTP, Telegram). Consumed in startDashboard() after auth.
     const urlParams=new URLSearchParams(window.location.search);
+    const wantReport=urlParams.get('report');
+    if(wantReport&&/^\d+$/.test(wantReport)){
+      localStorage.setItem('tc_pending_report',wantReport);
+      const clean=window.location.pathname+window.location.hash;
+      window.history.replaceState({},'',clean);
+    }
+
+    // Handle ?login_token= from Telegram /gettoken command
     const loginToken=urlParams.get('login_token');
     if(loginToken){
       window.history.replaceState({},'','/');

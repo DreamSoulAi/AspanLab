@@ -54,132 +54,6 @@ MAX_AUDIO_SIZE_MB    = 10
 MAX_TRANSCRIPT_CHARS = 10_000
 
 
-# ── Диагностика S3 / аудио-архива (для бесплатного Render без Shell) ──────────
-@router.get("/_debug/s3")
-async def debug_s3(token: str = ""):
-    """Проверка S3 из браузера. Открыть:
-       https://<домен>/api/reports/_debug/s3?token=<первые 12 симв SECRET_KEY>
-
-    Грузит тестовый файл, проверяет публичную ссылку, смотрит s3_url
-    у последних отчётов. Защищено префиксом SECRET_KEY.
-    """
-    from backend.config import settings
-    if not token or not settings.SECRET_KEY or token != settings.SECRET_KEY[:12]:
-        raise HTTPException(status_code=403, detail="Неверный токен (первые 12 символов SECRET_KEY)")
-
-    out: dict = {"env": {}, "upload": {}, "public_url": {}, "recent_reports": []}
-
-    out["env"] = {
-        "S3_BUCKET":         settings.S3_BUCKET or None,
-        "S3_ENDPOINT_URL":   settings.S3_ENDPOINT_URL or None,
-        "S3_PUBLIC_URL":     settings.S3_PUBLIC_URL or None,
-        "S3_REGION":         settings.S3_REGION or None,
-        "AWS_ACCESS_KEY_ID": (settings.AWS_ACCESS_KEY_ID[:6] + "…") if settings.AWS_ACCESS_KEY_ID else None,
-        "AWS_SECRET_set":    bool(settings.AWS_SECRET_ACCESS_KEY),
-    }
-    if not (settings.S3_BUCKET and settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY):
-        out["error"] = "Не хватает ключей S3 в Environment"
-        return out
-
-    # Тестовый WAV: 1 секунда тишины
-    import struct
-    sr = 16000
-    data = b"\x00\x00" * sr
-    wav = (b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVE"
-           + b"fmt " + struct.pack("<IHHIIHH", 16, 1, 1, sr, sr * 2, 2, 16)
-           + b"data" + struct.pack("<I", len(data)) + data)
-
-    # Прямая загрузка через boto3 с захватом РЕАЛЬНОЙ ошибки + перебор
-    # вариантов checksum-конфига (botocore 1.36+ ломает Yandex).
-    import boto3
-    from botocore.config import Config
-    import botocore
-
-    _endpoint = (settings.S3_ENDPOINT_URL or "").strip() or None
-    _region = "ru-central1" if (_endpoint and "yandexcloud" in _endpoint) else (settings.S3_REGION or "us-east-1")
-    out["upload"]["botocore_version"] = botocore.__version__
-
-    key = "evidence/_debug/test.wav"
-    attempts = []
-
-    # СНАЧАЛА проверка ключей на операции БЕЗ тела (нет checksum-фактора).
-    # Если list падает с SignatureDoesNotMatch → виноваты КЛЮЧИ.
-    # Если list проходит, а put падает → виноват checksum-баг botocore 1.36+.
-    try:
-        _probe = boto3.client(
-            "s3", endpoint_url=_endpoint,
-            aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
-            aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
-            region_name=_region, config=Config(signature_version="s3v4"),
-        )
-        _probe.list_objects_v2(Bucket=settings.S3_BUCKET, MaxKeys=1)
-        out["creds_check"] = {"list_objects": "OK — ключи и подпись валидны"}
-    except Exception as e:
-        out["creds_check"] = {"list_objects": f"{type(e).__name__}: {str(e)[:300]}"}
-
-    configs = {
-        "when_required": dict(signature_version="s3v4",
-                              request_checksum_calculation="when_required",
-                              response_checksum_validation="when_required"),
-        "plain_s3v4":    dict(signature_version="s3v4"),
-    }
-    url = None
-    for name, cfg_kwargs in configs.items():
-        try:
-            cfg = Config(**cfg_kwargs)
-        except TypeError as te:
-            attempts.append({"config": name, "error": f"Config не принял параметры: {te}"})
-            continue
-        try:
-            s3 = boto3.client(
-                "s3", endpoint_url=_endpoint,
-                aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
-                aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
-                region_name=_region, config=cfg,
-            )
-            s3.put_object(Bucket=settings.S3_BUCKET, Key=key, Body=wav, ContentType="audio/wav")
-            if settings.S3_PUBLIC_URL:
-                url = f"{settings.S3_PUBLIC_URL.rstrip('/')}/{key}"
-            elif _endpoint:
-                url = f"{_endpoint.rstrip('/')}/{settings.S3_BUCKET}/{key}"
-            else:
-                url = f"https://{settings.S3_BUCKET}.s3.{_region}.amazonaws.com/{key}"
-            attempts.append({"config": name, "ok": True})
-            break
-        except Exception as e:
-            attempts.append({"config": name, "error": f"{type(e).__name__}: {str(e)[:300]}"})
-
-    out["upload"] = {"ok": bool(url), "url": url, "attempts": attempts,
-                     "botocore_version": botocore.__version__}
-    if not url:
-        return out
-
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=15.0) as cli:
-            r = await cli.get(url)
-        out["public_url"] = {"status": r.status_code, "bytes": len(r.content)}
-        if r.status_code == 403:
-            out["public_url"]["hint"] = "Файл загружен, но бакет НЕ публичный → браузер не откроет"
-        elif r.status_code == 200:
-            out["public_url"]["hint"] = "OK — аудио будет играть в браузере"
-    except Exception as e:
-        out["public_url"] = {"error": str(e)[:200]}
-
-    try:
-        async with AsyncSessionLocal() as db:
-            rows = (await db.execute(
-                select(Report).order_by(Report.timestamp.desc()).limit(5)
-            )).scalars().all()
-        out["recent_reports"] = [
-            {"id": r.id, "time": r.timestamp.isoformat(), "has_s3_url": bool(r.s3_url)}
-            for r in rows
-        ]
-    except Exception as e:
-        out["recent_reports"] = {"error": str(e)[:200]}
-
-    return out
-
 # Per-API-key rate limits:
 #   * 60 запросов / минуту  → защита от пиковых атак
 #   * 1500 запросов / сутки → защита от runaway-кошелька OpenAI
@@ -481,14 +355,15 @@ async def _process_submission(
 
         # ── Архив аудио в R2/S3 для прослушки + SHA-256 ──────────
         # Сохраняем КАЖДУЮ запись (не только priority=1), чтобы владелец
-        # мог прослушать любой разговор (по s3_key строится публичная ссылка).
-        # Если S3 не настроен — тихо пропускаем (upload_evidence вернёт s3_url=None).
-        audio_sha256 = s3_url = s3_key = None
+        # мог прослушать любой разговор. Храним ТОЛЬКО s3_key — ссылку на
+        # запись выдаёт presigned-эндпоинт get_report_audio с проверкой прав.
+        # Публичную (вечную) ссылку не строим и не храним.
+        # Если S3 не настроен — тихо пропускаем (upload_evidence вернёт key=None).
+        audio_sha256 = s3_key = None
         if wav_bytes:
             tmp_id         = int(datetime.utcnow().timestamp())
             storage_result = await upload_evidence(wav_bytes, location_id, tmp_id)
             audio_sha256   = storage_result.get("sha256")
-            s3_url         = storage_result.get("s3_url")
             s3_key         = storage_result.get("key")
 
         # ── Анализ фраз (regex резерв) + GPT events ──────────────
@@ -582,7 +457,7 @@ async def _process_submission(
                 gpt_details={"positives": result.get("positives", []), "issues": result.get("issues", []), "events": events},
                 speakers=speakers,
                 is_priority=is_priority_flag,
-                audio_sha256=audio_sha256,  s3_url=s3_url,  s3_key=s3_key,
+                audio_sha256=audio_sha256,  s3_key=s3_key,
                 payment_confirmed=payment_confirmed,
                 upsell_attempt=upsell_attempt,
                 customer_satisfaction=customer_satisfaction,
@@ -630,6 +505,7 @@ async def _process_submission(
                         description=incident.description,
                         proof_s3_url=incident.proof_s3_url,
                         detected_phone=hit["phone"],
+                        report_id=report.id,
                     )
                 # Email alert for fraud — send to location owner
                 try:
@@ -644,6 +520,7 @@ async def _process_submission(
                                     incident_type="KASPI_FRAUD",
                                     description=incident.description,
                                     audio_url=incident.proof_s3_url,
+                                    report_id=report.id,
                                 )
                 except Exception as _e:
                     log.warning(f"Fraud email not sent: {_e}")
@@ -698,15 +575,15 @@ async def _process_submission(
                 "telegram_chat": telegram_chat,
                 "location_name": location_name,
                 "summary":       gpt_summary,
-                "audio_url":     s3_url,
                 "sha256":        audio_sha256,
+                "report_id":     report_id,
             })
         elif telegram_chat and (has_fraud or has_bad):
             await notifier.send_report(
                 chat_id=telegram_chat, location_name=location_name,
                 transcript=transcript, found=found,
                 tone=effective_tone, score=final_score,
-                audio_url=s3_url,
+                report_id=report_id,
             )
         elif telegram_chat and not suppress_alert and notify_ok_conversations:
             await notifier.send_ok_report(
@@ -717,8 +594,8 @@ async def _process_submission(
                 score=final_score,
                 upsell=upsell_attempt,
                 greeting=has_greeting,
-                audio_url=s3_url,
                 summary=gpt_summary,
+                report_id=report_id,
             )
 
         # Email for fraud incidents
@@ -734,7 +611,7 @@ async def _process_submission(
                                 location_name=location_name,
                                 incident_type="FRAUD",
                                 description=gpt_summary or "Обнаружено GPT-анализом",
-                                audio_url=s3_url,
+                                report_id=report_id,
                             )
             except Exception as _e:
                 log.warning(f"Fraud email not sent: {_e}")
@@ -1017,9 +894,8 @@ async def get_reports(
             "upsell_attempt":        r.upsell_attempt,
             "customer_satisfaction": r.customer_satisfaction,
             "energy_level":          r.energy_level,
-            "s3_url":                r.s3_url,
             "audio_sha256":          r.audio_sha256,
-            "has_audio":             bool(r.s3_key or r.s3_url),
+            "has_audio":             bool(r.s3_key),
         }
         for r in rows
     ]
@@ -1050,12 +926,10 @@ async def get_report_audio(
     if not report.s3_key:
         raise HTTPException(status_code=404, detail="Аудио для этого разговора не сохранено")
 
-    # Публичный бакет (R2 r2.dev) → прямая ссылка; иначе presigned на 1 час.
-    from backend.config import settings
-    if settings.S3_PUBLIC_URL:
-        url = f"{settings.S3_PUBLIC_URL.rstrip('/')}/{report.s3_key}"
-    else:
-        url = presigned_get_url(report.s3_key, expires=3600)
+    # ПРИВАТНЫЙ доступ: всегда presigned-ссылка с коротким TTL (15 минут).
+    # Права владельца уже проверены выше. Прямую вечную публичную ссылку
+    # (S3_PUBLIC_URL) НЕ отдаём — она бы жила бессрочно без авторизации.
+    url = presigned_get_url(report.s3_key, expires=900)
     if not url:
         raise HTTPException(status_code=503, detail="Хранилище аудио не настроено")
     return {"url": url}

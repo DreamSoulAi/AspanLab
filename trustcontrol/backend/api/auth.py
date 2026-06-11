@@ -1,25 +1,25 @@
 # ════════════════════════════════════════════════════════════
-#  API: Авторизация v3.1 — Phone OTP
-#
-#  Флоу регистрации:
-#    POST /register  → создаёт юзера (is_verified=False)
-#    POST /verify-otp → проверяет OTP, ставит is_verified=True, возвращает JWT
+#  API: Авторизация v4.0 — Phone + Password only
 #
 #  Флоу входа:
-#    POST /login     → phone+password, если is_verified=False → 403 PHONE_NOT_VERIFIED
-#    POST /send-otp  → (переотправка) генерирует новый код
+#    POST /login  → phone+password → JWT
+#
+#  Регистрация: закрыта. Только администратор создаёт клиентов:
+#    POST /admin/create-client → генерирует пароль, возвращает однократно
+#    CLI: scripts/create_client.py для первого клиента/админа
 #
 #  SECURITY:
 #    - Rate limit: 5 попыток / 60 сек на все auth-эндпоинты
 #    - Пароль: минимум 8 символов
 #    - Телефон: нормализация в +7XXXXXXXXXX (KZ формат), уникальный ключ
-#    - OTP: 6 цифр, secrets.randbelow (CSPRNG), 10 минут, одноразовый
-#    - otp_code НЕ возвращается в продакшн-ответах (только OTP_BYPASS=true)
+#    - OtpCode модель остаётся — используется для Telegram-линковки (/tg-link)
 # ════════════════════════════════════════════════════════════
 
 import os
 import re
+import hmac
 import time
+import string
 import hashlib
 import secrets
 import traceback
@@ -92,74 +92,50 @@ def normalize_phone(raw: str) -> str | None:
     return None
 
 
-# ── OTP helpers ───────────────────────────────────────────────────────────────
-
-def _generate_otp() -> str:
-    if settings.OTP_BYPASS:
-        return "000000"
-    return f"{secrets.randbelow(1_000_000):06d}"
-
+# ── OTP hash helper (used for Telegram account linking) ───────────────────────
 
 def _hash_otp(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
 
 
-async def _create_and_send_otp(phone: str, name: str, db: AsyncSession) -> str:
-    """Invalidate old codes, generate a new one. Returns the plain code (never stored)."""
-    await db.execute(
-        sa_update(OtpCode)
-        .where(OtpCode.phone == phone, OtpCode.used == False)  # noqa: E712
-        .values(used=True)
-    )
-    code = _generate_otp()
-    db.add(OtpCode(
-        phone=phone,
-        code=_hash_otp(code),  # store hash, not plain text
-        expires_at=datetime.utcnow() + timedelta(minutes=10),
-    ))
-    await db.flush()
+# ── Telegram Login Widget — проверка подписи ──────────────────────────────────
+# https://core.telegram.org/widgets/login#checking-authorization
+# Ядро безопасности: НИКОГДА не доверяем данным от Telegram без верификации HMAC.
 
-    # Only log the code in bypass/dev mode — never in production
-    if settings.OTP_BYPASS:
-        _log.info(f"OTP (bypass): phone={phone} code={code}")
-    else:
-        _log.info(f"OTP generated: phone={phone}")
-    # Future: await send_sms(phone, code, name)
-    return code
+TELEGRAM_AUTH_MAX_AGE = 86400   # 24 часа — данные старше отклоняются
+
+
+def verify_telegram_auth(data: dict, bot_token: str | None = None) -> bool:
+    """
+    Проверяет подпись данных Telegram Login Widget.
+
+    1. secret_key = SHA256(bot_token)
+    2. data_check_string = "\\n".join(sorted("key=value")) по всем полям кроме hash
+    3. HMAC-SHA256(data_check_string, secret_key) == hash  (constant-time)
+
+    Возвращает True только если подпись валидна. Любая ошибка → False.
+    """
+    token = bot_token or settings.TELEGRAM_BOT_TOKEN
+    recv_hash = str(data.get("hash", ""))
+    if not token or not recv_hash:
+        return False
+
+    pairs = [
+        f"{k}={v}"
+        for k, v in data.items()
+        if k != "hash" and v is not None
+    ]
+    data_check_string = "\n".join(sorted(pairs))
+
+    secret_key = hashlib.sha256(token.encode()).digest()
+    computed = hmac.new(
+        secret_key, data_check_string.encode(), hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(computed, recv_hash)
 
 
 # ── Pydantic schemas ───────────────────────────────────────────────────────────
-
-class RegisterRequest(BaseModel):
-    name:     str = Field(..., min_length=2, max_length=100)
-    phone:    str
-    password: str
-    email:    EmailStr | None = None
-
-    @field_validator("password")
-    @classmethod
-    def password_strength(cls, v):
-        if len(v) < 8:
-            raise ValueError("Пароль должен быть минимум 8 символов")
-        return v
-
-    @field_validator("phone")
-    @classmethod
-    def phone_format(cls, v):
-        normed = normalize_phone(v)
-        if not normed:
-            raise ValueError("Неверный формат. Ожидается: +7 7XX XXX XX XX")
-        return normed
-
-
-class OtpSendRequest(BaseModel):
-    phone: str
-
-
-class OtpVerifyRequest(BaseModel):
-    phone: str
-    code:  str = Field(..., min_length=6, max_length=6)
-
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -233,113 +209,6 @@ async def app_config():
     }
 
 
-@router.post("/register")
-async def register(data: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    client_ip = _get_client_ip(request)
-    _check_rate_limit(client_ip)
-    try:
-        existing = await db.execute(select(User).where(User.phone == data.phone))
-        existing_user = existing.scalar()
-
-        if existing_user:
-            if existing_user.is_verified:
-                raise HTTPException(status_code=400, detail="Номер уже зарегистрирован")
-            existing_user.name            = data.name
-            existing_user.email           = data.email
-            existing_user.hashed_password = hash_password(data.password)
-            existing_user.plan_expires    = datetime.utcnow() + timedelta(days=TRIAL_DAYS)
-            code = await _create_and_send_otp(data.phone, data.name, db)
-            await db.commit()
-            resp = {"status": "otp_sent", "phone": data.phone}
-            if settings.OTP_BYPASS:
-                resp["otp_code"] = code
-            return resp
-
-        user = User(
-            name=data.name,
-            phone=data.phone,
-            email=data.email,
-            hashed_password=hash_password(data.password),
-            plan="trial",
-            plan_expires=datetime.utcnow() + timedelta(days=TRIAL_DAYS),
-            is_verified=False,
-        )
-        db.add(user)
-        await db.flush()
-
-        code = await _create_and_send_otp(data.phone, data.name, db)
-        await db.commit()
-
-        resp = {"status": "otp_sent", "phone": data.phone}
-        if settings.OTP_BYPASS:
-            resp["otp_code"] = code
-        return resp
-
-    except HTTPException:
-        raise
-    except Exception:
-        _log.error(f"register 500: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail="Внутренняя ошибка. Попробуйте позже.")
-
-
-@router.post("/send-otp")
-async def send_otp(data: OtpSendRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    client_ip = _get_client_ip(request)
-    _check_rate_limit(client_ip)
-
-    phone = normalize_phone(data.phone) or data.phone.strip()
-    result = await db.execute(select(User).where(User.phone == phone))
-    user = result.scalar()
-    if not user:
-        return {"status": "sent"}  # Don't reveal whether phone exists
-
-    code = await _create_and_send_otp(phone, user.name, db)
-    await db.commit()
-
-    resp = {"status": "sent"}
-    if settings.OTP_BYPASS:
-        resp["otp_code"] = code
-    return resp
-
-
-@router.post("/verify-otp", response_model=TokenResponse)
-async def verify_otp(data: OtpVerifyRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    client_ip = _get_client_ip(request)
-    _check_rate_limit(client_ip)
-
-    phone = normalize_phone(data.phone) or data.phone.strip()
-
-    result = await db.execute(
-        select(OtpCode).where(
-            OtpCode.phone      == phone,
-            OtpCode.code       == _hash_otp(data.code.strip()),
-            OtpCode.used       == False,           # noqa: E712
-            OtpCode.expires_at >  datetime.utcnow(),
-        )
-    )
-    otp = result.scalar()
-    if not otp:
-        raise HTTPException(status_code=400, detail="Неверный или просроченный код")
-
-    otp.used = True
-
-    result = await db.execute(select(User).where(User.phone == phone))
-    user = result.scalar()
-    if not user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-
-    user.is_verified = True
-    user.last_login  = datetime.utcnow()
-    await db.commit()
-
-    return TokenResponse(
-        access_token=create_token(user.id),
-        user_id=user.id,
-        name=user.name,
-        plan=user.plan,
-    )
-
-
 @router.post("/login", response_model=TokenResponse)
 async def login(
     request: Request,
@@ -359,11 +228,6 @@ async def login(
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
-
-    if not user.is_verified:
-        await _create_and_send_otp(user.phone, user.name, db)
-        await db.commit()
-        raise HTTPException(status_code=403, detail="PHONE_NOT_VERIFIED")
 
     user.last_login = datetime.utcnow()
     _login_attempts.pop(client_ip, None)
@@ -459,6 +323,71 @@ async def admin_extend_subscription(
     }
 
 
+class CreateClientRequest(BaseModel):
+    name:     str  = Field(..., min_length=2, max_length=100)
+    phone:    str
+    plan:     str  = Field("trial", max_length=20)
+    days:     int  = Field(TRIAL_DAYS, ge=1, le=3650)
+    is_admin: bool = False
+
+    @field_validator("phone")
+    @classmethod
+    def phone_fmt(cls, v):
+        normed = normalize_phone(v)
+        if not normed:
+            raise ValueError("Неверный формат телефона. Ожидается: +7 7XX XXX XX XX")
+        return normed
+
+
+def _gen_password(length: int = 14) -> str:
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+@router.post("/admin/create-client")
+async def admin_create_client(
+    data: CreateClientRequest,
+    admin: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Создать клиента вручную (только администратор).
+    Возвращает сгенерированный пароль ОДНОКРАТНО — сохраните его сразу.
+    """
+    if not admin.is_admin:
+        raise HTTPException(status_code=403, detail="Только для администратора")
+
+    existing = await db.execute(select(User).where(User.phone == data.phone))
+    if existing.scalar():
+        raise HTTPException(status_code=400, detail="Телефон уже зарегистрирован")
+
+    password = _gen_password()
+    user = User(
+        name=data.name,
+        phone=data.phone,
+        hashed_password=hash_password(password),
+        plan=data.plan,
+        plan_expires=datetime.utcnow() + timedelta(days=data.days),
+        is_verified=True,
+        is_active=True,
+        is_admin=data.is_admin,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    _log.info(f"admin_create_client: id={user.id} phone={data.phone} by admin={admin.id}")
+    return {
+        "status":       "ok",
+        "user_id":      user.id,
+        "phone":        user.phone,
+        "name":         user.name,
+        "plan":         user.plan,
+        "plan_expires": user.plan_expires.isoformat() if user.plan_expires else None,
+        "password":     password,
+    }
+
+
 class UpdateMeRequest(BaseModel):
     name:          str | None      = Field(None, max_length=100)
     company_name:  str | None      = Field(None, max_length=150)
@@ -542,6 +471,106 @@ async def tg_unlink(
     user.telegram_id   = None
     await db.commit()
     return {"status": "ok"}
+
+
+@router.post("/telegram-login", response_model=TokenResponse)
+async def telegram_login(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Вход / самозапись через Telegram Login Widget.
+
+    Тело запроса — JSON с полями виджета: id, first_name, last_name?,
+    username?, photo_url?, auth_date, hash.
+
+    Безопасность:
+      - rate limit по IP (как у /login)
+      - ОБЯЗАТЕЛЬНАЯ проверка HMAC-подписи (verify_telegram_auth)
+      - auth_date не старше 24 часов
+
+    Логика:
+      - найден по telegram_id → выдаём JWT (вход)
+      - найден по telegram_chat (привязал бота раньше) → дописываем
+        telegram_id и выдаём JWT (без дубля)
+      - не найден → создаём trial-клиента и сразу выдаём JWT
+    """
+    client_ip = _get_client_ip(request)
+    _check_rate_limit(client_ip)
+
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Некорректные данные Telegram")
+
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Некорректные данные Telegram")
+
+    # 1. Подпись — ядро безопасности
+    if not verify_telegram_auth(data):
+        _log.warning(f"telegram_login: invalid signature from ip={client_ip}")
+        raise HTTPException(status_code=401, detail="Подпись Telegram недействительна")
+
+    # 2. Свежесть данных
+    try:
+        auth_date = int(data.get("auth_date", 0))
+    except (TypeError, ValueError):
+        auth_date = 0
+    if auth_date <= 0 or (time.time() - auth_date) > TELEGRAM_AUTH_MAX_AGE:
+        raise HTTPException(status_code=401, detail="Данные Telegram устарели — войдите заново")
+
+    tg_id = str(data.get("id", "")).strip()
+    if not tg_id:
+        raise HTTPException(status_code=400, detail="Не передан Telegram ID")
+
+    # 3. Поиск существующего клиента по telegram_id
+    result = await db.execute(select(User).where(User.telegram_id == tg_id))
+    user = result.scalar()
+
+    # Фолбэк: клиент уже привязал этот Telegram через бота (telegram_chat),
+    # но без telegram_id — подхватываем его, чтобы не плодить дубль.
+    if not user:
+        result = await db.execute(select(User).where(User.telegram_chat == tg_id))
+        user = result.scalar()
+        if user and not user.telegram_id:
+            user.telegram_id = tg_id
+
+    # 4. Самозапись нового клиента
+    if not user:
+        first = (data.get("first_name") or "").strip()
+        last  = (data.get("last_name") or "").strip()
+        uname = (data.get("username") or "").strip()
+        name  = (f"{first} {last}".strip()) or uname or f"tg{tg_id}"
+        user = User(
+            name=name[:100],
+            telegram_id=tg_id,
+            telegram_chat=tg_id,   # id == chat_id личного чата с ботом
+            plan="trial",
+            plan_expires=datetime.utcnow() + timedelta(days=TRIAL_DAYS),
+            is_verified=True,
+            is_active=True,
+            is_admin=False,
+        )
+        db.add(user)
+        _log.info(f"telegram_login: new client tg_id={tg_id} name={name!r}")
+    else:
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
+        # держим личный чат в актуальном состоянии для уведомлений
+        if not user.telegram_chat:
+            user.telegram_chat = tg_id
+
+    user.last_login = datetime.utcnow()
+    _login_attempts.pop(client_ip, None)
+    await db.commit()
+    await db.refresh(user)
+
+    return TokenResponse(
+        access_token=create_token(user.id),
+        user_id=user.id,
+        name=user.name,
+        plan=user.plan,
+    )
 
 
 class TokenLoginRequest(BaseModel):

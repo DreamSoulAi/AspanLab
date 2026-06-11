@@ -2,19 +2,24 @@
 #  Тесты — конфигурация и фикстуры
 #  pip install pytest pytest-asyncio httpx aiosqlite
 #
-#  OTP_BYPASS=true → код всегда 000000 (без отправки SMS).
+#  Вход/самозапись — через Telegram Login Widget (см. helpers ниже).
 # ════════════════════════════════════════════════════════════
 
 import os
 
 # Должно быть выставлено ДО импорта settings/main
-os.environ.setdefault("OTP_BYPASS", "true")
 os.environ.setdefault("DEBUG", "true")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci-minimum-32-chars!!")
 os.environ.setdefault("OPENAI_API_KEY", "sk-fake-key-for-tests")
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "123:fake-token")
 
+# Токен, которым подписываем тестовые данные Telegram-виджета
+TG_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+
+import hashlib
+import hmac
 import itertools
+import time
 
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -25,14 +30,44 @@ from backend.database import Base, get_db
 from backend.models import User, Location  # noqa — регистрация моделей
 
 
-# ── Уникальные телефоны на всю сессию ────────────────────────
-# (чтобы тесты не пересекались по номерам, даже если БД одна)
+# ── Уникальные телефоны / telegram_id на всю сессию ──────────
+# (чтобы тесты не пересекались, даже если БД одна)
 _phone_counter = itertools.count(1)
+_tg_counter    = itertools.count(1000)
 
 
 def _next_phone() -> str:
     n = next(_phone_counter)
     return f"+7700000{n:04d}"
+
+
+def _next_tg_id() -> int:
+    return next(_tg_counter)
+
+
+def telegram_widget_payload(
+    tg_id: int | None = None,
+    first_name: str = "Test",
+    auth_date: int | None = None,
+    bot_token: str = TG_BOT_TOKEN,
+    sign: bool = True,
+) -> dict:
+    """
+    Собирает тело запроса Telegram Login Widget с валидной HMAC-подписью
+    (как это делает сам Telegram). sign=False → подпись битая (для негативных тестов).
+    """
+    payload: dict = {
+        "id":         tg_id if tg_id is not None else _next_tg_id(),
+        "first_name": first_name,
+        "auth_date":  auth_date if auth_date is not None else int(time.time()),
+    }
+    check = "\n".join(sorted(f"{k}={v}" for k, v in payload.items()))
+    secret = hashlib.sha256(bot_token.encode()).digest()
+    payload["hash"] = (
+        hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+        if sign else "deadbeef"
+    )
+    return payload
 
 
 # ── Фикстура: HTTP клиент со свежей БД на каждый тест ────────
@@ -79,37 +114,22 @@ async def client():
 
 async def register_user(
     client: AsyncClient,
-    phone: str | None = None,
-    password: str = "testpass123",
+    tg_id: int | None = None,
     name: str = "Test User",
 ) -> dict:
     """
-    Регистрирует пользователя и проходит OTP-верификацию.
-    Возвращает {"access_token": ..., "phone": ..., "user_id": ...}.
-
-    OTP_BYPASS=true в conftest → код всегда 000000.
+    Самозапись клиента через Telegram Login Widget.
+    Возвращает {"access_token": ..., "user_id": ..., "tg_id": ..., ...}.
     """
-    phone = phone or _next_phone()
-
-    r = await client.post("/api/auth/register", json={
-        "name":     name,
-        "phone":    phone,
-        "password": password,
-    })
-    assert r.status_code == 200, f"Register failed: {r.text}"
-
-    r = await client.post("/api/auth/verify-otp", json={
-        "phone": phone,
-        "code":  "000000",
-    })
-    assert r.status_code == 200, f"Verify OTP failed: {r.text}"
+    payload = telegram_widget_payload(tg_id=tg_id, first_name=name)
+    r = await client.post("/api/auth/telegram-login", json=payload)
+    assert r.status_code == 200, f"Telegram login failed: {r.text}"
     data = r.json()
-    data["phone"] = phone
-    data["password"] = password
+    data["tg_id"] = payload["id"]
     return data
 
 
-async def auth_headers(client: AsyncClient, phone: str | None = None) -> dict:
-    """Регистрирует юзера и возвращает заголовки авторизации."""
-    data = await register_user(client, phone=phone)
+async def auth_headers(client: AsyncClient, tg_id: int | None = None) -> dict:
+    """Самозапись клиента и возврат заголовков авторизации."""
+    data = await register_user(client, tg_id=tg_id)
     return {"Authorization": f"Bearer {data['access_token']}"}

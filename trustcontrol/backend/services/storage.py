@@ -59,8 +59,13 @@ async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) 
     Архивирует аудио в S3/R2 (для прослушки и доказательств).
 
     Возвращает:
-      {"sha256": "<hex>", "s3_url": "<url>", "key": "<key>"}   — при успехе
-      {"sha256": "<hex>", "s3_url": None, "key": None}          — если S3 не настроен/ошибка
+      {"sha256": "<hex>", "key": "<key>"}   — при успехе
+      {"sha256": "<hex>", "key": None}       — если S3 не настроен/ошибка
+
+    ВАЖНО (приватность): возвращаем ТОЛЬКО ключ объекта, а не публичную
+    ссылку. Доступ к записи выдаётся исключительно через presigned-URL в
+    эндпоинте get_report_audio (с проверкой прав владельца). Вечную
+    публичную ссылку в коде не строим — даже если выставлен S3_PUBLIC_URL.
 
     SHA-256 вычисляется ДО загрузки — даже если S3 недоступен хеш
     остаётся в БД как доказательство целостности файла.
@@ -74,13 +79,13 @@ async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) 
             f"[loc={location_id}] S3_BUCKET не задан — архивирование пропущено "
             f"(SHA256={sha256[:16]}... сохранён в БД)"
         )
-        return {"sha256": sha256, "s3_url": None, "key": None}
+        return {"sha256": sha256, "key": None}
 
     try:
         import boto3  # noqa: F401
     except ImportError:
         log.error("boto3 не установлен: pip install boto3")
-        return {"sha256": sha256, "s3_url": None, "key": None}
+        return {"sha256": sha256, "key": None}
 
     from botocore.config import Config
     _endpoint = (settings.S3_ENDPOINT_URL or "").strip() or None
@@ -122,19 +127,8 @@ async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) 
                 },
             )
 
-            # Публичная ссылка для прослушивания:
-            #  • R2: задан S3_PUBLIC_URL (pub-xxxx.r2.dev) → bucket в путь НЕ входит
-            #  • Supabase/MinIO: из S3_ENDPOINT_URL + bucket
-            #  • AWS: virtual-hosted style
-            if settings.S3_PUBLIC_URL:
-                url = f"{settings.S3_PUBLIC_URL.rstrip('/')}/{key}"
-            elif settings.S3_ENDPOINT_URL:
-                url = f"{settings.S3_ENDPOINT_URL.rstrip('/')}/{settings.S3_BUCKET}/{key}"
-            else:
-                url = f"https://{settings.S3_BUCKET}.s3.{settings.S3_REGION}.amazonaws.com/{key}"
-
             log.info(f"[loc={location_id}] Архив S3 (попытка {attempt}): {key} | SHA256: {sha256[:16]}...")
-            return {"sha256": sha256, "s3_url": url, "key": key}
+            return {"sha256": sha256, "key": key}
 
         except Exception as e:
             last_err = e
@@ -145,4 +139,4 @@ async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) 
             else:
                 log.error(f"[loc={location_id}] S3 все {_S3_MAX_RETRIES} попытки исчерпаны: {last_err}")
 
-    return {"sha256": sha256, "s3_url": None, "key": None}
+    return {"sha256": sha256, "key": None}
