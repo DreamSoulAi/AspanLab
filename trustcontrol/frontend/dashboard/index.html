@@ -1378,70 +1378,18 @@ textarea.f-input{resize:vertical;line-height:1.6}
             <div class="card-label">Разговоров сегодня</div>
             <div class="card-val" id="statTotal">—</div>
           </div>
-          <div class="card green">
-            <div class="card-label">Приветствий</div>
-            <div class="card-val" id="statGreetPct">—</div>
-            <div class="card-sub">% от разговоров</div>
-          </div>
-          <div class="card">
-            <div class="card-label">Допродажи</div>
-            <div class="card-val" id="statBonusPct">—</div>
-            <div class="card-sub">% попыток</div>
+          <div class="card" id="cardScore">
+            <div class="card-label">Оценка качества</div>
+            <div class="card-val" id="statScore">—</div>
+            <div class="card-sub">из 100</div>
           </div>
           <div class="card red">
-            <div class="card-label">Нарушения</div>
+            <div class="card-label">Нарушений сегодня</div>
             <div class="card-val" id="statBad">—</div>
           </div>
           <div class="card red">
             <div class="card-label">🚨 Мошенничество</div>
             <div class="card-val" id="statFraud">—</div>
-          </div>
-          <div class="card">
-            <div class="card-label">Тревог сегодня</div>
-            <div class="card-val" id="statAlerts">—</div>
-          </div>
-        </div>
-
-        <!-- KPI RINGS -->
-        <div class="kpi-row">
-          <div class="kpi-wrap">
-            <div class="kpi-svg-wrap">
-              <svg class="kpi-svg" viewBox="0 0 80 80">
-                <circle class="kpi-track" cx="40" cy="40" r="32"/>
-                <circle class="kpi-arc" cx="40" cy="40" r="32" id="ringGreeting" stroke="#10B981"/>
-              </svg>
-              <div class="kpi-center">
-                <div class="kpi-pct" id="kpiGreetVal" style="color:#10B981">—</div>
-                <div class="kpi-unit">%</div>
-              </div>
-            </div>
-            <div class="kpi-label">Приветствия</div>
-          </div>
-          <div class="kpi-wrap">
-            <div class="kpi-svg-wrap">
-              <svg class="kpi-svg" viewBox="0 0 80 80">
-                <circle class="kpi-track" cx="40" cy="40" r="32"/>
-                <circle class="kpi-arc" cx="40" cy="40" r="32" id="ringBonus" stroke="#3B82F6"/>
-              </svg>
-              <div class="kpi-center">
-                <div class="kpi-pct" id="kpiBonusVal" style="color:#3B82F6">—</div>
-                <div class="kpi-unit">%</div>
-              </div>
-            </div>
-            <div class="kpi-label">Допродажи</div>
-          </div>
-          <div class="kpi-wrap">
-            <div class="kpi-svg-wrap">
-              <svg class="kpi-svg" viewBox="0 0 80 80">
-                <circle class="kpi-track" cx="40" cy="40" r="32"/>
-                <circle class="kpi-arc" cx="40" cy="40" r="32" id="ringScore" stroke="#F59E0B"/>
-              </svg>
-              <div class="kpi-center">
-                <div class="kpi-pct" id="kpiScoreVal" style="color:#F59E0B">—</div>
-                <div class="kpi-unit">/100</div>
-              </div>
-            </div>
-            <div class="kpi-label">AI оценка</div>
           </div>
         </div>
 
@@ -1547,7 +1495,7 @@ textarea.f-input{resize:vertical;line-height:1.6}
               <option value="7" selected>7 дней</option>
               <option value="30">30 дней</option>
             </select>
-            <button class="btn btn-ghost" onclick="exportCSV()">⬇ CSV</button>
+            <button class="btn btn-ghost" onclick="exportCSV()">⬇ Скачать</button>
             <button class="btn btn-a" onclick="loadReportsPage()">Обновить</button>
           </div>
         </div>
@@ -1569,16 +1517,9 @@ textarea.f-input{resize:vertical;line-height:1.6}
               <option value="30">30 дней</option>
               <option value="90">90 дней</option>
             </select>
-            <button class="btn btn-ghost" onclick="exportCSV()">⬇ Экспорт CSV</button>
+            <button class="btn btn-ghost" onclick="exportCSV()">⬇ Скачать</button>
             <button class="btn btn-a" onclick="loadStaff()">Обновить</button>
           </div>
-        </div>
-        <div class="panel" style="margin-bottom:12px;background:rgba(59,130,246,.03);border-color:rgba(59,130,246,.15)">
-          <p style="font-size:13px;color:var(--muted);line-height:1.6">
-            <b style="color:var(--txt)">По именам</b> — добавьте сотрудников и их смены в настройках кассы (⚙ Настройки),
-            и тут появится качество каждого отдельно: тон, приветствия, нарушения.<br>
-            <b style="color:var(--txt)">По сменам</b> — автоматически: если добавили сотрудников со временем смены — используются их часы; иначе стандарт утро (06–14), день (14–22), ночь (22–06).
-          </p>
         </div>
         <div id="staffContent"></div>
       </div>
@@ -2367,11 +2308,15 @@ async function loadDashboard(){
   if(!d)return;
   const t=d.today||{};
   set('statTotal',t.total??0);
-  set('statGreetPct',(t.greetings_pct??0)+'%');
-  set('statBonusPct',(t.bonus_pct??0)+'%');
-  set('statBad',t.bad_count??0);
+  set('statBad',(t.bad_count??0)+(t.fraud_count??0));
   set('statFraud',t.fraud_count??0);
-  set('statAlerts',d.alerts_today??0);
+  const sc=t.score??0;
+  const scoreCard=document.getElementById('statScore');
+  if(scoreCard){
+    scoreCard.textContent=sc||'—';
+    const cardEl=document.getElementById('cardScore');
+    if(cardEl){cardEl.className='card '+(sc>=80?'green':sc>=60?'':'red');}
+  }
 
   // alert badge
   const cnt=d.alerts_today??0;
@@ -2379,15 +2324,6 @@ async function loadDashboard(){
   const mb=document.getElementById('mnAlertsBadge');
   if(ab){ab.textContent=cnt;ab.style.display=cnt>0?'':'none';}
   if(mb){mb.textContent=cnt;mb.style.display=cnt>0?'flex':'none';}
-
-  // KPI rings
-  animRing('ringGreeting',t.greetings_pct??0);
-  set('kpiGreetVal',(t.greetings_pct??0)+'%');
-  animRing('ringBonus',t.bonus_pct??0);
-  set('kpiBonusVal',(t.bonus_pct??0)+'%');
-  const sc=t.score??0;
-  animRing('ringScore',sc);
-  set('kpiScoreVal',sc);
 
   // score ring (big)
   const scoreEl=document.getElementById('scoreRing');
