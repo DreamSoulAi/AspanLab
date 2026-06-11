@@ -2,11 +2,12 @@
 #  API: Торговые точки
 # ════════════════════════════════════════════════════════════
 
+import logging
 import secrets
 from datetime import datetime
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, Field, field_validator
@@ -17,6 +18,11 @@ from backend.api.auth import get_current_user
 from backend.models.user import User
 
 router = APIRouter()
+log = logging.getLogger("locations")
+
+# Лимиты загрузки фото меню
+_MAX_MENU_PHOTOS = 3
+_MAX_PHOTO_BYTES = 10 * 1024 * 1024   # 10MB на фото
 
 VALID_BUSINESS_TYPES = {"coffee", "gas", "fastfood", "cafe", "beauty", "shop", "fitness", "hotel",
                         "pharmacy", "clinic", "auto", "service", "other"}
@@ -132,6 +138,40 @@ class AntifraudSettings(BaseModel):
         return v
 
 
+class MenuItem(BaseModel):
+    name:     str = Field(..., min_length=1, max_length=80)
+    variants: list[str] = Field(default_factory=list)
+    price:    Optional[int] = None
+
+    @field_validator("variants")
+    @classmethod
+    def validate_variants(cls, v):
+        return [str(x).strip()[:30] for x in (v or []) if str(x).strip()][:10]
+
+
+class GlossarySettings(BaseModel):
+    """Словарь точки для транскрипции (custom_phrases) + структура меню (menu_json)."""
+    custom_phrases: Optional[list[str]] = None
+    menu_json:      Optional[list[MenuItem]] = None
+
+    @field_validator("custom_phrases")
+    @classmethod
+    def validate_phrases(cls, v):
+        if v is not None:
+            cleaned = [str(w).strip()[:60] for w in v if str(w).strip()]
+            if len(cleaned) > 200:
+                raise ValueError("Максимум 200 слов в словаре точки")
+            return cleaned
+        return v
+
+    @field_validator("menu_json")
+    @classmethod
+    def validate_menu(cls, v):
+        if v is not None and len(v) > 150:
+            raise ValueError("Максимум 150 позиций в меню")
+        return v
+
+
 @router.get("/")
 async def list_locations(
     user: User = Depends(get_current_user),
@@ -200,6 +240,8 @@ async def get_location(
         "track_upsell":         bool(getattr(loc, "track_upsell", True)),
         "track_greeting":       bool(getattr(loc, "track_greeting", True)),
         "track_goodbye":        bool(getattr(loc, "track_goodbye", True)),
+        "custom_phrases":       getattr(loc, "custom_phrases", None) or [],
+        "menu_json":            getattr(loc, "menu_json", None) or [],
     }
 
 
@@ -329,6 +371,84 @@ async def update_antifraud(
         "allowed_phones":   loc.allowed_phones,
         "required_upsells": loc.required_upsells,
     }
+
+
+@router.put("/{location_id}/glossary")
+async def update_glossary(
+    location_id: int,
+    data: GlossarySettings,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Словарь точки для распознавания: custom_phrases (плоский) + menu_json (структура)."""
+    loc = await db.get(Location, location_id)
+    if not loc or loc.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Точка не найдена")
+
+    if data.custom_phrases is not None:
+        loc.custom_phrases = data.custom_phrases
+    if data.menu_json is not None:
+        loc.menu_json = [m.model_dump() for m in data.menu_json]
+
+    await db.commit()
+    return {
+        "message":        "Словарь точки сохранён",
+        "custom_phrases": loc.custom_phrases or [],
+        "menu_json":      loc.menu_json or [],
+    }
+
+
+@router.post("/{location_id}/menu-from-photo")
+async def menu_from_photo(
+    location_id: int,
+    files: list[UploadFile] = File(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Распознаёт меню с 1-3 фото через gpt-4o-mini vision.
+    Возвращает структуру меню для РЕДАКТИРОВАНИЯ владельцем (НЕ сохраняет).
+    Владелец правит результат и сохраняет через PUT /glossary.
+    """
+    loc = await db.get(Location, location_id)
+    if not loc or loc.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Точка не найдена")
+
+    if not files:
+        raise HTTPException(status_code=400, detail="Не приложено ни одного фото")
+    if len(files) > _MAX_MENU_PHOTOS:
+        raise HTTPException(status_code=400, detail=f"Максимум {_MAX_MENU_PHOTOS} фото за раз")
+
+    images: list[bytes] = []
+    for f in files:
+        data = await f.read()
+        if not data:
+            continue
+        if len(data) > _MAX_PHOTO_BYTES:
+            raise HTTPException(status_code=400, detail="Одно из фото больше 10 МБ — уменьшите размер")
+        images.append(data)
+
+    if not images:
+        raise HTTPException(status_code=400, detail="Файлы пустые")
+
+    from backend.services.menu_vision import extract_menu_from_images
+    try:
+        items = await extract_menu_from_images(images)
+    except Exception as e:
+        log.warning(f"menu_vision ошибка (точка {location_id}): {e}")
+        raise HTTPException(
+            status_code=502,
+            detail="Не удалось распознать меню по фото. Сделайте фото чётче и при хорошем "
+                   "освещении, или добавьте позиции вручную.",
+        )
+
+    if not items:
+        raise HTTPException(
+            status_code=422,
+            detail="На фото не нашлось позиций меню. Проверьте что это фото меню с названиями и ценами.",
+        )
+
+    return {"items": items, "count": len(items)}
 
 
 @router.post("/{location_id}/test-telegram")
