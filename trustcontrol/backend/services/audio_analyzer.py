@@ -460,90 +460,193 @@ def _strip_repeat_loops(text: str) -> str:
     return " ".join(out)
 
 
-_MERGE_MODEL = "gpt-4o-mini"
+_RECON_MODEL = "gpt-4o-mini"
 
-# Инструкция для гибридного слияния двух транскриптов одного аудио.
-# ISSAI точен на казахском, OpenAI — на русском. GPT-4o-mini объединяет
-# лучшее из обоих и заодно исправляет фонетические ошибки ISSAI по контексту.
-_MERGE_PROMPT = """Два варианта транскрипции одного аудио с кассы в Казахстане. Создай ОДИН объединённый транскрипт.
+# Уверенность ниже этого порога → транскрипт помечается на ручную проверку.
+_REVIEW_CONFIDENCE = 0.5
 
-ВАРИАНТ А — казахский распознаватель ISSAI (точнее на казахском, хуже на русских словах):
-Типичные ошибки: «врачок»/«брачок» → рожок; «кера»/«кюра»/«кьюар»/«кьйюар»/«кийюр» → QR;
-«сто кан» → стакан; прочие созвучные русские слова искажает фонетически;
-может пропустить или зашумить целые русские фразы.
 
-ВАРИАНТ Б — OpenAI (точнее на русском, хуже на чистом казахском):
-Типичные ошибки: на чистом казахском может придумывать несуществующие фразы;
-иногда пропускает тихий голос клиента (стоит дальше) или казахские вставки в русскую речь.
+def _plain_recon(text: str) -> dict:
+    """Тривиальный результат реконструкции без GPT-вызова (короткий/единственный источник)."""
+    return {"text": (text or "").strip(), "confidence": None,
+            "corrections": [], "needs_review": False}
 
-ПРАВИЛА ОБЪЕДИНЕНИЯ:
-1. Казахские слова/фразы → предпочитай ВАРИАНТ А
-2. Русские слова/фразы → предпочитай ВАРИАНТ Б
-3. Есть реплика в одном варианте и нет в другом → включи если она правдоподобна
-4. Исправляй фонетические ошибки ISSAI по контексту (рожок, стаканчик, QR и подобные)
-5. Если один вариант явно галлюцинирует (несвязный текст, выдуманные фразы) — используй другой
-6. НЕ придумывай слова которых не было ни в одном варианте
-7. Сохраняй языки: казахское слово — на казахском, русское — на русском
 
-Верни ТОЛЬКО итоговый текст. Без объяснений, без кавычек, без JSON."""
+def _parse_recon(data: dict | None, raw: str) -> dict:
+    """Нормализует JSON-ответ реконструкции в формат {text, confidence, corrections, needs_review}."""
+    if not data:
+        # API не ответил после ретраев → НЕ теряем разговор: сырой текст + ручная проверка
+        return {"text": raw, "confidence": None, "corrections": [], "needs_review": True}
+    text = (data.get("text") or "").strip() or raw
+    text = _strip_repeat_loops(text)
+    conf = data.get("confidence")
+    try:
+        conf = max(0.0, min(1.0, float(conf)))
+    except (TypeError, ValueError):
+        conf = None
+    corrections = data.get("corrections")
+    if not isinstance(corrections, list):
+        corrections = []
+    needs_review = conf is not None and conf < _REVIEW_CONFIDENCE
+    return {"text": text, "confidence": conf,
+            "corrections": corrections[:10], "needs_review": needs_review}
+
+
+async def _gpt_json_with_retry(messages: list, max_tokens: int = 1500,
+                               attempts: int = 3) -> dict | None:
+    """
+    Вызов gpt-4o-mini с JSON-ответом. Retry до `attempts` раз с экспоненциальным
+    backoff (1s, 2s, 4s) на ЛЮБЫЕ ошибки API: пустой ответ, таймаут, rate limit,
+    битый JSON. Никогда не бросает исключение — при полном провале возвращает None,
+    пайплайн продолжает работу с сырым текстом.
+    """
+    delay = 1.0
+    for i in range(attempts):
+        try:
+            resp = await client.chat.completions.create(
+                model=_RECON_MODEL,
+                messages=messages,
+                response_format={"type": "json_object"},
+                max_tokens=max_tokens,
+                temperature=0.1,
+            )
+            raw = (resp.choices[0].message.content or "").strip()
+            if not raw:
+                raise ValueError("пустой ответ модели")
+            return json.loads(raw)
+        except Exception as e:
+            log.warning(f"reconstruct GPT попытка {i + 1}/{attempts}: {e}")
+            if i < attempts - 1:
+                await asyncio.sleep(delay)
+                delay *= 2
+    return None
+
+
+_RECONSTRUCT_PROMPT = """Ты редактор транскриптов с кассы в Казахстане. На входе — СЫРОЙ текст от
+автоматического распознавания речи (STT), часто с ошибками: казахские слова
+записаны по созвучию неверно, русское и казахское перемешано, шумные обрывки.
+
+Восстанови что РЕАЛЬНО было сказано — по звучанию и смыслу:
+• Казахская речь, искажённая STT по созвучию: «кера/кьюар/кийюр» → QR;
+  «врачок/брачок» → рожок; «сто кан» → стакан. Восстанавливай по звуку.
+• Платёжные слова (Каспи, QR, терминал, перевод, аудар, наличные, сдача, картамен)
+  восстанавливай ОСОБЕННО точно — от них зависит выявление мошенничества.
+• Сохраняй язык каждого слова: казахское — казахским, русское — русским. НЕ переводи.
+• НЕ добавляй и НЕ выдумывай слов. Неразборчивый фрагмент оставь как есть.
+
+Верни ТОЛЬКО валидный JSON:
+{
+  "text": "восстановленный транскрипт",
+  "confidence": <0.0-1.0 — насколько уверен что восстановил верно>,
+  "corrections": [{"from": "кера", "to": "QR"}]
+}
+
+confidence: 0.8-1.0 связный текст, правки очевидны; 0.5-0.79 есть сомнения но смысл ясен;
+0.0-0.49 текст очень рваный, много догадок (нужна ручная проверка)."""
+
+
+async def reconstruct_transcript(
+    raw_text: str,
+    business_context: str | None = None,
+    location_glossary: list[str] | None = None,
+) -> dict:
+    """
+    Стадия 2 транскрипции: чистит ошибки STT через gpt-4o-mini.
+    Возвращает {text, confidence (0-1 или None), corrections [], needs_review}.
+    Низкая уверенность (<0.5) → needs_review=True, текст НЕ удаляется.
+    Короткий/пустой текст пропускается без GPT-вызова (экономия денег).
+    """
+    raw = (raw_text or "").strip()
+    if not raw or len(raw.split()) < 2:
+        return _plain_recon(raw)
+
+    hint = ""
+    if business_context:
+        hint += f"\n\nКонтекст точки: {business_context}"
+    if location_glossary:
+        hint += f"\n\nСлова заведения (меню, имена): {', '.join(location_glossary[:40])}"
+
+    messages = [{"role": "user", "content": f"{_RECONSTRUCT_PROMPT}{hint}\n\nСырой текст:\n{raw}"}]
+    result = _parse_recon(await _gpt_json_with_retry(messages), raw)
+    if result["confidence"] is not None:
+        log.info(
+            f"Реконструкция | conf={result['confidence']:.2f} "
+            f"| правок={len(result['corrections'])} | review={result['needs_review']} "
+            f"| {result['text'][:60]!r}"
+        )
+    return result
+
+
+_MERGE_PROMPT = """Два варианта транскрипции ОДНОГО аудио с кассы в Казахстане. Создай ОДИН
+объединённый и очищенный транскрипт.
+
+ВАРИАНТ А — казахский распознаватель ISSAI (точнее на казахском, хуже на русском):
+ошибки по созвучию: «врачок/брачок» → рожок; «кера/кьюар/кийюр» → QR; «сто кан» → стакан;
+может зашумить целые русские фразы.
+ВАРИАНТ Б — OpenAI (точнее на русском, хуже на чистом казахском): на казахском может
+выдумывать фразы; иногда пропускает тихий голос клиента или казахские вставки.
+
+ПРАВИЛА:
+1. Казахские слова → предпочитай ВАРИАНТ А; русские → ВАРИАНТ Б.
+2. Реплика есть в одном и нет в другом → включи если правдоподобна.
+3. Исправляй фонетические ошибки по контексту (рожок, стакан, QR, Каспи, аудар).
+4. Если вариант явно галлюцинирует (несвязный/выдуманный) — используй другой.
+5. НЕ придумывай слов которых не было ни в одном варианте.
+6. Сохраняй язык каждого слова.
+
+Верни ТОЛЬКО валидный JSON:
+{
+  "text": "объединённый транскрипт",
+  "confidence": <0.0-1.0 — насколько уверен в результате>,
+  "corrections": [{"from": "кера", "to": "QR"}]
+}"""
 
 
 async def _merge_transcripts(
     issai_text: str,
     openai_text: str,
     business_context: str | None = None,
-) -> str:
+) -> dict:
     """
-    Гибридное объединение ISSAI (казахский) + OpenAI (русский) транскриптов одного аудио.
-    Заодно исправляет фонетические ошибки ISSAI по контексту (врачок→рожок, кера→QR).
-    GPT вызывается только когда ОБА дали текст — иначе возвращаем непустой напрямую.
+    Стадия 2 для гибридного пути: объединяет ISSAI (казахский) + OpenAI (русский)
+    одного аудио и чистит ошибки. Возвращает тот же формат что reconstruct_transcript:
+    {text, confidence, corrections, needs_review}.
+
+    Быстрые пути (один источник пуст / одинаковы / один из одного слова) возвращают
+    готовый текст БЕЗ GPT-вызова. GPT-объединение только когда оба содержательны.
     """
     issai_clean  = (issai_text  or "").strip()
     openai_clean = (openai_text or "").strip()
 
-    # Быстрый путь: только один вариант есть
-    if not issai_clean:
-        return openai_clean
-    if not openai_clean:
-        return issai_clean
+    # Быстрые пути без GPT
+    if not issai_clean and not openai_clean:
+        return _plain_recon("")
+    if not issai_clean or len(issai_clean.split()) < 2:
+        return _plain_recon(openai_clean)
+    if not openai_clean or len(openai_clean.split()) < 2:
+        return _plain_recon(issai_clean)
     if issai_clean.lower() == openai_clean.lower():
-        return openai_clean
+        return _plain_recon(openai_clean)
 
-    # Один вариант из одного слова — берём другой без GPT-вызова
-    if len(issai_clean.split()) < 2:
-        return openai_clean
-    if len(openai_clean.split()) < 2:
-        return issai_clean
+    # Оба содержательные → GPT объединяет и чистит (retry+backoff внутри)
+    biz_hint = f"\n\nКонтекст точки: {business_context}" if business_context else ""
+    user_msg = (
+        f"{_MERGE_PROMPT}{biz_hint}\n\n"
+        f"ВАРИАНТ А (ISSAI):\n{issai_clean}\n\n"
+        f"ВАРИАНТ Б (OpenAI):\n{openai_clean}"
+    )
+    data = await _gpt_json_with_retry([{"role": "user", "content": user_msg}])
+    if not data:
+        # merge не удался после ретраев → фолбэк на OpenAI (русский доминирует), ручная проверка
+        log.warning("Merge не удался после ретраев — фолбэк на OpenAI-вариант")
+        return {"text": openai_clean, "confidence": None, "corrections": [], "needs_review": True}
 
-    # Оба содержательные → GPT объединяет и исправляет
-    try:
-        biz_hint = f"\n\nКонтекст точки: {business_context}" if business_context else ""
-        user_msg = (
-            f"{_MERGE_PROMPT}{biz_hint}\n\n"
-            f"ВАРИАНТ А (ISSAI):\n{issai_clean}\n\n"
-            f"ВАРИАНТ Б (OpenAI):\n{openai_clean}"
-        )
-        resp = await client.chat.completions.create(
-            model=_MERGE_MODEL,
-            messages=[{"role": "user", "content": user_msg}],
-            max_tokens=1500,
-            temperature=0.1,
-        )
-        merged = (resp.choices[0].message.content or "").strip()
-        # убираем возможные кавычки от модели
-        if merged.startswith(("«", '"', "'")):
-            merged = merged.strip("«»\"'")
-        if merged and len(merged.split()) >= 2:
-            log.info(
-                f"Merge OK | issai={len(issai_clean)}ч openai={len(openai_clean)}ч "
-                f"→ {len(merged)}ч | {merged[:80]!r}"
-            )
-            return _strip_repeat_loops(merged)
-    except Exception as e:
-        log.warning(f"Merge GPT ошибка: {e}")
-
-    # Фолбэк: предпочитаем OpenAI (точнее на русском, который доминирует на кассе)
-    return openai_clean
+    result = _parse_recon(data, openai_clean)
+    log.info(
+        f"Merge OK | issai={len(issai_clean)}ч openai={len(openai_clean)}ч "
+        f"→ conf={result['confidence']} | {result['text'][:80]!r}"
+    )
+    return result
 
 
 async def _transcribe_audio(
@@ -776,15 +879,19 @@ async def analyze_audio_with_fallback(
         )
 
         if issai_raw or primary_raw:
-            merged = await _merge_transcripts(issai_raw, primary_raw, business_context)
+            recon = await _merge_transcripts(issai_raw, primary_raw, business_context)
+            merged = recon["text"]
             if merged and len(merged.split()) >= 2:
                 stt_diag = {
                     "engine": "hybrid",
                     "issai":  issai_raw[:120],
                     "openai": primary_raw[:120],
                     "merged": merged[:120],
+                    "confidence":  recon["confidence"],
+                    "corrections": recon["corrections"],
+                    "needs_review": recon["needs_review"],
                 }
-                log.info(f"Гибрид merged | {merged[:80]!r}")
+                log.info(f"Гибрид merged | conf={recon['confidence']} | {merged[:80]!r}")
                 res = await _analyze_via_text_gpt(merged, wav_bytes, business_context, language, stt_diag)
                 if res is not None:
                     return res
@@ -811,10 +918,16 @@ async def analyze_audio_with_fallback(
         # ── СТАНДАРТНЫЙ ПУТЬ: ISSAI не включён → primary STT → Yandex ────────
         primary_text = await _transcribe_audio(wav_bytes, model=_PRIMARY_STT_MODEL, location_glossary=location_glossary)
         if primary_text and len(primary_text.split()) >= 2:
+            # Стадия 2: реконструкция через gpt-4o-mini (чистка ошибок STT)
+            recon = await reconstruct_transcript(primary_text, business_context, location_glossary)
+            clean_text = recon["text"]
             stt_diag = {"engine": _PRIMARY_STT_MODEL, "stage": "ok",
-                        "chars": len(primary_text), "text": primary_text[:160]}
-            log.info(f"Первичный STT {_PRIMARY_STT_MODEL} OK | {len(primary_text)} симв | {primary_text[:80]!r}")
-            res = await _analyze_via_text_gpt(primary_text, wav_bytes, business_context, language, stt_diag)
+                        "chars": len(clean_text), "text": clean_text[:160],
+                        "confidence":  recon["confidence"],
+                        "corrections": recon["corrections"],
+                        "needs_review": recon["needs_review"]}
+            log.info(f"Первичный STT {_PRIMARY_STT_MODEL}+реконстр | conf={recon['confidence']} | {clean_text[:80]!r}")
+            res = await _analyze_via_text_gpt(clean_text, wav_bytes, business_context, language, stt_diag)
             if res is not None:
                 return res
 

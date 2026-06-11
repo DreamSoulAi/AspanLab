@@ -326,34 +326,118 @@ def test_gpt_analyze_order_inside_gossip_stays_ok(monkeypatch):
 # ── _merge_transcripts: гибридное объединение двух STT ────────────────────────
 
 def test_merge_empty_issai_returns_openai():
-    """Если ISSAI пустой — возвращаем OpenAI без GPT-вызова."""
+    """Если ISSAI пустой — возвращаем OpenAI без GPT-вызова (dict-формат)."""
     res = _run(A._merge_transcripts("", "два кофе с вас 900"))
-    assert res == "два кофе с вас 900"
+    assert res["text"] == "два кофе с вас 900"
 
 
 def test_merge_empty_openai_returns_issai():
     """Если OpenAI пустой — возвращаем ISSAI без GPT-вызова."""
     res = _run(A._merge_transcripts("бір кофе ия рахмет", ""))
-    assert res == "бір кофе ия рахмет"
+    assert res["text"] == "бір кофе ия рахмет"
 
 
 def test_merge_both_empty_returns_empty():
-    """Оба пустые — возвращаем пустую строку."""
+    """Оба пустые — возвращаем пустой текст."""
     res = _run(A._merge_transcripts("", ""))
-    assert res == ""
+    assert res["text"] == ""
 
 
 def test_merge_identical_texts_no_gpt_call():
     """Одинаковые тексты → возвращаем без дополнительного GPT-вызова."""
     text = "здравствуйте два капучино с вас тысяча двести"
     res = _run(A._merge_transcripts(text, text))
-    assert res == text
+    assert res["text"] == text
 
 
 def test_merge_one_word_issai_returns_openai():
     """Один вариант из одного слова — берём более длинный без GPT-вызова."""
     res = _run(A._merge_transcripts("ия", "рожок или стаканчик с вас 500"))
-    assert "рожок" in res
+    assert "рожок" in res["text"]
+
+
+# ── reconstruct_transcript: стадия 2 (чистка ошибок STT) ──────────────────────
+
+def _mock_recon_client(monkeypatch, payload):
+    """Подменяет ответ gpt-4o-mini в audio_analyzer фиксированным JSON (или цепочкой ошибок)."""
+    import json as _json
+    calls = {"n": 0}
+
+    class _Msg:
+        def __init__(self, c): self.content = c
+    class _Choice:
+        def __init__(self, c): self.message = _Msg(c)
+    class _Resp:
+        def __init__(self, c): self.choices = [_Choice(c)]
+
+    async def _create(**k):
+        calls["n"] += 1
+        item = payload[calls["n"] - 1] if isinstance(payload, list) else payload
+        if isinstance(item, Exception):
+            raise item
+        return _Resp(_json.dumps(item) if isinstance(item, dict) else item)
+
+    monkeypatch.setattr(A.client.chat.completions, "create", _create)
+    return calls
+
+
+def test_reconstruct_short_text_skips_gpt(monkeypatch):
+    """Короткий текст (<2 слов) не идёт в GPT — экономия денег."""
+    calls = _mock_recon_client(monkeypatch, {"text": "x", "confidence": 1.0})
+    res = _run(A.reconstruct_transcript("ок"))
+    assert calls["n"] == 0, "GPT не должен вызываться для короткого текста"
+    assert res["text"] == "ок"
+    assert res["needs_review"] is False
+
+
+def test_reconstruct_cleans_and_returns_corrections(monkeypatch):
+    """gpt-4o-mini чистит kera→QR, возвращает уверенность и список правок."""
+    _mock_recon_client(monkeypatch, {
+        "text": "оплатите через QR пожалуйста",
+        "confidence": 0.9,
+        "corrections": [{"from": "кера", "to": "QR"}]})
+    res = _run(A.reconstruct_transcript("оплатите через кера пожалуйста"))
+    assert res["text"] == "оплатите через QR пожалуйста"
+    assert res["confidence"] == 0.9
+    assert res["corrections"] == [{"from": "кера", "to": "QR"}]
+    assert res["needs_review"] is False
+
+
+def test_reconstruct_low_confidence_flags_review(monkeypatch):
+    """Низкая уверенность (<0.5) → флаг ручной проверки, текст НЕ удаляется."""
+    _mock_recon_client(monkeypatch, {
+        "text": "что-то неразборчивое", "confidence": 0.3, "corrections": []})
+    res = _run(A.reconstruct_transcript("рваный шумный обрывок речи кассы"))
+    assert res["needs_review"] is True
+    assert res["text"] == "что-то неразборчивое"   # не выброшен
+
+
+def test_reconstruct_retries_then_succeeds(monkeypatch):
+    """Первые 2 вызова падают (rate limit/таймаут), 3-й успешен — пайплайн не падает."""
+    monkeypatch.setattr(A.asyncio, "sleep", lambda *a, **k: _noop())
+    calls = _mock_recon_client(monkeypatch, [
+        RuntimeError("rate limit"),
+        TimeoutError("timeout"),
+        {"text": "восстановлено", "confidence": 0.8, "corrections": []}])
+    res = _run(A.reconstruct_transcript("сырой текст разговора кассы"))
+    assert calls["n"] == 3
+    assert res["text"] == "восстановлено"
+
+
+def test_reconstruct_all_retries_fail_keeps_raw(monkeypatch):
+    """Все 3 попытки упали → сырой текст сохраняется + флаг ручной проверки (не теряем разговор)."""
+    monkeypatch.setattr(A.asyncio, "sleep", lambda *a, **k: _noop())
+    _mock_recon_client(monkeypatch, [
+        RuntimeError("err1"), RuntimeError("err2"), RuntimeError("err3")])
+    raw = "здравствуйте два кофе с вас 900 спасибо"
+    res = _run(A.reconstruct_transcript(raw))
+    assert res["text"] == raw          # сырой текст НЕ удалён
+    assert res["confidence"] is None
+    assert res["needs_review"] is True
+
+
+async def _noop():
+    return None
 
 
 # ── calculate_score: детерминированный движок ─────────────────────────────────
