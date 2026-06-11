@@ -1661,6 +1661,24 @@ textarea.f-input{resize:vertical;line-height:1.6}
           <div class="wiz-nav">
             <button class="wiz-next" onclick="saveSettings(true)">Сохранить и далее →</button>
           </div>
+
+          <!-- Перенос старого аккаунта (для тех кто раньше входил по телефону+паролю) -->
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)">
+            <a onclick="toggleClaim()" style="font-size:12px;color:var(--muted);cursor:pointer;text-decoration:underline">Уже работали по телефону и паролю? Перенести данные сюда →</a>
+            <div id="claimForm" style="display:none;margin-top:12px">
+              <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">Введите телефон и пароль вашего прежнего аккаунта — кассы, отчёты и настройки привяжутся к этому Telegram-входу.</div>
+              <div class="f-group">
+                <label class="f-label">Телефон старого аккаунта</label>
+                <input class="f-input" type="tel" id="claimPhone" placeholder="+7 7XX XXX XX XX" autocomplete="off">
+              </div>
+              <div class="f-group">
+                <label class="f-label">Пароль</label>
+                <input class="f-input" type="password" id="claimPassword" placeholder="••••••••" autocomplete="off">
+              </div>
+              <button class="f-btn" onclick="doClaim()">Перенести данные на этот вход</button>
+              <div id="claimErr" style="display:none;margin-top:10px;color:#FCA5A5;font-size:13px;text-align:center"></div>
+            </div>
+          </div>
         </div>
 
         <!-- Step 2: Business context -->
@@ -2202,6 +2220,39 @@ async function saveSettings(advance){
   if(phoneEl&&!phoneEl.readOnly&&phoneEl.value.trim())payload.phone=phoneEl.value.trim();
   const d=await apiFetch('/auth/me',{method:'PATCH',body:JSON.stringify(payload)});
   if(d){showErr('Сохранено ✓');loadUserInfo();if(advance)wizGo(2);}
+}
+
+/* ── ПЕРЕНОС СТАРОГО АККАУНТА (телефон+пароль → текущий Telegram-вход) ── */
+function toggleClaim(){
+  const b=document.getElementById('claimForm');
+  if(b)b.style.display=(b.style.display==='none'||!b.style.display)?'':'none';
+}
+async function doClaim(){
+  const phone=val('claimPhone'),password=val('claimPassword');
+  const err=document.getElementById('claimErr');
+  if(err)err.style.display='none';
+  if(!phone||!password){if(err){err.textContent='Введите телефон и пароль';err.style.display='block';}return;}
+  try{
+    const res=await fetch(API+'/auth/claim-account',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+_token},
+      body:JSON.stringify({phone,password})
+    });
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok){
+      let e=d.detail||'Не удалось перенести';
+      if(Array.isArray(e))e=e.map(x=>x.msg||String(x)).join(', ');
+      if(err){err.textContent=typeof e==='string'?e:'Не удалось перенести';err.style.display='block';}
+      return;
+    }
+    if(d.access_token){
+      _token=d.access_token;localStorage.setItem('tc_token',_token);
+      showErr('Данные перенесены ✓');
+      startDashboard();
+    }
+  }catch(e){
+    if(err){err.textContent='Сервер не отвечает';err.style.display='block';}
+  }
 }
 
 /* ── BUSINESS STEP ── */

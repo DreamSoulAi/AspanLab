@@ -608,3 +608,69 @@ async def token_login(data: TokenLoginRequest, db: AsyncSession = Depends(get_db
         name=user.name,
         plan=user.plan,
     )
+
+
+class ClaimAccountRequest(BaseModel):
+    phone:    str
+    password: str
+
+
+@router.post("/claim-account", response_model=TokenResponse)
+async def claim_account(
+    data: ClaimAccountRequest,
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Перенести Telegram-вход на существующий аккаунт (телефон + пароль).
+
+    Сценарий: клиент раньше работал по телефону+паролю (там его данные),
+    а сейчас вошёл через Telegram — попал в новый/пустой аккаунт. Этот
+    эндпоинт переносит telegram-идентичность на старый аккаунт, чтобы
+    Telegram-вход открывал именно его.
+    """
+    from sqlalchemy import func
+    from backend.models.location import Location
+
+    phone = normalize_phone(data.phone) or data.phone.strip()
+    result = await db.execute(select(User).where(User.phone == phone))
+    target = result.scalar()
+    if not target or not verify_password(data.password, target.hashed_password or ""):
+        raise HTTPException(status_code=401, detail="Неверный телефон или пароль")
+    if not target.is_active:
+        raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
+
+    # Уже тот же аккаунт — просто отдаём токен
+    if target.id == current.id:
+        return TokenResponse(
+            access_token=create_token(target.id),
+            user_id=target.id, name=target.name, plan=target.plan,
+        )
+
+    # Переносим telegram-идентичность с текущего (пустого) на целевой
+    tg_id   = current.telegram_id
+    tg_chat = current.telegram_chat
+    current.telegram_id   = None
+    current.telegram_chat = None
+    await db.flush()  # снимаем unique-конфликт по telegram_id до записи в target
+
+    if tg_id:
+        target.telegram_id = tg_id
+    if tg_chat:
+        target.telegram_chat = tg_chat
+
+    # Если текущий telegram-аккаунт пустой (нет точек) — деактивируем его
+    loc_count = await db.execute(
+        select(func.count(Location.id)).where(Location.owner_id == current.id)
+    )
+    if (loc_count.scalar() or 0) == 0:
+        current.is_active = False
+
+    target.last_login = datetime.utcnow()
+    await db.commit()
+    _log.info(f"claim_account: tg moved from user={current.id} to user={target.id}")
+
+    return TokenResponse(
+        access_token=create_token(target.id),
+        user_id=target.id, name=target.name, plan=target.plan,
+    )
