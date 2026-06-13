@@ -2833,10 +2833,15 @@ function addMenuRow(m){
   row.className='menu-row';
   row.style.cssText='display:flex;gap:6px;align-items:center;margin-bottom:8px';
   const variants=(m.variants&&m.variants.length)?esc(m.variants.join(', ')):'';
+  // Если цен несколько (размеры) — показываем "1200 / 1600", иначе одну.
+  let priceVal='';
+  if(m.prices&&m.prices.length>1){priceVal=m.prices.join(' / ');}
+  else if(m.price!=null){priceVal=String(m.price);}
+  else if(m.prices&&m.prices.length===1){priceVal=String(m.prices[0]);}
   row.innerHTML=`
     <input class="f-input m-name" type="text" placeholder="Название" value="${m.name?esc(m.name):''}" style="flex:2;margin:0">
-    <input class="f-input m-variants" type="text" placeholder="S, M, L" value="${variants}" style="flex:2;margin:0">
-    <input class="f-input m-price" type="number" placeholder="₸" value="${m.price!=null?m.price:''}" style="flex:1;margin:0">
+    <input class="f-input m-variants" type="text" placeholder="обычный, большой" value="${variants}" style="flex:2;margin:0">
+    <input class="f-input m-price" type="text" inputmode="numeric" placeholder="₸ (или 1200 / 1600)" value="${esc(priceVal)}" style="flex:1;margin:0">
     <button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:0 6px;line-height:1">×</button>`;
   el.appendChild(row);
 }
@@ -2846,9 +2851,9 @@ function collectMenu(){
     const name=r.querySelector('.m-name').value.trim();
     if(!name)return;
     const variants=r.querySelector('.m-variants').value.split(',').map(s=>s.trim()).filter(Boolean);
-    const priceRaw=r.querySelector('.m-price').value.trim();
-    const price=priceRaw?parseInt(priceRaw,10):null;
-    out.push({name:name,variants:variants,price:(price!=null&&!isNaN(price))?price:null});
+    // Цена может быть одна ("1200") или несколько через / или , ("1200 / 1600")
+    const prices=r.querySelector('.m-price').value.split(/[\/,]/).map(s=>parseInt(s.replace(/\D/g,''),10)).filter(n=>!isNaN(n));
+    out.push({name:name,variants:variants,prices:prices,price:prices.length?prices[0]:null});
   });
   return out;
 }

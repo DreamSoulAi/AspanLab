@@ -18,22 +18,42 @@ from backend.config import settings
 log = logging.getLogger("menu_vision")
 client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, timeout=60.0, max_retries=1)
 
-_VISION_MODEL = "gpt-4o-mini"   # поддерживает vision, дёшево
+# gpt-4o (полная) — vision-OCR плотных меню с мелкими цифрами.
+# Вызов РУЧНОЙ, один раз на точку → цена (~2-3₸ за фото) не важна,
+# а mini проваливал: читал 7 позиций из 30 и путал цифры (1200→1230).
+_VISION_MODEL = "gpt-4o"
 
 _MENU_PROMPT = """На фото — меню заведения (кафе/кофейня/магазин/фастфуд) в Казахстане.
-Извлеки структуру меню в JSON. Для каждой позиции:
-- name: название КАК В МЕНЮ, на языке оригинала (казахский/русский). НЕ переводи.
-- variants: список размеров/вариантов РОВНО как в меню — «S/M/L», «маленький/большой»,
-  «0.3/0.5», «одинарный/двойной». Если вариантов нет — пустой список [].
-- price: цена числом (за базовый/первый вариант). Если цена не видна — null.
+Твоя задача — извлечь ВСЁ меню целиком в JSON, ничего не пропустив.
 
-Правила:
-- НЕ выдумывай позиции которых нет на фото.
-- Размеры бери ровно как написаны (не нормализуй S→маленький).
-- Если на фото несколько колонок/страниц — собери все позиции.
+ГЛАВНОЕ ПРАВИЛО — ПОЛНОТА:
+Прочитай КАЖДУЮ строку в КАЖДОМ разделе (Донер, Комбо, Кебав, Чикен, Фри, Напитки и т.д.).
+В типичном меню 20-40 позиций. Если извлёк меньше 15 — ты что-то пропустил, перечитай фото.
+Иди раздел за разделом сверху вниз, слева направо, не перескакивай.
+
+ДВЕ ЦЕНЫ В ОДНОЙ СТРОКЕ (частый случай в КЗ):
+Если у позиции в строке стоят ДВЕ (или больше) цены — это РАЗНЫЕ РАЗМЕРЫ одной позиции,
+а НЕ две отдельные позиции и НЕ одна усреднённая цена.
+- Если над колонками есть заголовки размеров (обычный/большой, S/M, 0.5/1л) — бери их.
+- Если заголовков нет — назови размеры по смыслу: первая (меньшая) цена = «обычный»,
+  вторая (большая) = «большой». Третья — «XL».
+- Запиши размеры в variants, цены — в prices (по порядку, тех же размеров).
+Пример: «Донер 1200 / 1600» → variants ["обычный","большой"], prices [1200,1600], price 1200.
+
+ТОЧНОСТЬ ЦИФР:
+Переписывай цены СИМВОЛ В СИМВОЛ как на фото. НЕ округляй, НЕ додумывай.
+Если цифра неразборчива — лучше null чем угаданное число.
+
+Для каждой позиции:
+- name: название КАК В МЕНЮ, на языке оригинала (казахский/русский). НЕ переводи.
+- variants: список размеров (см. выше). Если размер один — пустой список [].
+- prices: список цен по порядку размеров. Если размер один — [одна_цена].
+- price: первая (базовая) цена числом. Если цена не видна — null.
+
+НЕ выдумывай позиции которых нет на фото. Размеры пиши как в меню (не нормализуй S→маленький).
 
 Верни ТОЛЬКО валидный JSON:
-{"items": [{"name": "Капучино", "variants": ["S", "M", "L"], "price": 800}]}"""
+{"items": [{"name": "Донер", "variants": ["обычный","большой"], "prices": [1200,1600], "price": 1200}]}"""
 
 
 def _img_mime(data: bytes) -> str:
@@ -47,8 +67,18 @@ def _img_mime(data: bytes) -> str:
     return "image/jpeg"
 
 
+def _to_int_price(v):
+    """Парсит цену в int, выкидывая пробелы/₸/тг. None если не число."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return int(v)
+    digits = "".join(ch for ch in str(v) if ch.isdigit())
+    return int(digits) if digits else None
+
+
 def _normalize_items(items) -> list[dict]:
-    """Чистит и ограничивает распознанное меню: name + variants[] + price|null."""
+    """Чистит распознанное меню: name + variants[] + prices[] + price|null."""
     if not isinstance(items, list):
         return []
     out: list[dict] = []
@@ -59,12 +89,17 @@ def _normalize_items(items) -> list[dict]:
         if not name:
             continue
         variants = [str(v).strip() for v in (it.get("variants") or []) if str(v).strip()]
-        price = it.get("price")
-        try:
-            price = int(price) if price is not None else None
-        except (TypeError, ValueError):
-            price = None
-        out.append({"name": name[:80], "variants": variants[:10], "price": price})
+        prices = [p for p in (_to_int_price(x) for x in (it.get("prices") or [])) if p is not None]
+        # price = базовая цена: явная, либо первая из prices
+        price = _to_int_price(it.get("price"))
+        if price is None and prices:
+            price = prices[0]
+        out.append({
+            "name":     name[:80],
+            "variants": variants[:10],
+            "prices":   prices[:10],
+            "price":    price,
+        })
     return out[:150]
 
 
@@ -93,7 +128,7 @@ async def extract_menu_from_images(images: list[bytes]) -> list[dict]:
         model=_VISION_MODEL,
         messages=[{"role": "user", "content": content}],
         response_format={"type": "json_object"},
-        max_tokens=2500,
+        max_tokens=4096,
         temperature=0.1,
     )
     raw = (resp.choices[0].message.content or "").strip()

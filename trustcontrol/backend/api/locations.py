@@ -141,12 +141,24 @@ class AntifraudSettings(BaseModel):
 class MenuItem(BaseModel):
     name:     str = Field(..., min_length=1, max_length=80)
     variants: list[str] = Field(default_factory=list)
-    price:    Optional[int] = None
+    prices:   list[int] = Field(default_factory=list)   # цены по размерам (если их несколько)
+    price:    Optional[int] = None                       # базовая/первая цена
 
     @field_validator("variants")
     @classmethod
     def validate_variants(cls, v):
         return [str(x).strip()[:30] for x in (v or []) if str(x).strip()][:10]
+
+    @field_validator("prices")
+    @classmethod
+    def validate_prices(cls, v):
+        out = []
+        for x in (v or [])[:10]:
+            try:
+                out.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        return out
 
 
 class GlossarySettings(BaseModel):
