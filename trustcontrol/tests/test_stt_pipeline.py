@@ -80,9 +80,13 @@ def _mock_models(monkeypatch):
     # По умолчанию первичный OpenAI-STT «молчит» — тесты проверяют маршрутизацию
     # фолбэков (ISSAI/Yandex/whisper). Кто тестирует первичку — мокает сам.
     async def _no_transcribe(*a, **k):  return ""
+    # По умолчанию гейт связности «не знает» (None) → каскад проваливается в OpenAI,
+    # как и раньше. Кто тестирует ранний дроп — мокает _triage_issai_text сам.
+    async def _triage(*a, **k):  return None
     monkeypatch.setattr(A, "analyze_audio", _audio)
     monkeypatch.setattr(A, "gpt_analyze", _gpt)
     monkeypatch.setattr(A, "_transcribe_audio", _no_transcribe)
+    monkeypatch.setattr(A, "_triage_issai_text", _triage)
     return monkeypatch
 
 
@@ -131,6 +135,69 @@ def test_false_ignore_on_plausible_text_rescued_by_audio(_mock_models):
     _mock_models.setattr(A, "analyze_audio", _audio)
     res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
     assert res["status"] == "OK", "разговор с озвученной суммой не должен теряться в IGNORE"
+
+
+# ── Каскадный гейт связности ISSAI (главная защита русских разговоров) ─────────
+
+def test_cascade_coherent_personal_skips_openai(_mock_models):
+    """Связная казахская болтовня персонала → PERSONAL без вызова OpenAI STT (экономия)."""
+    _enable_issai(_mock_models, "ой бүгін шаршадым ғой кеше клуб болдым кеш жаттым")
+    openai_called = {"n": 0}
+    async def _tr(*a, **k):
+        openai_called["n"] += 1
+        return "не должно вызваться"
+    async def _triage(*a, **k):
+        return {"coherent": True, "category": "personal"}
+    _mock_models.setattr(A, "_transcribe_audio", _tr)
+    _mock_models.setattr(A, "_triage_issai_text", _triage)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert res["status"] == "PERSONAL"
+    assert openai_called["n"] == 0, "связная казахская болтовня не должна тратить OpenAI STT"
+
+
+def test_cascade_incoherent_russian_falls_to_openai(_mock_models):
+    """КЛЮЧЕВОЙ кейс (на него указал Данил): русский разговор → ISSAI даёт связную
+    КАШУ. Гейт связности должен сказать coherent=false → OpenAI обязателен, иначе
+    русский разговор теряется."""
+    # ISSAI на русской речи выдаёт казахскую кашу из >4 слов (проходит is_garbage)
+    _enable_issai(_mock_models, "соғаға әдім шок соға щина шоколаданы әдім кәлі")
+    openai_called = {"n": 0}
+    async def _tr(*a, **k):
+        openai_called["n"] += 1
+        return "здравствуйте два капучино с вас тысяча двести"   # OpenAI слышит русский
+    async def _triage(*a, **k):
+        return {"coherent": False, "category": "business"}        # каша = был русский
+    async def _gpt(text, **k):
+        return {"status": "OK", "is_business": True, "score": 70, "events": {},
+                "summary": "два капучино", "tone": "neutral"}
+    _mock_models.setattr(A, "_transcribe_audio", _tr)
+    _mock_models.setattr(A, "_triage_issai_text", _triage)
+    _mock_models.setattr(A, "gpt_analyze", _gpt)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert openai_called["n"] == 1, "несвязный ISSAI (русская речь) ОБЯЗАН дойти до OpenAI"
+    assert res["status"] == "OK"
+    assert "капучино" in res["transcript"], "должен использоваться русский транскрипт OpenAI"
+
+
+def test_cascade_coherent_business_still_calls_openai(_mock_models):
+    """Связный казахский БИЗНЕС-разговор → всё равно зовём OpenAI (фрод-критично,
+    могут быть русские вставки/платёжные детали). Экономим только болтовню/шум."""
+    _enable_issai(_mock_models, "бір донер картамен мың теңге рахмет")
+    openai_called = {"n": 0}
+    async def _tr(*a, **k):
+        openai_called["n"] += 1
+        return "бір донер картамен мың теңге рахмет"
+    async def _triage(*a, **k):
+        return {"coherent": True, "category": "business"}
+    async def _gpt(text, **k):
+        return {"status": "OK", "is_business": True, "score": 80, "events": {},
+                "summary": "донер", "tone": "neutral"}
+    _mock_models.setattr(A, "_transcribe_audio", _tr)
+    _mock_models.setattr(A, "_triage_issai_text", _triage)
+    _mock_models.setattr(A, "gpt_analyze", _gpt)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert openai_called["n"] == 1, "бизнес-разговор не экономим на STT — фрод-критично"
+    assert res["status"] == "OK"
 
 
 def test_garbage_text_ignore_not_rescued(_mock_models):

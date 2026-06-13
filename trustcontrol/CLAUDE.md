@@ -119,23 +119,31 @@ ISSAI (бесплатный VPS) идёт ПЕРВЫМ как ворота, Open
 
 Каскад в `audio_analyzer.py` (`analyze_audio_with_fallback`, если ISSAI включён):
 1. ISSAI один (бесплатно) → даёт казахский текст или пустоту.
-2. Если ISSAI дал ≥3 слов И нет транзакционных сигналов (Каспи/терминал/мың):
-   → text-GPT классифицирует по ISSAI-тексту:
-     • PERSONAL → возврат без OpenAI (экономия на болтовне персонала по-казахски)
-     • IGNORE (нет plausible_conversation) → возврат без OpenAI
-     • OK (казахский разговор, без транзакции) → возврат без OpenAI
-3. Если транзакция / ISSAI пуст (русская речь) / неоднозначно → OpenAI STT.
-4. Если оба ISSAI+OpenAI дали текст → merge (gpt-4o-mini) как раньше.
-   Если только OpenAI → reconstruct_transcript (чистка ошибок STT).
+2. ГЕЙТ СВЯЗНОСТИ `_triage_issai_text` (gpt-4o-mini, если ISSAI дал ≥3 слов):
+   определяет {coherent, category}. КРИТИЧНО: русскую речь ISSAI (казахская модель)
+   превращает в СВЯЗНО-выглядящую казахскую КАШУ из 20+ слов — нельзя доверять ей
+   вслепую, иначе теряем русский разговор. Поэтому отдельный гейт проверяет именно
+   СВЯЗНОСТЬ (НЕ через gpt_analyze — тот специально «вычитывает смысл из мусора»).
+     • coherent + personal → PERSONAL без OpenAI (экономия на казах. болтовне) ✓
+     • coherent + noise (нет plausible_conversation) → IGNORE без OpenAI ✓
+     • coherent + business → ВСЁ РАВНО OpenAI (фрод-критично, могут быть рус.вставки)
+     • НЕ coherent (каша = говорили по-русски) → ОБЯЗАТЕЛЬНО OpenAI (не дропаем!)
+   Гейт консервативен: сомнение → coherent=false → идём в OpenAI (тратим деньги, но
+   не теряем разговор — правильная асимметрия для фрод-детекции).
+3. Шаг 3 — OpenAI STT (только для business / русской речи / неоднозначного).
+4. Оба ISSAI+OpenAI → merge (gpt-4o-mini); только OpenAI → reconstruct_transcript.
 
-Ожидаемая экономия: -60-70% вызовов OpenAI STT. Казахская болтовня персонала
-(реально ~30-40% всего аудио) фильтруется бесплатно ISSAI+text-GPT.
-Страховка от ложного IGNORE: `_is_plausible_conversation` проверяет перед ранним
-возвратом — если в тексте есть признаки живого разговора, идём в OpenAI.
-`stt_diag.engine` в логах: "issai_cascade" (сэкономлено), "cascade_hybrid" (оба STT),
-"gpt-4o-mini-transcribe" (только OpenAI). Флаг `saved_openai: true` в stt_diag.
+Экономия: казахская болтовня персонала/шум фильтруется бесплатно (это и был источник
+жалобы Данила «безостановочно крутит разговор персонала»). Русская болтовня всё ещё
+стоит один дешёвый STT (без ISSAI её не классифицировать) — но mini вдвое дешевле.
+Русские КЛИЕНТСКИЕ разговоры никогда не теряются (несвязный ISSAI → OpenAI).
+`stt_diag.engine`: "issai_cascade"+`saved_openai:true` (сэкономлено),
+"cascade_hybrid" (оба STT), "gpt-4o-mini-transcribe" (только OpenAI).
+Тесты: 59 passed (добавлены 3 на гейт связности: coherent-personal-skip /
+incoherent-russian→openai / coherent-business→openai).
 
-До 13.06: ISSAI+OpenAI всегда параллельно (asyncio.gather) — дорого на персональных.
+До 13.06: ISSAI+OpenAI всегда параллельно (asyncio.gather) — дорого на персональных,
+И слепое доверие ISSAI на русском теряло бы разговоры. Гейт связности закрывает обе дыры.
 Менять дефолт STT: env `STT_MODEL` (напр. "gpt-4o-transcribe" если нужно точнее).
 
 **STT-фиксы 03.06.2026 (слиты в main, ТРЕБУЮТ передеплоя VPS-воркера):**

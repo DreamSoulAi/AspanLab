@@ -930,6 +930,54 @@ async def _analyze_via_text_gpt(
     return _r
 
 
+_ISSAI_TRIAGE_PROMPT = """Ниже — сырой вывод КАЗАХСКОЙ STT-модели (whisper-turbo-ksc2, понимает ТОЛЬКО казахский).
+Особенность: модель ВСЕГДА пишет казахскими буквами, даже если человек говорил
+по-русски — тогда выходит бессмысленная фонетическая каша из казахско-похожих слов,
+которые НЕ складываются в осмысленную фразу.
+
+Ответь на ДВА вопроса:
+
+1) coherent — это СВЯЗНЫЙ осмысленный казахский/шала-казахский текст (модель реально
+   поняла речь) ИЛИ бессмысленная каша (значит говорили на ДРУГОМ языке, чаще русском,
+   и модель не справилась)?
+   • Связная речь — даже короткая, даже с ошибками STT, даже одна фраза → coherent=true
+   • Слова не связаны по смыслу, абракадабра, набор созвучий → coherent=false
+   • СОМНЕВАЕШЬСЯ — ставь coherent=false (текст перепроверит другая модель, это безопасно)
+
+2) Если coherent=true — что это:
+   • "personal" — болтовня сотрудников между собой / личный звонок, БЕЗ клиента
+   • "noise"    — обрывки, междометия, нет осмысленного разговора
+   • "business" — обслуживание клиента: заказ, цена, оплата, вопрос о товаре, жалоба
+   (если coherent=false — категорию не важно какую, ставь "business")
+
+Верни ТОЛЬКО JSON: {"coherent": true|false, "category": "personal|noise|business"}"""
+
+
+async def _triage_issai_text(issai_text: str) -> dict | None:
+    """
+    Лёгкий гейт каскада (gpt-4o-mini): связный ли это казахский ИЛИ каша (=был русский).
+    НЕ использует gpt_analyze — тот специально «вычитывает смысл» из любого мусора и
+    влепил бы уверенный вердикт на галиматью. Здесь нужна именно проверка СВЯЗНОСТИ.
+
+    Возвращает {coherent: bool, category: str} или None при сбое API.
+    Консервативен: при сомнении coherent=false → каскад пойдёт в OpenAI (не дропнет русский).
+    """
+    text = (issai_text or "").strip()
+    if not text:
+        return None
+    data = await _gpt_json_with_retry(
+        [{"role": "user", "content": f"{_ISSAI_TRIAGE_PROMPT}\n\nТекст:\n{text}"}],
+        max_tokens=120,
+    )
+    if not data:
+        return None
+    cat = data.get("category")
+    return {
+        "coherent": bool(data.get("coherent")),
+        "category": cat if cat in ("personal", "noise", "business") else "business",
+    }
+
+
 async def analyze_audio_with_fallback(
     wav_bytes: bytes | None,
     transcript_text: str | None,
@@ -992,8 +1040,9 @@ async def analyze_audio_with_fallback(
 
     # ── КАСКАДНЫЙ ПУТЬ: ISSAI первый (бесплатно), OpenAI только если нужен ─
     # ISSAI (whisper-turbo-ksc2) понимает казахский бесплатно. OpenAI — русский ($).
-    # Стратегия: сначала ISSAI. Если личный/шум на казахском — OpenAI не нужен.
-    # Если есть транзакция или ISSAI пустой (русская речь) — запускаем OpenAI.
+    # Стратегия: ISSAI → гейт связности. Связная казахская болтовня/шум → дроп без
+    # OpenAI (экономия). Несвязная каша = говорили по-русски → OpenAI обязателен
+    # (иначе теряем русский разговор). Бизнес-разговор → тоже OpenAI (фрод-критично).
     if issai_stt.is_enabled():
         issai_diag: dict = {}
         issai_raw = await issai_stt.transcribe(wav_bytes, diag=issai_diag)
@@ -1002,43 +1051,44 @@ async def analyze_audio_with_fallback(
 
         log.info(f"Каскад шаг 1 | ISSAI: {issai_words} сл ({issai_raw[:60]!r})")
 
-        # ── Шаг 2: быстрая классификация по ISSAI без вызова OpenAI STT ────
-        # Работает только если ISSAI дал текст И нет транзакционных сигналов.
-        # Транзакция (Каспи/терминал/сумма) → нужен OpenAI для точности рус. слов.
+        # ── Шаг 2: гейт связности — экономим OpenAI ТОЛЬКО на казахском мусоре ─
+        # Критично (на это указал Данил): русский разговор ISSAI превращает в
+        # СВЯЗНО-выглядящую казахскую кашу из 20+ слов. Если доверять ей вслепую,
+        # русский разговор будет потерян. Поэтому сначала проверяем СВЯЗНОСТЬ:
+        #   • coherent + personal/noise → точно казахская болтовня → дроп без OpenAI ✓
+        #   • coherent + business → казахское обслуживание → всё равно зовём OpenAI
+        #     (может быть рус. вставка / фрод-детали — платёжный разговор не экономим)
+        #   • НЕ coherent → говорили на русском → ОБЯЗАТЕЛЬНО OpenAI (не дропаем!)
+        # Гейт консервативен: сомнение → coherent=false → идём в OpenAI.
         primary_raw = ""
-        if issai_words >= 3 and not _looks_like_real_transaction(issai_raw):
-            q = await gpt_analyze(issai_raw, business_context=business_context)
-            if q:
-                q_status = q.get("status", "OK")
-                _cdiag = {"engine": "issai_cascade", "saved_openai": True, "issai": issai_raw[:120]}
+        if issai_words >= 3:
+            triage = await _triage_issai_text(issai_raw)
+            if triage and triage.get("coherent"):
+                cat = triage.get("category")
+                _cdiag = {"engine": "issai_cascade", "saved_openai": True,
+                          "category": cat, "issai": issai_raw[:120]}
 
-                if q_status == "PERSONAL" or q.get("is_personal_talk"):
-                    log.info("Каскад: ISSAI→PERSONAL — OpenAI STT сэкономлен")
+                if cat == "personal":
+                    log.info("Каскад: связный казахский → PERSONAL — OpenAI STT сэкономлен")
                     return {
                         "status": "PERSONAL", "is_business": False, "is_personal_talk": True,
                         "priority": 0, "transcript": "",
-                        "summary": q.get("summary", "Личный разговор сотрудника"),
+                        "summary": "Личный разговор сотрудника",
                         "_stt_diag": _cdiag,
                     }
 
-                if (q_status == "IGNORE" or not q.get("is_business", True)) \
-                        and not _is_plausible_conversation(issai_raw):
-                    log.info("Каскад: ISSAI→IGNORE — OpenAI STT сэкономлен")
+                if cat == "noise" and not _is_plausible_conversation(issai_raw):
+                    log.info("Каскад: связный казахский → шум/IGNORE — OpenAI STT сэкономлен")
                     return {
                         "status": "IGNORE", "is_business": False, "priority": 0,
-                        "transcript": "", "summary": q.get("summary", ""),
+                        "transcript": "", "summary": "Нерелевантная запись",
                         "_stt_diag": _cdiag,
                     }
+                # cat == "business" → проваливаемся в OpenAI (платёжный разговор не экономим)
+            else:
+                log.info("Каскад: ISSAI-текст несвязный (вероятно русская речь) → нужен OpenAI")
 
-                if q_status == "OK" and q.get("is_business", True):
-                    # Казахский разговор без транзакции — ISSAI достаточен
-                    log.info("Каскад: ISSAI→OK (нет транзакции) — OpenAI STT сэкономлен")
-                    _r = _normalize_text_result(q, issai_raw, language)
-                    _r = await _apply_audio_tone_check(_r, wav_bytes, business_context)
-                    _r["_stt_diag"] = _cdiag
-                    return _r
-
-        # ── Шаг 3: OpenAI нужен (транзакция / ISSAI пустой / неоднозначно) ─
+        # ── Шаг 3: OpenAI нужен (бизнес-разговор / русская речь / неоднозначно) ─
         primary_raw = await _transcribe_audio(
             wav_bytes, model=_PRIMARY_STT_MODEL, location_glossary=location_glossary
         )
