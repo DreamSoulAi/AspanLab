@@ -138,9 +138,12 @@ def test_false_ignore_on_plausible_text_rescued_by_audio(_mock_models):
 
 
 # ── Каскадный гейт связности ISSAI (главная защита русских разговоров) ─────────
+# Эти тесты проверяют ЛОГИКУ скипа → включают флаг CASCADE_SKIP_CHATTER принудительно.
+# По умолчанию в проде флаг OFF (см. test_cascade_skip_off_by_default_no_drop).
 
 def test_cascade_coherent_personal_skips_openai(_mock_models):
     """Связная казахская болтовня персонала → PERSONAL без вызова OpenAI STT (экономия)."""
+    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
     _enable_issai(_mock_models, "ой бүгін шаршадым ғой кеше клуб болдым кеш жаттым")
     openai_called = {"n": 0}
     async def _tr(*a, **k):
@@ -159,6 +162,7 @@ def test_cascade_incoherent_russian_falls_to_openai(_mock_models):
     """КЛЮЧЕВОЙ кейс (на него указал Данил): русский разговор → ISSAI даёт связную
     КАШУ. Гейт связности должен сказать coherent=false → OpenAI обязателен, иначе
     русский разговор теряется."""
+    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
     # ISSAI на русской речи выдаёт казахскую кашу из >4 слов (проходит is_garbage)
     _enable_issai(_mock_models, "соғаға әдім шок соға щина шоколаданы әдім кәлі")
     openai_called = {"n": 0}
@@ -182,6 +186,7 @@ def test_cascade_incoherent_russian_falls_to_openai(_mock_models):
 def test_cascade_coherent_business_still_calls_openai(_mock_models):
     """Связный казахский БИЗНЕС-разговор → всё равно зовём OpenAI (фрод-критично,
     могут быть русские вставки/платёжные детали). Экономим только болтовню/шум."""
+    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
     _enable_issai(_mock_models, "бір донер картамен мың теңге рахмет")
     openai_called = {"n": 0}
     async def _tr(*a, **k):
@@ -206,6 +211,7 @@ def test_cascade_personal_with_fraud_signals_forces_openai(_mock_models):
     ISSAI: связный казахский (болтовня) + «мың» / «Каспи» из русской части.
     Triage: coherent=True, category=personal (в основном болтовня).
     НО — в ISSAI-тексте есть транзакционный сигнал → НЕ дропаем → OpenAI обязателен."""
+    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
     # ISSAI слышит болтовню на казахском + «Каспи» из русской фрод-фразы (Каспи — заимствование)
     _enable_issai(_mock_models, "ой бүгін шаршадым кеше болдым Каспи мың кел")
     openai_called = {"n": 0}
@@ -226,6 +232,30 @@ def test_cascade_personal_with_fraud_signals_forces_openai(_mock_models):
         "транзакционный сигнал в ISSAI-тексте (Каспи/мың) ОБЯЗАН дотащить запись до OpenAI "
         "даже если triage сказал PERSONAL — фрод в конце болтовни не должен теряться"
     )
+
+
+def test_cascade_skip_off_by_default_no_drop(_mock_models):
+    """ДЕФОЛТ ПРОДА (флаг CASCADE_SKIP_CHATTER не выставлен): даже связную казахскую
+    болтовню НЕ дропаем по ISSAI — всегда идём в OpenAI. Это защита от потери русских
+    диалогов: на низком объёме не рискуем ради копеечной экономии (решение Данила)."""
+    assert A._CASCADE_SKIP_CHATTER is False, "скип болтовни в проде должен быть ВЫКЛЮЧЕН по умолчанию"
+    _enable_issai(_mock_models, "ой бүгін шаршадым ғой кеше клуб болдым кеш жаттым")
+    triage_called = {"n": 0}
+    openai_called = {"n": 0}
+    async def _triage(*a, **k):
+        triage_called["n"] += 1
+        return {"coherent": True, "category": "personal"}
+    async def _tr(*a, **k):
+        openai_called["n"] += 1
+        return "болтовня"   # пусть OpenAI разбирается, мы не дропаем вслепую
+    async def _gpt(text, **k):
+        return {"status": "PERSONAL", "is_personal_talk": True, "summary": "болтовня"}
+    _mock_models.setattr(A, "_triage_issai_text", _triage)
+    _mock_models.setattr(A, "_transcribe_audio", _tr)
+    _mock_models.setattr(A, "gpt_analyze", _gpt)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert triage_called["n"] == 0, "при выключенном скипе гейт связности даже не зовётся"
+    assert openai_called["n"] == 1, "при выключенном скипе всегда идём в OpenAI (не теряем диалог)"
 
 
 def test_garbage_text_ignore_not_rescued(_mock_models):
