@@ -200,6 +200,34 @@ def test_cascade_coherent_business_still_calls_openai(_mock_models):
     assert res["status"] == "OK"
 
 
+def test_cascade_personal_with_fraud_signals_forces_openai(_mock_models):
+    """КЛЮЧЕВОЙ фрод-кейс (вопрос Данила): кассир болтает по-казахски с коллегой,
+    потом заходит клиент и они говорят по-русски — и там ФРОД.
+    ISSAI: связный казахский (болтовня) + «мың» / «Каспи» из русской части.
+    Triage: coherent=True, category=personal (в основном болтовня).
+    НО — в ISSAI-тексте есть транзакционный сигнал → НЕ дропаем → OpenAI обязателен."""
+    # ISSAI слышит болтовню на казахском + «Каспи» из русской фрод-фразы (Каспи — заимствование)
+    _enable_issai(_mock_models, "ой бүгін шаршадым кеше болдым Каспи мың кел")
+    openai_called = {"n": 0}
+    async def _tr(*a, **k):
+        openai_called["n"] += 1
+        return "ой шаршадым кеше болдым переведи мне на Каспи 1500"  # OpenAI слышит фрод
+    async def _triage(*a, **k):
+        return {"coherent": True, "category": "personal"}  # тriage не видит фрода
+    async def _gpt(text, **k):
+        return {"status": "OK", "is_business": True, "score": 20,
+                "events": {"fraud_attempt": True}, "fraud_confidence": 85,
+                "summary": "фрод", "tone": "negative"}
+    _mock_models.setattr(A, "_transcribe_audio", _tr)
+    _mock_models.setattr(A, "_triage_issai_text", _triage)
+    _mock_models.setattr(A, "gpt_analyze", _gpt)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert openai_called["n"] == 1, (
+        "транзакционный сигнал в ISSAI-тексте (Каспи/мың) ОБЯЗАН дотащить запись до OpenAI "
+        "даже если triage сказал PERSONAL — фрод в конце болтовни не должен теряться"
+    )
+
+
 def test_garbage_text_ignore_not_rescued(_mock_models):
     """Каша (2 слова, неправдоподобно) + IGNORE → остаётся IGNORE, аудио не зовём."""
     _enable_issai(_mock_models, "әлім кәлі")

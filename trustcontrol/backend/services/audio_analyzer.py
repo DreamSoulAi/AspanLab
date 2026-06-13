@@ -1069,13 +1069,22 @@ async def analyze_audio_with_fallback(
                           "category": cat, "issai": issai_raw[:120]}
 
                 if cat == "personal":
-                    log.info("Каскад: связный казахский → PERSONAL — OpenAI STT сэкономлен")
-                    return {
-                        "status": "PERSONAL", "is_business": False, "is_personal_talk": True,
-                        "priority": 0, "transcript": "",
-                        "summary": "Личный разговор сотрудника",
-                        "_stt_diag": _cdiag,
-                    }
+                    # Страховка: если в казахской болтовне затесался платёжный сигнал
+                    # (клиент подошёл и говорит «мың», «аудар», «Каспи» посреди чата) —
+                    # не дропаем: OpenAI расшифрует полный контекст включая фрод.
+                    # Казахские платёжные слова (мың/аудар/аударыңыз/Каспи) ISSAI слышит
+                    # даже в смешанном тексте → страховка работает.
+                    if _looks_like_real_transaction(issai_raw):
+                        log.info("Каскад: PERSONAL+транзакция в ISSAI-тексте — OpenAI обязателен (фрод-страховка)")
+                        # fall through → шаг 3 (OpenAI)
+                    else:
+                        log.info("Каскад: связный казахский → PERSONAL — OpenAI STT сэкономлен")
+                        return {
+                            "status": "PERSONAL", "is_business": False, "is_personal_talk": True,
+                            "priority": 0, "transcript": "",
+                            "summary": "Личный разговор сотрудника",
+                            "_stt_diag": _cdiag,
+                        }
 
                 if cat == "noise" and not _is_plausible_conversation(issai_raw):
                     log.info("Каскад: связный казахский → шум/IGNORE — OpenAI STT сэкономлен")
