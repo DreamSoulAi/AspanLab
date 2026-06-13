@@ -150,7 +150,12 @@ async def send_incident_alert(
     ]
 
     if detected_phone:
-        lines += [f"", f"Номер: `{detected_phone}`", "_Не числится в белом списке_"]
+        lines += [
+            f"",
+            f"Номер: `{detected_phone}`",
+            "_Не числится в белом списке._",
+            "_Корпоративный перевод? → нажми «Это норма» — номер добавится в список и тревог больше не будет._",
+        ]
 
     if tx_amount is not None:
         lines += [f"", f"*Данные чека:*", f"Сумма: `{tx_amount:,.0f} ₸`"]
@@ -169,7 +174,8 @@ async def send_incident_alert(
     row2 = []
     if incident_id:
         row2.append(InlineKeyboardButton("✅ Подтвердить", callback_data=f"tc_confirm:{incident_id}"))
-        row2.append(InlineKeyboardButton("❌ Ошибка",      callback_data=f"tc_fp:{incident_id}"))
+        fp_label = "📋 Это норма" if (incident_type == "KASPI_FRAUD" and detected_phone) else "❌ Ошибка"
+        row2.append(InlineKeyboardButton(fp_label, callback_data=f"tc_fp:{incident_id}"))
 
     all_rows = [r for r in [row1, row2] if r]
     markup = InlineKeyboardMarkup(all_rows) if all_rows else None
