@@ -14,6 +14,9 @@ jobs:
     # windows-2019 раннеры GitHub вывел из эксплуатации (2025) — джоба висла
     # в очереди без исполнителя 24ч и авто-отменялась. windows-2022 актуален.
     runs-on: windows-2022
+    # Нужно для публикации готового .exe как Release (прямая ссылка для скачивания).
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -89,3 +92,17 @@ jobs:
           name: TrustControl-Windows
           path: TrustControl_Windows.zip
           retention-days: 90
+
+      # Публикуем готовый .exe как Release под постоянным тегом windows-latest,
+      # чтобы клиент качал по одной неизменной ссылке без захода в Actions:
+      #   .../releases/latest  →  TrustControl_Windows.zip
+      - name: Publish Release (прямая ссылка для скачивания)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete windows-latest --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
+          gh release create windows-latest TrustControl_Windows.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "TrustControl для Windows — последняя сборка" \
+            --notes "Скачайте TrustControl_Windows.zip, распакуйте, вставьте API-ключ из личного кабинета в config.ini и запустите TrustControl.exe. Устанавливать Python и что-либо ещё НЕ нужно — всё внутри одного файла."
