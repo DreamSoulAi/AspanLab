@@ -1028,6 +1028,21 @@ textarea.f-input{resize:vertical;line-height:1.6}
           </div>
         </details>
 
+        <details class="faq-item">
+          <summary>Зачем это, если я могу попросить знакомого зайти и проверить?</summary>
+          <div class="faq-body">
+            Один визит ничего не решает. Сотрудник может вести себя отлично при «подставном»
+            клиенте и совершенно иначе в обычный день — люди это чувствуют.<br><br>
+            Главная проблема с деньгами: <b>вы замечаете недостачу тогда, когда она уже большая</b>.
+            К этому моменту через кассу прошли тысячи клиентов, и вы не знаете —
+            кто конкретно, в какую смену и на сколько. Уволить кого-то «по подозрению»
+            нельзя, доказательств нет.<br><br>
+            TrustControl фиксирует каждый разговор <b>в момент, когда он происходит</b>.
+            Когда тревога сработала — у вас дата, время, смена, запись голоса и текст.
+            Это уже не подозрение, а факт.
+          </div>
+        </details>
+
       </div>
     </div>
   </section>
@@ -2626,8 +2641,8 @@ async function loadLocations(){
         </label>
       </div>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        <button class="btn btn-ghost" style="flex:1;min-width:120px;white-space:nowrap" onclick="downloadInstaller(${loc.id},'${esc(loc.name)}',this)">⬇ Скачать .exe</button>
-        <button class="btn btn-ghost" style="flex:1;min-width:120px;white-space:nowrap" onclick="openMicPWA('${esc(loc.api_key||'')}')">🎙 С телефона</button>
+        <button class="btn btn-ghost" style="flex:1;min-width:120px;white-space:nowrap" onclick="downloadInstaller(${loc.id},'${esc(loc.name)}',this)" title="Скачать готовую программу для кассового ПК — ключ уже вписан">⬇ Скачать .exe</button>
+        <button class="btn btn-ghost" style="flex:1;min-width:120px;white-space:nowrap" onclick="openMicPWA('${esc(loc.api_key||'')}')">🎙 Демо / планшет</button>
         <button class="btn btn-ghost" style="flex:1;min-width:80px;white-space:nowrap" onclick="openEditLoc(${loc.id})">⚙ Настройки</button>
       </div>
     </div>`).join('');
