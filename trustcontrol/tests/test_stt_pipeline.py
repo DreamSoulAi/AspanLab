@@ -274,6 +274,62 @@ def test_garbage_text_ignore_not_rescued(_mock_models):
     assert audio_called["n"] == 0, "на неправдоподобной каше страховку не запускаем"
 
 
+# ── Эскалация спорного фрода на полный gpt-4o ─────────────────────────────────
+
+def _fraud_gpt(mini_conf, big_conf=None, big_fraud=None):
+    """Мок gpt_analyze: mini отдаёт mini_conf; вызов с model='gpt-4o' — big_conf/big_fraud."""
+    calls = {"mini": 0, "big": 0}
+    async def _gpt(text, business_context=None, force_business=False, model="gpt-4o-mini"):
+        if model == "gpt-4o":
+            calls["big"] += 1
+            return {"status": "OK", "is_business": True, "score": 30,
+                    "events": {"fraud_attempt": bool(big_fraud)},
+                    "fraud_confidence": big_conf, "summary": "f", "tone": "neutral"}
+        calls["mini"] += 1
+        return {"status": "OK", "is_business": True, "score": 50,
+                "events": {"fraud_attempt": mini_conf >= 50},
+                "fraud_confidence": mini_conf, "summary": "f", "tone": "neutral"}
+    return _gpt, calls
+
+
+def test_fraud_escalation_confirms(_mock_models):
+    """mini conf=60 (пограничный) → gpt-4o подтверждает conf=90 → берём вердикт full."""
+    gpt, calls = _fraud_gpt(60, big_conf=90, big_fraud=True)
+    _mock_models.setattr(A, "gpt_analyze", gpt)
+    res = _run(A._analyze_via_text_gpt("переведи мне на каспи 1500 это между нами",
+                                       None, None, "ru", {}))
+    assert calls["big"] == 1, "пограничный фрод должен эскалироваться на gpt-4o"
+    assert res["fraud_confidence"] == 90
+    assert res["events"]["fraud_attempt"] is True
+
+
+def test_fraud_escalation_clears_false_positive(_mock_models):
+    """mini conf=60 → gpt-4o говорит conf=10 (не фрод) → снимаем ложную тревогу."""
+    gpt, calls = _fraud_gpt(60, big_conf=10, big_fraud=False)
+    _mock_models.setattr(A, "gpt_analyze", gpt)
+    res = _run(A._analyze_via_text_gpt("оплата каспи на бизнес счёт", None, None, "ru", {}))
+    assert calls["big"] == 1
+    assert res["fraud_confidence"] == 10
+    assert res["events"]["fraud_attempt"] is False
+
+
+def test_fraud_no_escalation_when_confident(_mock_models):
+    """mini conf=85 (уже уверен, FRAUD_HARD) → gpt-4o НЕ зовём, эскалация лишняя."""
+    gpt, calls = _fraud_gpt(85)
+    _mock_models.setattr(A, "gpt_analyze", gpt)
+    res = _run(A._analyze_via_text_gpt("переведи мне на личную карту 5000", None, None, "ru", {}))
+    assert calls["big"] == 0, "при уверенном фроде эскалация лишняя — деньги на ветер"
+    assert res["fraud_confidence"] == 85
+
+
+def test_fraud_no_escalation_when_clean(_mock_models):
+    """mini conf=0 (чистый разговор) → gpt-4o НЕ зовём (большинство записей такие)."""
+    gpt, calls = _fraud_gpt(0)
+    _mock_models.setattr(A, "gpt_analyze", gpt)
+    res = _run(A._analyze_via_text_gpt("здравствуйте два кофе спасибо", None, None, "ru", {}))
+    assert calls["big"] == 0
+
+
 @pytest.mark.parametrize("text", [
     # Реальные транскрипты со скринов кассы — рваные, но это живые сделки.
     "банан ааа сосын есеп содан берейін бе үш мың төрт жүз елу",
