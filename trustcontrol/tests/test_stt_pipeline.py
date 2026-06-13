@@ -455,10 +455,11 @@ def test_merge_concatenation_caught_by_length_guard(monkeypatch):
     monkeypatch.setattr(A.client.chat.completions, "create", _create)
 
     res = _run(A._merge_transcripts(issai, openai))
+    text = res["text"]
     # Задвоения быть не должно: результат ~ длины одного транскрипта, не суммы
-    assert res != glued
-    assert len(res) <= int(max(len(issai), len(openai)) * 1.4)
-    assert res == openai          # берётся более длинный одиночный транскрипт
+    assert text != glued
+    assert len(text) <= int(max(len(issai), len(openai)) * 1.4)
+    assert text == openai          # берётся более длинный одиночный транскрипт
 
 
 # ── calculate_score: детерминированный движок ─────────────────────────────────
