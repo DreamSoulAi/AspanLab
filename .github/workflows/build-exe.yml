@@ -26,6 +26,13 @@ jobs:
         run: |
           pip install "pyinstaller>=5.13,<6.0"
           pip install -r trustcontrol/requirements-monitor-py38.txt
+          REM webrtcvad-wheels даёт модуль webrtcvad, но имя дистрибутива —
+          REM 'webrtcvad-wheels'. PyInstaller-хук делает copy_metadata('webrtcvad')
+          REM и падает DistributionNotFound. На windows-раннере есть MSVC,
+          REM поэтому ставим компилируемый webrtcvad — имя дистрибутива совпадает
+          REM с тем, что ищет хук, и сборка проходит.
+          pip uninstall -y webrtcvad-wheels
+          pip install --no-cache-dir webrtcvad
         shell: cmd
 
       - name: Build EXE
