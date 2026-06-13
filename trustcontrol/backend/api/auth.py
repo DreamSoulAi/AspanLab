@@ -286,6 +286,76 @@ async def me(
     }
 
 
+@router.get("/referral")
+async def my_referral(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Личный реф-код владельца + ссылка + кого он уже пригласил."""
+    code = await ensure_referral_code(db, user)
+
+    invited_r = await db.execute(
+        select(User.name, User.created_at, User.plan)
+        .where(User.referred_by == user.id)
+        .order_by(User.created_at.desc())
+    )
+    invited = [
+        {
+            "name":    name or "—",
+            "joined":  created_at.isoformat() if created_at else None,
+            # paying = вышел из триала на платный тариф
+            "paying":  plan not in (None, "", "trial"),
+        }
+        for name, created_at, plan in invited_r.all()
+    ]
+    base = str(request.base_url).rstrip("/")
+    return {
+        "code":          code,
+        "link":          f"{base}/?ref={code}",
+        "invited_count": len(invited),
+        "paying_count":  sum(1 for i in invited if i["paying"]),
+        "invited":       invited,
+    }
+
+
+@router.get("/admin/referrals")
+async def admin_referrals(
+    admin: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Сводка по рефералам для администратора: кто кого привёл."""
+    if not admin.is_admin:
+        raise HTTPException(status_code=403, detail="Только для администратора")
+
+    from sqlalchemy import func
+    from sqlalchemy.orm import aliased
+    invitee = aliased(User)   # self-join: приглашённые этим реферером
+
+    rows = await db.execute(
+        select(
+            User.id, User.name, User.phone, User.referral_code,
+            func.count(invitee.id).label("invited"),
+        )
+        .outerjoin(invitee, invitee.referred_by == User.id)
+        .group_by(User.id)
+        .having(func.count(invitee.id) > 0)
+        .order_by(func.count(invitee.id).desc())
+    )
+    return {
+        "referrers": [
+            {
+                "user_id":  uid,
+                "name":     name,
+                "phone":    phone or "",
+                "code":     code or "",
+                "invited":  invited,
+            }
+            for uid, name, phone, code, invited in rows.all()
+        ]
+    }
+
+
 class ExtendSubscriptionRequest(BaseModel):
     phone: str = Field(..., max_length=20)
     days:  int = Field(..., ge=1, le=365)
@@ -343,6 +413,43 @@ class CreateClientRequest(BaseModel):
 def _gen_password(length: int = 14) -> str:
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+# ── Реферальные коды ───────────────────────────────────────────────────────────
+# Алфавит без похожих символов (0/O, 1/I/L) — код диктуют голосом/пишут от руки.
+_REF_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def _gen_referral_code(length: int = 6) -> str:
+    return "".join(secrets.choice(_REF_ALPHABET) for _ in range(length))
+
+
+async def ensure_referral_code(db: AsyncSession, user: User) -> str:
+    """Лениво выдаёт пользователю личный реф-код (генерируется при первом обращении)."""
+    if user.referral_code:
+        return user.referral_code
+    for _ in range(10):
+        code = _gen_referral_code()
+        exists = await db.execute(select(User.id).where(User.referral_code == code))
+        if not exists.scalar():
+            user.referral_code = code
+            await db.commit()
+            return code
+    # крайне маловероятно — берём более длинный код
+    user.referral_code = _gen_referral_code(8)
+    await db.commit()
+    return user.referral_code
+
+
+async def resolve_referrer(db: AsyncSession, ref: str | None) -> int | None:
+    """По коду из ?ref= находит id пригласившего пользователя (или None)."""
+    if not ref:
+        return None
+    code = re.sub(r"[^A-Za-z0-9]", "", ref).upper()[:12]
+    if not code:
+        return None
+    r = await db.execute(select(User.id).where(User.referral_code == code))
+    return r.scalar()
 
 
 @router.post("/admin/create-client")
@@ -553,6 +660,9 @@ async def telegram_login(
         last  = (data.get("last_name") or "").strip()
         uname = (data.get("username") or "").strip()
         name  = (f"{first} {last}".strip()) or uname or f"tg{tg_id}"
+        # Реферальная привязка: код приходит query-параметром ?ref=CODE
+        # (НЕ в подписанном теле Telegram — иначе сломается проверка HMAC).
+        referrer_id = await resolve_referrer(db, request.query_params.get("ref"))
         user = User(
             name=name[:100],
             telegram_id=tg_id,
@@ -562,9 +672,13 @@ async def telegram_login(
             is_verified=True,
             is_active=True,
             is_admin=False,
+            referred_by=referrer_id,
         )
         db.add(user)
-        _log.info(f"telegram_login: new client tg_id={tg_id} name={name!r}")
+        _log.info(
+            f"telegram_login: new client tg_id={tg_id} name={name!r}"
+            + (f" referred_by={referrer_id}" if referrer_id else "")
+        )
     else:
         if not user.is_active:
             raise HTTPException(status_code=403, detail="Аккаунт заблокирован")

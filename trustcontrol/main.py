@@ -456,6 +456,24 @@ async def _fix_schema():
         except Exception as e:
             print(f"⚠️ schema fix users.last_subscription_reminder: {e}", flush=True)
 
+        # ── users: реферальная программа ────────────────────────────────────
+        try:
+            if not await _check_col(db, "users", "referral_code"):
+                await _run(db, "ALTER TABLE users ADD COLUMN referral_code VARCHAR(12)",
+                           "users.referral_code added")
+                if is_pg:
+                    await _run(
+                        db,
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_referral_code "
+                        "ON users(referral_code) WHERE referral_code IS NOT NULL",
+                        "users.referral_code unique index",
+                    )
+            if not await _check_col(db, "users", "referred_by"):
+                await _run(db, "ALTER TABLE users ADD COLUMN referred_by INTEGER",
+                           "users.referred_by added")
+        except Exception as e:
+            print(f"⚠️ schema fix users.referral: {e}", flush=True)
+
         # ── locations: все новые колонки через IF NOT EXISTS ────────────────
         _loc_cols = [
             ("ignore_background_media", "BOOLEAN DEFAULT TRUE"),

@@ -44,6 +44,15 @@ class User(Base):
     last_login      = Column(DateTime)
     last_subscription_reminder = Column(DateTime)
 
+    # ── Реферальная программа ───────────────────────────────────────────────
+    # referral_code — личный код владельца, которым он зовёт знакомых
+    #                 предпринимателей (показывается в дашборде, ссылка ?ref=CODE).
+    # referred_by    — id пользователя, по чьему коду этот клиент пришёл.
+    # Награду за приглашение начисляем вручную (размер скидки/бонуса определим
+    # после месяца работы, когда будет ясна реальная себестоимость).
+    referral_code   = Column(String(12), unique=True, index=True, nullable=True)
+    referred_by     = Column(Integer, index=True, nullable=True)
+
     locations       = relationship("Location", back_populates="owner", cascade="all, delete-orphan")
     payments        = relationship("Payment", back_populates="user")
 
