@@ -146,11 +146,22 @@ async def _handle_message(message: dict):
             await _handle_link(chat_id, token)
         else:
             await _cmd_start(chat_id)
-    elif text.startswith("/link"):
+        return
+
+    if text.startswith("/link"):
         parts = text.split(maxsplit=1)
         code  = parts[1].strip() if len(parts) > 1 else ""
         await _handle_link_by_code(chat_id, code)
-    elif text in ("/profile", "👤 Профиль"):
+        return
+
+    user = await _get_user_by_chat(chat_id)
+
+    if not user:
+        # Незарегистрированный — потенциальный клиент или вопрос о продукте
+        await _cmd_support_unregistered(chat_id, text, message)
+        return
+
+    if text in ("/profile", "👤 Профиль"):
         await _cmd_profile(chat_id)
     elif text in ("/today", "📊 Отчёт за сегодня"):
         await _cmd_today(chat_id)
@@ -194,6 +205,10 @@ async def _handle_callback(callback: dict):
             await _cmd_alerts(chat_id)
         elif data == "tc_help":
             await _cmd_help(chat_id)
+        elif data == "tc_prices":
+            await _cmd_prices(chat_id)
+        elif data == "tc_about":
+            await _cmd_about(chat_id)
 
     except (ValueError, IndexError):
         pass
@@ -467,18 +482,25 @@ async def _cmd_start(chat_id: str):
     user = await _get_user_by_chat(chat_id)
 
     if not user:
+        _app = settings.APP_URL or "https://trustcontrol.kz"
         await _send(
             chat_id,
             (
-                "👋 *Добро пожаловать в TrustControl!*\n\n"
-                "Для получения уведомлений привяжите этот Telegram к вашему аккаунту:\n\n"
-                "1. Войдите в *личный кабинет*\n"
-                "2. Перейдите в *Настройки*\n"
-                "3. Нажмите *Привязать Telegram*"
+                "👋 *Привет! Это TrustControl.*\n\n"
+                "ИИ следит за качеством обслуживания на вашей кассе — и присылает отчёт в Telegram.\n\n"
+                "📋 *Что видите каждый день:*\n"
+                "• Поздоровался ли кассир с клиентом\n"
+                "• Предложил ли допродажу\n"
+                "• Грубил ли — тревога мгновенно\n"
+                "• Оплата прошла на чужой Kaspi? — фрод-алерт\n\n"
+                "🇰🇿 Понимает казахский, русский и шала-казахский.\n\n"
+                "🎁 *7 дней бесплатно — карта не нужна*"
             ),
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🌐 Открыть личный кабинет", url=settings.APP_URL or "https://aspanlab.onrender.com"),
-            ]]),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🚀 Попробовать бесплатно", url=f"{_app}/?ref=tg_start")],
+                [InlineKeyboardButton("💰 Цены", callback_data="tc_prices"),
+                 InlineKeyboardButton("❓ Как работает?", callback_data="tc_about")],
+            ]),
         )
         return
 
@@ -488,6 +510,104 @@ async def _cmd_start(chat_id: str):
         f"👋 Привет, *{user.name}*!\n\n📦 Тариф: *{plan}*\n\nВыберите действие:",
         reply_markup=_main_keyboard(),
     )
+
+
+async def _cmd_support_unregistered(chat_id: str, text: str, message: dict):
+    """Автоответ потенциальному клиенту + уведомление Данила."""
+    _app = settings.APP_URL or "https://trustcontrol.kz"
+
+    # Определяем тему вопроса по ключевым словам
+    tl = text.lower()
+    if any(w in tl for w in ("цена", "стоимость", "сколько", "тариф", "стоит", "платить", "деньги")):
+        reply = (
+            "💰 *Тарифы TrustControl:*\n\n"
+            "• *Старт* — 24 990 ₸/мес (1 касса)\n"
+            "• *Бизнес* — 59 990 ₸/мес (до 3 касс)\n"
+            "• *Поток* — 99 990 ₸/мес (до 5 касс)\n"
+            "• *Сеть* — от 199 000 ₸/мес (франшизы)\n\n"
+            "🎁 Первые 7 дней бесплатно — карта не нужна.\n"
+            "Оплата: Kaspi-перевод, без автосписаний."
+        )
+    elif any(w in tl for w in ("казахск", "тіл", "язык", "шала", "қаз")):
+        reply = (
+            "🇰🇿 *Казахский язык*\n\n"
+            "Понимаем казахский, русский и шала-казахский (code-switching).\n"
+            "Для чистого распознавания в шумном зале рекомендуем направленный "
+            "кардиоидный микрофон (~12 000 ₸) — поможем подобрать под ваше помещение."
+        )
+    elif any(w in tl for w in ("микрофон", "оборудован", "купить", "подключ", "устан", "работает")):
+        reply = (
+            "🎙 *Что нужно для работы:*\n\n"
+            "1. Любой ПК или ноутбук на кассе (уже есть)\n"
+            "2. USB-микрофон:\n"
+            "   • Тихое помещение → простой, от 3 000 ₸\n"
+            "   • Шумный зал → кардиоидный, ~12 000 ₸\n"
+            "3. Интернет\n\n"
+            "Всё. Кассовый аппарат не трогаем.\n"
+            "Настройка: 10-15 минут, мы помогаем."
+        )
+    elif any(w in tl for w in ("слежк", "безопасн", "запис", "данные", "хранит")):
+        reply = (
+            "🔒 *Безопасность и конфиденциальность*\n\n"
+            "Живые люди разговоры не слушают — только ИИ.\n"
+            "Аудио хранится в защищённом облаке, доступно только вам.\n"
+            "Обычные записи удаляются через 48 часов.\n"
+            "Записи с нарушением — до 30 дней (для разбора ситуации)."
+        )
+    else:
+        reply = (
+            "Спасибо за сообщение! Данил ответит в ближайшее время.\n\n"
+            "Пока — можете попробовать прямо сейчас:"
+        )
+
+    await _send(
+        chat_id,
+        reply,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 Попробовать 7 дней бесплатно", url=f"{_app}/?ref=tg_support")],
+        ]),
+    )
+
+    # Уведомляем Данила о входящем обращении
+    await _notify_admin_support(chat_id, text, message)
+
+
+async def _notify_admin_support(chat_id: str, text: str, message: dict):
+    """Пересылает обращение незарегистрированного пользователя админу."""
+    admin_chat = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
+    if not admin_chat:
+        # Ищем в БД: первый is_admin=True с подключённым telegram_chat
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(User).where(User.is_admin == True, User.telegram_chat.isnot(None))  # noqa: E712
+            )
+            admin = result.scalar()
+            if admin:
+                admin_chat = admin.telegram_chat
+
+    if not admin_chat or admin_chat == chat_id:
+        return
+
+    from_user = message.get("from", {})
+    name_parts = [from_user.get("first_name", ""), from_user.get("last_name", "")]
+    username   = from_user.get("username", "")
+    name = " ".join(p for p in name_parts if p).strip() or f"id{chat_id}"
+    user_ref   = f"@{username}" if username else f"[{name}](tg://user?id={chat_id})"
+
+    try:
+        await get_bot().send_message(
+            chat_id=admin_chat,
+            text=(
+                f"📩 *Новое обращение в поддержку*\n\n"
+                f"От: {user_ref}\n"
+                f"Chat ID: `{chat_id}`\n\n"
+                f"Вопрос:\n_{text[:300]}_"
+            ),
+            parse_mode=ParseMode.MARKDOWN,
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        log.warning(f"Не удалось уведомить админа: {e}")
 
 
 async def _cmd_profile(chat_id: str):
@@ -663,6 +783,53 @@ async def _cmd_alerts(chat_id: str):
 
     lines.append("_Нажмите ✅/❌ под алертом чтобы закрыть тревогу_")
     await _send(chat_id, "\n".join(lines))
+
+
+async def _cmd_prices(chat_id: str):
+    _app = settings.APP_URL or "https://trustcontrol.kz"
+    await _send(
+        chat_id,
+        (
+            "💰 *Тарифы TrustControl*\n\n"
+            "• *Старт* — 24 990 ₸/мес\n"
+            "  1 касса, до 1 500 разговоров/мес\n\n"
+            "• *Бизнес* — 59 990 ₸/мес\n"
+            "  До 3 касс, аналитика по сотрудникам\n\n"
+            "• *Поток* — 99 990 ₸/мес\n"
+            "  До 5 касс, приоритетная поддержка\n\n"
+            "• *Сеть* — от 199 000 ₸/мес\n"
+            "  Франшизы, сети, индивидуальные условия\n\n"
+            "🎁 Первые *7 дней бесплатно* на любом тарифе.\n"
+            "Оплата Kaspi. Без карты. Без автосписаний."
+        ),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 Попробовать бесплатно", url=f"{_app}/?ref=tg_prices")],
+        ]),
+    )
+
+
+async def _cmd_about(chat_id: str):
+    _app = settings.APP_URL or "https://trustcontrol.kz"
+    await _send(
+        chat_id,
+        (
+            "🤖 *Как работает TrustControl*\n\n"
+            "1️⃣ *USB-микрофон* на кассе → программа на кассовом ПК\n"
+            "2️⃣ Каждый разговор с клиентом → ИИ распознаёт речь\n"
+            "3️⃣ Анализирует: приветствие, допродажа, грубость, фрод\n"
+            "4️⃣ *Отчёт в Telegram* через 15 секунд после разговора\n\n"
+            "🚨 *Мгновенные тревоги:*\n"
+            "  • Кассир нагрубил → пуш сразу\n"
+            "  • Оплата на чужой Kaspi → фрод-алерт\n\n"
+            "📊 *Дашборд:* процент приветствий, допродажи, оценки по сменам, аналитика сотрудников\n\n"
+            "🇰🇿 Понимает казахский, русский, шала-казахский.\n"
+            "Кассовый аппарат не трогаем."
+        ),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 Попробовать 7 дней бесплатно", url=f"{_app}/?ref=tg_about")],
+            [InlineKeyboardButton("💰 Цены", callback_data="tc_prices")],
+        ]),
+    )
 
 
 async def _cmd_help(chat_id: str):

@@ -38,12 +38,6 @@ GOODBYE = [
     r"сау болыңыз", r"хош", r"жақсы қалыңыз",
 ]
 
-# Грубость и мошенничество — только через GPT (events.rudeness / events.fraud_attempt).
-# Тысяча ситуаций, контекст и интонация важнее конкретных слов.
-BAD_LANGUAGE = []
-FRAUD = []
-
-
 def _compile(patterns: list[str]) -> list[re.Pattern]:
     return [re.compile(p, re.IGNORECASE | re.UNICODE) for p in patterns]
 
@@ -60,7 +54,6 @@ def _search(patterns: list[re.Pattern], text: str) -> list[str]:
 def analyze(
     text: str,
     business_type: str = "coffee",
-    custom_phrases: list[str] = None,
 ) -> dict:
     """
     Быстрый regex-анализ: только приветствия, благодарности, прощания.
