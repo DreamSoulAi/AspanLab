@@ -67,11 +67,21 @@ def _normalize_db_url(raw: str) -> tuple[str, dict]:
 _DB_URL, _CONNECT_ARGS = _normalize_db_url(settings.DATABASE_URL)
 
 # ── Движок ───────────────────────────────────────────────────
+# Neon free даёт ~10 одновременных коннектов на проект.
+# pool_size=3 постоянных + max_overflow=7 временных = 10 total.
+# pool_recycle=300: переоткрываем коннект каждые 5 минут —
+# Neon/облака рвут idle-соединения раньше чем SQLAlchemy замечает.
+# SQLite не нуждается в этих параметрах (они просто игнорируются aiosqlite).
+_is_postgres = "postgresql" in _DB_URL
 engine = create_async_engine(
     _DB_URL,
-    echo=settings.DEBUG,   # SQL логи только в dev
+    echo=settings.DEBUG,
     future=True,
-    pool_pre_ping=True,    # проверяем живость соединения (облако рвёт idle-коннекты)
+    pool_pre_ping=True,
+    pool_size=3          if _is_postgres else 5,
+    max_overflow=7       if _is_postgres else 10,
+    pool_recycle=300     if _is_postgres else -1,
+    pool_timeout=30,
     connect_args=_CONNECT_ARGS,
 )
 
