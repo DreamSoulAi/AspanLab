@@ -138,8 +138,9 @@ def test_false_ignore_on_plausible_text_rescued_by_audio(_mock_models):
 
 
 # ── Каскадный гейт связности ISSAI (главная защита русских разговоров) ─────────
-# Эти тесты проверяют ЛОГИКУ скипа → включают флаг CASCADE_SKIP_CHATTER принудительно.
-# По умолчанию в проде флаг OFF (см. test_cascade_skip_off_by_default_no_drop).
+# Эти тесты проверяют ЛОГИКУ скипа. Флаг CASCADE_SKIP_CHATTER теперь ВКЛЮЧЁН по
+# умолчанию (см. test_cascade_skip_on_by_default), но тесты всё равно выставляют его
+# явно, чтобы не зависеть от значения env в окружении запуска.
 
 def test_cascade_coherent_personal_skips_openai(_mock_models):
     """Связная казахская болтовня персонала → PERSONAL без вызова OpenAI STT (экономия)."""
@@ -234,28 +235,39 @@ def test_cascade_personal_with_fraud_signals_forces_openai(_mock_models):
     )
 
 
-def test_cascade_skip_off_by_default_no_drop(_mock_models):
-    """ДЕФОЛТ ПРОДА (флаг CASCADE_SKIP_CHATTER не выставлен): даже связную казахскую
-    болтовню НЕ дропаем по ISSAI — всегда идём в OpenAI. Это защита от потери русских
-    диалогов: на низком объёме не рискуем ради копеечной экономии (решение Данила)."""
-    assert A._CASCADE_SKIP_CHATTER is False, "скип болтовни в проде должен быть ВЫКЛЮЧЕН по умолчанию"
-    _enable_issai(_mock_models, "ой бүгін шаршадым ғой кеше клуб болдым кеш жаттым")
-    triage_called = {"n": 0}
+def test_cascade_skip_on_by_default(_mock_models):
+    """ДЕФОЛТ ПРОДА: скип болтовни ВКЛЮЧЁН — личную казахскую болтовню не отправляем
+    в платный OpenAI STT. Безопасность держится на двух замках (гейт связности +
+    признак обслуживания перед дропом), проверяемых остальными тестами этого блока."""
+    assert A._CASCADE_SKIP_CHATTER is True, "скип болтовни в проде должен быть ВКЛЮЧЁН по умолчанию"
+
+
+def test_cascade_personal_with_service_marker_forces_openai(_mock_models):
+    """Закрытая дыра: triage пометил разговор personal, НО в казахском тексте есть
+    маркер обслуживания (приветствие/заказ/прощание) без озвученной суммы — это может
+    быть реальный диалог с клиентом. Перед дропом проверяем признак сервиса → не
+    дропаем, идём в OpenAI. Реальный диалог обслуживания теряться не должен."""
+    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
+    # «сәлеметсіз бе» (здравствуйте) + «рахмет» (спасибо) — маркеры обслуживания, суммы нет
+    _enable_issai(_mock_models, "сәлеметсіз бе бір кофе рахмет сау болыңыз")
     openai_called = {"n": 0}
-    async def _triage(*a, **k):
-        triage_called["n"] += 1
-        return {"coherent": True, "category": "personal"}
     async def _tr(*a, **k):
         openai_called["n"] += 1
-        return "болтовня"   # пусть OpenAI разбирается, мы не дропаем вслепую
+        return "здравствуйте один кофе спасибо до свидания"
+    async def _triage(*a, **k):
+        return {"coherent": True, "category": "personal"}   # triage недооценил
     async def _gpt(text, **k):
-        return {"status": "PERSONAL", "is_personal_talk": True, "summary": "болтовня"}
-    _mock_models.setattr(A, "_triage_issai_text", _triage)
+        return {"status": "OK", "is_business": True, "score": 70, "events": {},
+                "summary": "кофе", "tone": "neutral"}
     _mock_models.setattr(A, "_transcribe_audio", _tr)
+    _mock_models.setattr(A, "_triage_issai_text", _triage)
     _mock_models.setattr(A, "gpt_analyze", _gpt)
     res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert triage_called["n"] == 0, "при выключенном скипе гейт связности даже не зовётся"
-    assert openai_called["n"] == 1, "при выключенном скипе всегда идём в OpenAI (не теряем диалог)"
+    assert openai_called["n"] == 1, (
+        "маркер обслуживания в ISSAI-тексте ОБЯЗАН дотащить запись до OpenAI "
+        "даже если triage сказал PERSONAL — реальный диалог не дропаем"
+    )
+    assert res["status"] == "OK"
 
 
 def test_garbage_text_ignore_not_rescued(_mock_models):

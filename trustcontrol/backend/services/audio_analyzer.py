@@ -37,11 +37,14 @@ _PRIMARY_STT_MODEL = os.getenv("STT_MODEL", "gpt-4o-mini-transcribe")
 _FALLBACK_MODEL = "gpt-4o-mini-transcribe"
 
 # Каскадный «скип болтовни»: ранний дроп PERSONAL/IGNORE по ISSAI-тексту БЕЗ
-# вызова OpenAI. Экономит ~5к₸/клиент на казахской болтовне, НО рискует потерять
-# русский диалог (ISSAI на русском даёт кашу → триаж может ошибиться). По умолчанию
-# ВЫКЛЮЧЕН: на низком объёме mini+RMS и так держат себес < тарифа, риск не оправдан.
-# Включать (env CASCADE_SKIP_CHATTER=1) когда пойдёт объём и счёт OpenAI начнёт болеть.
-_CASCADE_SKIP_CHATTER = os.getenv("CASCADE_SKIP_CHATTER", "").strip().lower() in ("1", "true", "yes", "on")
+# вызова OpenAI — экономит ~5к₸/клиент на казахской болтовне. ВКЛЮЧЁН по умолчанию.
+# Безопасность «не потерять диалог» держится на ДВУХ замках:
+#   1) гейт связности: русская речь у ISSAI = каша → coherent=false → всегда OpenAI;
+#   2) дроп PERSONAL только если _is_plausible_conversation()==False, т.е. ни платежа,
+#      ни маркера обслуживания, ни связного обмена >=6 слов — чистая болтовня/обрывок.
+# Итог: GPT-транскриб НЕ слушает личную болтовню, но ни один живой диалог не дропается.
+# Выключить полностью можно env CASCADE_SKIP_CHATTER=0 (тогда OpenAI зовётся всегда).
+_CASCADE_SKIP_CHATTER = os.getenv("CASCADE_SKIP_CHATTER", "on").strip().lower() not in ("0", "false", "no", "off", "")
 
 def _compute_rms(wav_bytes: bytes) -> float:
     """
@@ -734,6 +737,22 @@ def _looks_like_real_transaction(text: str) -> bool:
     return any(w in tl for w in pay_words)
 
 
+def _looks_like_service_interaction(text: str) -> bool:
+    """
+    Признак ОБСЛУЖИВАНИЯ клиента (а не личной болтовни персонала): озвучен платёж
+    ИЛИ есть маркер сервиса — приветствие/заказ/прощание (ru/kk). Длину НЕ учитываем
+    специально: личная болтовня бывает длинной, по длине её не отличить от диалога.
+    Используется как замок перед дропом PERSONAL: есть признак сервиса → не дропаем,
+    отправляем в OpenAI (реальный диалог с клиентом теряться не должен).
+    """
+    if not text or not text.strip():
+        return False
+    if _looks_like_real_transaction(text):
+        return True
+    from backend.services.context_analyzer import count_service_markers
+    return count_service_markers(text) >= 1
+
+
 def _is_plausible_conversation(text: str) -> bool:
     """
     Generic-проверка: похож ли текст на РЕАЛЬНЫЙ разговор обслуживания
@@ -1142,16 +1161,20 @@ async def analyze_audio_with_fallback(
                           "category": cat, "issai": issai_raw[:120]}
 
                 if cat == "personal":
-                    # Страховка: если в казахской болтовне затесался платёжный сигнал
-                    # (клиент подошёл и говорит «мың», «аудар», «Каспи» посреди чата) —
-                    # не дропаем: OpenAI расшифрует полный контекст включая фрод.
-                    # Казахские платёжные слова (мың/аудар/аударыңыз/Каспи) ISSAI слышит
-                    # даже в смешанном тексте → страховка работает.
-                    if _looks_like_real_transaction(issai_raw):
-                        log.info("Каскад: PERSONAL+транзакция в ISSAI-тексте — OpenAI обязателен (фрод-страховка)")
+                    # Двойная страховка перед дропом личного разговора. Дропаем ТОЛЬКО
+                    # чистую болтовню — НЕ дропаем, если есть хоть один признак
+                    # обслуживания клиента (тогда в OpenAI, реальный диалог не теряем):
+                    #   • платёжный сигнал (мың/аудар/Каспи посреди чата) → возможен фрод;
+                    #   • маркер обслуживания (приветствие/заказ/прощание ru/kk) → это
+                    #     может быть реальный диалог с клиентом, а не болтовня персонала.
+                    # Длину НЕ используем как признак: личная болтовня бывает длинной —
+                    # иначе экономия исчезает. Казахские платёжные/сервисные слова ISSAI
+                    # слышит даже в смешанном тексте → страховка работает и на рус-вставках.
+                    if _looks_like_service_interaction(issai_raw):
+                        log.info("Каскад: PERSONAL, но есть признак обслуживания — OpenAI обязателен (не теряем диалог)")
                         # fall through → шаг 3 (OpenAI)
                     else:
-                        log.info("Каскад: связный казахский → PERSONAL — OpenAI STT сэкономлен")
+                        log.info("Каскад: связный казахский → PERSONAL (чистая болтовня) — OpenAI STT сэкономлен")
                         return {
                             "status": "PERSONAL", "is_business": False, "is_personal_talk": True,
                             "priority": 0, "transcript": "",
