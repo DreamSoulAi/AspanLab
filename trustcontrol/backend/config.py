@@ -93,6 +93,15 @@ class Settings:
     # API-ключ воркера (совпадает с ISSAI_API_KEY на воркере)
     ISSAI_WORKER_KEY: str = os.getenv("ISSAI_WORKER_KEY", "")
 
+    # ── Русский STT-гейт — self-hosted (бесплатный фильтр болтовни) ─────
+    # ВТОРОЙ инстанс того же issai_worker.py, но с базовой моделью, которая
+    # хорошо понимает русский (ISSAI_MODEL=openai/whisper-large-v3-turbo) на
+    # другом порту. Роль: НЕ финальный транскрипт, а бесплатный гейт — отсеять
+    # русскую болтовню кассиров/телефон/фон ДО платного OpenAI STT. Точные слова
+    # для фрода всё равно даёт OpenAI. Если URL пуст — гейт пропускается.
+    RUSSIAN_WORKER_URL: str = os.getenv("RUSSIAN_WORKER_URL", "")
+    RUSSIAN_WORKER_KEY: str = os.getenv("RUSSIAN_WORKER_KEY", "")
+
     # ── Yandex SpeechKit STT (точное распознавание казахского) ─
     # Если оба значения заданы — включается гибрид: точные казахские
     # слова от Yandex + тон голоса от аудио-модели OpenAI.

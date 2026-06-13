@@ -133,17 +133,32 @@ ISSAI (бесплатный VPS) идёт ПЕРВЫМ как ворота, Open
      • НЕ coherent (каша = говорили по-русски) → ОБЯЗАТЕЛЬНО OpenAI (не дропаем!)
    Гейт консервативен: сомнение → coherent=false → идём в OpenAI (тратим деньги, но
    не теряем разговор — правильная асимметрия для фрод-детекции).
+2б. РУССКИЙ ГЕЙТ `russian_stt` (бесплатный, self-hosted) — НЕ финальный транскрипт,
+   а второй фильтр болтовни, ДЛЯ РУССКОЙ речи. Срабатывает ТОЛЬКО когда речь вероятно
+   русская: ISSAI несвязный (coherent=false) ИЛИ дал <3 слов (казахский уже отработан).
+   Это ВТОРОЙ инстанс того же `worker/issai_worker.py`, но с БАЗОВОЙ моделью
+   (`ISSAI_MODEL=openai/whisper-large-v3-turbo`, хорошо понимает русский) на другом
+   порту; клиент форсит lang="ru". Включается env `RUSSIAN_WORKER_URL` (+ KEY).
+   `_triage_russian_text` (gpt-4o-mini) классифицирует personal/noise/business →
+   тот же `_cascade_gate_drop`:
+     • personal БЕЗ признака обслуживания → PERSONAL без OpenAI ✓ (русская болтовня!)
+     • noise (нет plausible) → IGNORE без OpenAI ✓
+     • business / есть платёж-маркер → OpenAI (точные слова для фрода даёт OpenAI,
+       дешёвый русский гейт лишь решает «звать ли дорогие уши»).
+   Если URL пуст — гейт молча пропускается (русская речь → сразу OpenAI, как раньше).
+   Железо: базовая whisper тяжелее ksc2 — на CPU медленно, лучше GPU-инстанс.
 3. Шаг 3 — OpenAI STT (только для business / русской речи / неоднозначного).
 4. Оба ISSAI+OpenAI → merge (gpt-4o-mini); только OpenAI → reconstruct_transcript.
 
-Экономия: казахская болтовня персонала/шум фильтруется бесплатно (это и был источник
-жалобы Данила «безостановочно крутит разговор персонала»). Русская болтовня всё ещё
-стоит один дешёвый STT (без ISSAI её не классифицировать) — но mini вдвое дешевле.
-Русские КЛИЕНТСКИЕ разговоры никогда не теряются (несвязный ISSAI → OpenAI).
-`stt_diag.engine`: "issai_cascade"+`saved_openai:true` (сэкономлено),
-"cascade_hybrid" (оба STT), "gpt-4o-mini-transcribe" (только OpenAI).
-Тесты: 59 passed (добавлены 3 на гейт связности: coherent-personal-skip /
-incoherent-russian→openai / coherent-business→openai).
+Экономия: казахская болтовня персонала/шум фильтруется бесплатно ISSAI (это и был
+источник жалобы Данила «безостановочно крутит разговор персонала»). Русская болтовня
+фильтруется бесплатно русским гейтом, ЕСЛИ `RUSSIAN_WORKER_URL` задан; иначе стоит один
+дешёвый OpenAI STT (mini). Русские КЛИЕНТСКИЕ разговоры никогда не теряются
+(business/платёж → OpenAI). `stt_diag.engine`: "issai_cascade" / "russian_cascade"
++`saved_openai:true` (сэкономлено), "cascade_hybrid" (оба STT),
+"gpt-4o-mini-transcribe" (только OpenAI).
+Тесты: 72 passed (гейт связности + service-marker замок + русский гейт: drop-chatter /
+client-dialog→openai / personal+marker→openai / не-зовётся-при-связном-казахском).
 
 ✅ СКИП БОЛТОВНИ ВКЛЮЧЁН ПО УМОЛЧАНИЮ (env `CASCADE_SKIP_CHATTER`, deflt ON;
 выключить — `CASCADE_SKIP_CHATTER=0`). Требование Данила 13.06: «персонал не должен

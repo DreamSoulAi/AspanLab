@@ -20,7 +20,7 @@ import warnings
 from openai import AsyncOpenAI
 from backend.config import settings
 from backend.services.gpt_analyzer import gpt_analyze
-from backend.services import issai_stt, yandex_stt
+from backend.services import issai_stt, russian_stt, yandex_stt
 from backend.services.stt_prompt import build_transcription_prompt
 
 log = logging.getLogger("audio_analyzer")
@@ -1068,6 +1068,91 @@ async def _triage_issai_text(issai_text: str) -> dict | None:
     }
 
 
+_RUSSIAN_TRIAGE_PROMPT = """Ниже — расшифровка аудио с кассы на РУССКОМ языке (self-hosted STT).
+Твоя задача — понять, это ОБСЛУЖИВАНИЕ КЛИЕНТА или НЕТ. Это лёгкий гейт перед
+дорогой моделью: ошибиться в сторону "business" безопасно, потерять клиента — нет.
+
+Ответь на ДВА вопроса:
+
+1) coherent — это СВЯЗНАЯ осмысленная русская речь (даже короткая, даже с ошибками
+   STT)? Если это каша/набор обрывков/пусто — coherent=false.
+   СОМНЕВАЕШЬСЯ — ставь coherent=false (перепроверит другая модель, это безопасно).
+
+2) Если coherent=true — что это:
+   • "personal" — болтовня сотрудников между собой / личный телефонный звонок, БЕЗ
+     обслуживания клиента у кассы
+   • "noise"    — обрывки, междометия, фон ТВ/музыки, нет осмысленного разговора
+   • "business" — обслуживание клиента: приветствие, заказ, цена, ОПЛАТА (каспи,
+     перевод, наличные, сдача), вопрос о товаре, жалоба
+   ЛЮБОЙ намёк на клиента или деньги → "business" (платёжный разговор не экономим —
+   там может прятаться фрод). (если coherent=false — ставь "business")
+
+Верни ТОЛЬКО JSON: {"coherent": true|false, "category": "personal|noise|business"}"""
+
+
+async def _triage_russian_text(ru_text: str) -> dict | None:
+    """
+    Лёгкий гейт каскада для РУССКОЙ речи (gpt-4o-mini): обслуживание клиента или
+    болтовня/шум. Зеркало _triage_issai_text, но текст уже на русском (понятный),
+    поэтому проверяем не «связность vs каша казахская», а «клиент vs не клиент».
+
+    Возвращает {coherent, category} или None при сбое API.
+    Консервативен: любой намёк на клиента/деньги → business → каскад идёт в OpenAI.
+    """
+    text = (ru_text or "").strip()
+    if not text:
+        return None
+    data = await _gpt_json_with_retry(
+        [{"role": "user", "content": f"{_RUSSIAN_TRIAGE_PROMPT}\n\nТекст:\n{text}"}],
+        max_tokens=120,
+    )
+    if not data:
+        return None
+    cat = data.get("category")
+    return {
+        "coherent": bool(data.get("coherent")),
+        "category": cat if cat in ("personal", "noise", "business") else "business",
+    }
+
+
+def _cascade_gate_drop(text: str, triage: dict | None, engine: str) -> dict | None:
+    """
+    Решение бесплатного гейта каскада по транскрипту STT-фильтра (ISSAI или русский).
+    Возвращает результат-ДРОП (PERSONAL/IGNORE) ЛИБО None (= не дропаем, нужен OpenAI).
+    Логика общая для казахского и русского гейтов — отсюда два замка безопасности:
+      • дропаем ТОЛЬКО при coherent=true (несвязное/каша → None → OpenAI);
+      • PERSONAL дропаем лишь если НЕТ признака обслуживания
+        (_looks_like_service_interaction): иначе это может быть реальный диалог → OpenAI.
+    Длину как признак не используем — личная болтовня бывает длинной.
+    """
+    if not (triage and triage.get("coherent")):
+        return None
+    cat = triage.get("category")
+    diag = {"engine": engine, "saved_openai": True, "category": cat, "stt": text[:120]}
+
+    if cat == "personal":
+        if _looks_like_service_interaction(text):
+            log.info(f"Каскад[{engine}]: PERSONAL, но есть признак обслуживания — OpenAI обязателен")
+            return None
+        log.info(f"Каскад[{engine}]: связная болтовня → PERSONAL — OpenAI STT сэкономлен")
+        return {
+            "status": "PERSONAL", "is_business": False, "is_personal_talk": True,
+            "priority": 0, "transcript": "",
+            "summary": "Личный разговор сотрудника",
+            "_stt_diag": diag,
+        }
+
+    if cat == "noise" and not _is_plausible_conversation(text):
+        log.info(f"Каскад[{engine}]: связно → шум/IGNORE — OpenAI STT сэкономлен")
+        return {
+            "status": "IGNORE", "is_business": False, "priority": 0,
+            "transcript": "", "summary": "Нерелевантная запись",
+            "_stt_diag": diag,
+        }
+    # business → не дропаем, нужен OpenAI (платёжный разговор не экономим)
+    return None
+
+
 async def analyze_audio_with_fallback(
     wav_bytes: bytes | None,
     transcript_text: str | None,
@@ -1148,50 +1233,35 @@ async def analyze_audio_with_fallback(
         #   • coherent + personal/noise → точно казахская болтовня → дроп без OpenAI ✓
         #   • coherent + business → казахское обслуживание → всё равно зовём OpenAI
         #     (может быть рус. вставка / фрод-детали — платёжный разговор не экономим)
-        #   • НЕ coherent → говорили на русском → ОБЯЗАТЕЛЬНО OpenAI (не дропаем!)
-        # Гейт консервативен: сомнение → coherent=false → идём в OpenAI.
-        # Весь ранний дроп под флагом CASCADE_SKIP_CHATTER (по умолчанию OFF —
-        # на низком объёме не рискуем потерять русский диалог ради копеечной экономии).
+        #   • НЕ coherent → говорили на русском → русский гейт / OpenAI (не дропаем!)
+        # Гейт консервативен: сомнение → coherent=false → идём дальше (не теряем диалог).
         primary_raw = ""
+        issai_coherent = False
         if _CASCADE_SKIP_CHATTER and issai_words >= 3:
             triage = await _triage_issai_text(issai_raw)
-            if triage and triage.get("coherent"):
-                cat = triage.get("category")
-                _cdiag = {"engine": "issai_cascade", "saved_openai": True,
-                          "category": cat, "issai": issai_raw[:120]}
+            drop = _cascade_gate_drop(issai_raw, triage, "issai_cascade")
+            if drop is not None:
+                return drop
+            issai_coherent = bool(triage and triage.get("coherent"))
+            if not issai_coherent:
+                log.info("Каскад: ISSAI-текст несвязный (вероятно русская речь) → русский гейт / OpenAI")
 
-                if cat == "personal":
-                    # Двойная страховка перед дропом личного разговора. Дропаем ТОЛЬКО
-                    # чистую болтовню — НЕ дропаем, если есть хоть один признак
-                    # обслуживания клиента (тогда в OpenAI, реальный диалог не теряем):
-                    #   • платёжный сигнал (мың/аудар/Каспи посреди чата) → возможен фрод;
-                    #   • маркер обслуживания (приветствие/заказ/прощание ru/kk) → это
-                    #     может быть реальный диалог с клиентом, а не болтовня персонала.
-                    # Длину НЕ используем как признак: личная болтовня бывает длинной —
-                    # иначе экономия исчезает. Казахские платёжные/сервисные слова ISSAI
-                    # слышит даже в смешанном тексте → страховка работает и на рус-вставках.
-                    if _looks_like_service_interaction(issai_raw):
-                        log.info("Каскад: PERSONAL, но есть признак обслуживания — OpenAI обязателен (не теряем диалог)")
-                        # fall through → шаг 3 (OpenAI)
-                    else:
-                        log.info("Каскад: связный казахский → PERSONAL (чистая болтовня) — OpenAI STT сэкономлен")
-                        return {
-                            "status": "PERSONAL", "is_business": False, "is_personal_talk": True,
-                            "priority": 0, "transcript": "",
-                            "summary": "Личный разговор сотрудника",
-                            "_stt_diag": _cdiag,
-                        }
-
-                if cat == "noise" and not _is_plausible_conversation(issai_raw):
-                    log.info("Каскад: связный казахский → шум/IGNORE — OpenAI STT сэкономлен")
-                    return {
-                        "status": "IGNORE", "is_business": False, "priority": 0,
-                        "transcript": "", "summary": "Нерелевантная запись",
-                        "_stt_diag": _cdiag,
-                    }
-                # cat == "business" → проваливаемся в OpenAI (платёжный разговор не экономим)
-            else:
-                log.info("Каскад: ISSAI-текст несвязный (вероятно русская речь) → нужен OpenAI")
+        # ── Шаг 2б: РУССКИЙ гейт болтовни (бесплатно, self-hosted) ────────────
+        # Срабатывает только когда речь ВЕРОЯТНО русская: ISSAI несвязный ИЛИ дал
+        # мало слов (казахский уже отработан выше). Русская модель на VPS = тоже
+        # бесплатно и играет роль фильтра: русская болтовня/телефон/фон → дроп без
+        # OpenAI. НО финальный транскрипт для фрода всё равно даёт OpenAI — здесь
+        # русский STT лишь решает «звать ли дорогие уши», ошибка в слове не критична.
+        if _CASCADE_SKIP_CHATTER and russian_stt.is_enabled() and not issai_coherent:
+            ru_diag: dict = {}
+            ru_raw = _strip_repeat_loops(await russian_stt.transcribe(wav_bytes, diag=ru_diag) or "")
+            ru_words = len(ru_raw.split()) if ru_raw else 0
+            log.info(f"Каскад шаг 2б | Russian-гейт: {ru_words} сл ({ru_raw[:60]!r})")
+            if ru_words >= 3:
+                ru_triage = await _triage_russian_text(ru_raw)
+                drop = _cascade_gate_drop(ru_raw, ru_triage, "russian_cascade")
+                if drop is not None:
+                    return drop
 
         # ── Шаг 3: OpenAI нужен (бизнес-разговор / русская речь / неоднозначно) ─
         primary_raw = await _transcribe_audio(
