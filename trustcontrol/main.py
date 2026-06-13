@@ -466,6 +466,8 @@ async def _fix_schema():
             ("track_greeting",          "BOOLEAN DEFAULT TRUE"),
             ("track_goodbye",           "BOOLEAN DEFAULT TRUE"),
             ("employees",               "JSONB DEFAULT '[]'::jsonb" if is_pg else "JSON"),
+            ("custom_phrases",          "JSONB DEFAULT '[]'::jsonb" if is_pg else "JSON"),
+            ("menu_json",               "JSONB" if is_pg else "JSON"),
         ]
         for col_name, col_type in _loc_cols:
             await _run(
