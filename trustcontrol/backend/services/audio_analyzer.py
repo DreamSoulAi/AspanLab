@@ -881,36 +881,54 @@ async def _apply_audio_tone_check(
     return result
 
 
-# ── Эскалация спорного фрода на полный gpt-4o ────────────────────────────────
-# Рабочая лошадь анализа — gpt-4o-mini. Но когда mini «учуял» фрод и НЕ уверен
-# (пограничная confidence) — перепроверяем полным gpt-4o: он острее на тонком
-# фроде («между нами», замаскированный намёк) и снимает ложные срабатывания mini.
+# ── Эскалация спорного фрода: полная транскрипция + полный анализ ─────────────
+# Рабочая лошадь — gpt-4o-mini (уши mini-transcribe, мозг mini). Но когда mini
+# «учуял» фрод и НЕ уверен (пограничная confidence), фрод решают ТОЧНЫЕ СЛОВА:
+# «переведи МНЕ на каспи» (вор) vs «переведи на каспи» (бизнес-счёт) — одно слово.
+# Поэтому на спорном фроде: 1) переслушиваем полной gpt-4o-transcribe (точные слова),
+# 2) пересуживаем полным gpt-4o (острее на тонком фроде, снимает ложные mini).
 # Случай редкий (у чистых разговоров confidence≈0) → эскалация дёшева.
-_FRAUD_ESCALATE_LO = 40      # ниже — фрода нет, перепроверять нечего
-_FRAUD_ESCALATE_HI = 75      # >=75 mini уже уверен (FRAUD_HARD) — эскалация не нужна
-_FRAUD_ESCALATE_MODEL = "gpt-4o"
+_FRAUD_ESCALATE_LO = 40            # ниже — фрода нет, перепроверять нечего
+_FRAUD_ESCALATE_HI = 75            # >=75 mini уже уверен (FRAUD_HARD) — эскалация не нужна
+_FRAUD_ESCALATE_MODEL = "gpt-4o"          # полный мозг для вердикта
+_FRAUD_TRANSCRIBE_MODEL = "gpt-4o-transcribe"  # полные уши для точных платёжных слов
 
 
 async def _escalate_borderline_fraud(
-    gpt: dict, text: str, business_context: str | None,
-) -> dict:
+    gpt: dict, text: str, wav_bytes: bytes | None, business_context: str | None,
+) -> tuple[dict, str]:
     """
-    Пограничный фрод (confidence 40-74) → второе мнение от gpt-4o, берём ЕГО вердикт
-    по фроду (fraud_confidence + events.fraud_attempt). Может и поднять (подтвердить →
-    тревога), и снять (ложное срабатывание mini). Никогда не бросает — при сбое
-    оставляем вердикт mini как есть.
+    Пограничный фрод (confidence 40-74) → переслушиваем полной транскрипцией и
+    пересуживаем полным gpt-4o. Берём ЕГО вердикт (fraud_confidence + fraud_attempt)
+    и уточнённый транскрипт (владелец увидит точные слова при разборе тревоги).
+    Возвращает (обновлённый_gpt, текст_для_показа). Никогда не бросает — при любом
+    сбое оставляем вердикт И текст mini как есть.
     """
     try:
         conf = int(gpt.get("fraud_confidence", 0) or 0)
     except (TypeError, ValueError):
-        return gpt
+        return gpt, text
     if not (_FRAUD_ESCALATE_LO <= conf < _FRAUD_ESCALATE_HI):
-        return gpt
+        return gpt, text
 
-    log.info(f"Фрод-эскалация: mini conf={conf} (пограничный) → перепроверка gpt-4o")
-    big = await gpt_analyze(text, business_context=business_context, model=_FRAUD_ESCALATE_MODEL)
+    log.info(f"Фрод-эскалация: mini conf={conf} (пограничный) → полная транскрипция+анализ")
+
+    # 1) Точная транскрипция полной моделью. Базовый STT-промпт уже содержит CRITICAL
+    #    платёжные термины (Каспи/QR/терминал/перевод/аудар) — глоссарий точки не нужен.
+    escalation_text = text
+    if wav_bytes:
+        full_text = _strip_repeat_loops(
+            await _transcribe_audio(wav_bytes, model=_FRAUD_TRANSCRIBE_MODEL) or ""
+        )
+        if full_text and len(full_text.split()) >= 2:
+            escalation_text = full_text
+            log.info(f"Фрод-эскалация: полная транскрипция → {full_text[:80]!r}")
+
+    # 2) Второе мнение полным gpt-4o на лучшем тексте
+    big = await gpt_analyze(escalation_text, business_context=business_context,
+                            model=_FRAUD_ESCALATE_MODEL)
     if not big or big.get("status") in ("IGNORE", "PERSONAL"):
-        return gpt  # full ничего полезного не дал → доверяем mini
+        return gpt, text  # full ничего полезного не дал → доверяем mini (и его тексту)
 
     try:
         big_conf = int(big.get("fraud_confidence", conf) or conf)
@@ -922,7 +940,7 @@ async def _escalate_borderline_fraud(
     ev["fraud_attempt"] = bool(big_events.get("fraud_attempt"))
     gpt["events"] = ev
     log.info(f"Фрод-эскалация: gpt-4o → conf={big_conf} fraud={ev['fraud_attempt']} (mini было {conf})")
-    return gpt
+    return gpt, escalation_text
 
 
 async def _analyze_via_text_gpt(
@@ -962,8 +980,8 @@ async def _analyze_via_text_gpt(
             if _looks_like_real_transaction(text):
                 gpt2 = await gpt_analyze(text, business_context=business_context, force_business=True)
                 if gpt2 and gpt2.get("status") not in ("IGNORE", "PERSONAL") and gpt2.get("is_business", True):
-                    gpt2 = await _escalate_borderline_fraud(gpt2, text, business_context)
-                    _r = _normalize_text_result(gpt2, text, language)
+                    gpt2, text2 = await _escalate_borderline_fraud(gpt2, text, wav_bytes, business_context)
+                    _r = _normalize_text_result(gpt2, text2, language)
                     _r = await _apply_audio_tone_check(_r, wav_bytes, business_context)
                     _r["_stt_diag"] = stt_diag
                     return _r
@@ -976,7 +994,7 @@ async def _analyze_via_text_gpt(
         return {"status": "IGNORE", "is_business": False, "priority": 0,
                 "transcript": "", "summary": gpt.get("summary", ""), "_stt_diag": stt_diag}
 
-    gpt = await _escalate_borderline_fraud(gpt, text, business_context)
+    gpt, text = await _escalate_borderline_fraud(gpt, text, wav_bytes, business_context)
     _r = _normalize_text_result(gpt, text, language)
     _r = await _apply_audio_tone_check(_r, wav_bytes, business_context)
     _r["_stt_diag"] = stt_diag

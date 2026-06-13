@@ -330,6 +330,41 @@ def test_fraud_no_escalation_when_clean(_mock_models):
     assert calls["big"] == 0
 
 
+def test_fraud_escalation_retranscribes_with_full_model(_mock_models):
+    """Спорный фрод + есть аудио → переслушиваем полной gpt-4o-transcribe (точные слова
+    решают: «переведи МНЕ» vs «переведи»). Уточнённый текст идёт в анализ и владельцу."""
+    gpt, calls = _fraud_gpt(60, big_conf=90, big_fraud=True)
+    _mock_models.setattr(A, "gpt_analyze", gpt)
+    seen = {"model": None, "n": 0}
+    async def _tr(wav, model="gpt-4o-mini-transcribe", **k):
+        seen["model"] = model
+        seen["n"] += 1
+        return "переведи мне на каспи 1500 это между нами"   # точные слова от full
+    _mock_models.setattr(A, "_transcribe_audio", _tr)
+    res = _run(A._analyze_via_text_gpt("переведи каспи 1500", b"RIFFxxxx", None, "ru", {}))
+    assert seen["n"] == 1, "спорный фрод с аудио должен переслушиваться"
+    assert seen["model"] == "gpt-4o-transcribe", "переслушиваем именно ПОЛНОЙ моделью"
+    assert "мне" in res["transcript"], "владельцу показываем уточнённый транскрипт от full"
+    assert res["fraud_confidence"] == 90
+    assert res["events"]["fraud_attempt"] is True
+
+
+def test_fraud_escalation_no_retranscribe_without_audio(_mock_models):
+    """Спорный фрод БЕЗ аудио (режим текста) → пересуд полным gpt-4o есть,
+    но переслушивать нечего → транскрипцию не зовём."""
+    gpt, calls = _fraud_gpt(60, big_conf=20, big_fraud=False)
+    _mock_models.setattr(A, "gpt_analyze", gpt)
+    tr_called = {"n": 0}
+    async def _tr(*a, **k):
+        tr_called["n"] += 1
+        return ""
+    _mock_models.setattr(A, "_transcribe_audio", _tr)
+    res = _run(A._analyze_via_text_gpt("переведи каспи 1500", None, None, "ru", {}))
+    assert tr_called["n"] == 0, "без аудио переслушивать нечего"
+    assert calls["big"] == 1, "пересуд полным gpt-4o всё равно происходит"
+    assert res["fraud_confidence"] == 20
+
+
 @pytest.mark.parametrize("text", [
     # Реальные транскрипты со скринов кассы — рваные, но это живые сделки.
     "банан ааа сосын есеп содан берейін бе үш мың төрт жүз елу",
