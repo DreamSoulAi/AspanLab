@@ -11,7 +11,9 @@
 #  6. Ошибка OpenAI → FailedJob в очередь на повтор через 5 мин
 # ════════════════════════════════════════════════════════════
 
+import asyncio
 import logging
+import os
 import time
 import uuid
 from collections import defaultdict
@@ -53,6 +55,18 @@ router = APIRouter()
 
 MAX_AUDIO_SIZE_MB    = 10
 MAX_TRANSCRIPT_CHARS = 10_000
+
+# ── Потолок одновременной обработки ───────────────────────────────────────────
+# Каждый разговор обрабатывается в фоне и может ждать STT (ISSAI) до 300с — всё
+# это время фоновая задача жива. Без потолка под пиком задачи копятся десятками
+# и разом конкурируют за коннекты к БД (free-tier Postgres = ~10 коннектов) →
+# пул исчерпан → новые задачи 30с ждут свободный и падают с QueuePool TimeoutError
+# (а заодно бьём в rate-limit STT). Семафор ограничивает число РЕАЛЬНО
+# обрабатываемых разговоров; остальные ждут очереди в памяти. Касса при этом уже
+# получила ok мгновенно — на неё это не влияет. Значение поднимается env-переменной
+# вместе с пулом БД (DB_POOL_SIZE) при переезде на платную базу/воркер-очередь.
+_MAX_CONCURRENT_PROCESSING = max(1, int(os.getenv("MAX_CONCURRENT_PROCESSING", "5")))
+_PROCESS_SEMAPHORE = asyncio.Semaphore(_MAX_CONCURRENT_PROCESSING)
 
 
 # Per-API-key rate limits:
@@ -168,6 +182,10 @@ async def _process_submission(
     """
     Полный цикл обработки одного аудио-сегмента.
     """
+    # Потолок одновременной обработки (см. _PROCESS_SEMAPHORE): защита пула БД и
+    # STT от пиковой нагрузки. Ждём слот тут, а не на стороне кассы (она уже
+    # получила ok). Освобождаем строго в finally — даже при ошибке/отмене.
+    await _PROCESS_SEMAPHORE.acquire()
     # Флаг: отчёт уже сохранён в БД. Если упадёт код ПОСЛЕ сохранения
     # (уведомления/email/диагностика) — НЕ ставим в очередь повторов,
     # иначе retry-воркер создаст идентичный дубль отчёта.
@@ -650,6 +668,8 @@ async def _process_submission(
                 )
             except Exception:
                 pass
+    finally:
+        _PROCESS_SEMAPHORE.release()
 
 
 async def _enqueue_retry(

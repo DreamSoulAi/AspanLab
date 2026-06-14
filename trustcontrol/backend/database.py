@@ -3,6 +3,7 @@
 #  SQLAlchemy async + aiosqlite/asyncpg
 # ════════════════════════════════════════════════════════════
 
+import os
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -67,21 +68,28 @@ def _normalize_db_url(raw: str) -> tuple[str, dict]:
 _DB_URL, _CONNECT_ARGS = _normalize_db_url(settings.DATABASE_URL)
 
 # ── Движок ───────────────────────────────────────────────────
-# Neon free даёт ~10 одновременных коннектов на проект.
+# Neon/Render free дают ~10 одновременных коннектов на проект:
 # pool_size=3 постоянных + max_overflow=7 временных = 10 total.
-# pool_recycle=300: переоткрываем коннект каждые 5 минут —
-# Neon/облака рвут idle-соединения раньше чем SQLAlchemy замечает.
+# При переезде на платную базу / pgbouncer поднимаем потолок env-переменными
+# DB_POOL_SIZE и DB_MAX_OVERFLOW (вместе с MAX_CONCURRENT_PROCESSING в reports.py)
+# — без правки кода. ВАЖНО: pool_size+max_overflow не должны превышать лимит
+# коннектов самой базы, иначе вместо QueuePool timeout словим отказ от Postgres.
+# pool_recycle=300: переоткрываем коннект каждые 5 минут — Neon/облака рвут
+# idle-соединения раньше чем SQLAlchemy замечает.
 # SQLite не нуждается в этих параметрах (они просто игнорируются aiosqlite).
 _is_postgres = "postgresql" in _DB_URL
+_pool_size     = int(os.getenv("DB_POOL_SIZE", "3" if _is_postgres else "5"))
+_max_overflow  = int(os.getenv("DB_MAX_OVERFLOW", "7" if _is_postgres else "10"))
+_pool_timeout  = int(os.getenv("DB_POOL_TIMEOUT", "30"))
 engine = create_async_engine(
     _DB_URL,
     echo=settings.DEBUG,
     future=True,
     pool_pre_ping=True,
-    pool_size=3          if _is_postgres else 5,
-    max_overflow=7       if _is_postgres else 10,
+    pool_size=_pool_size,
+    max_overflow=_max_overflow,
     pool_recycle=300     if _is_postgres else -1,
-    pool_timeout=30,
+    pool_timeout=_pool_timeout,
     connect_args=_CONNECT_ARGS,
 )
 
