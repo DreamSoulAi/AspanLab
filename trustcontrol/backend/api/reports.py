@@ -251,10 +251,13 @@ async def _process_submission(
         # stage=lrr_http_error/disabled/... → почему Yandex не сработал
         stt_diag = result.get("_stt_diag") or {}
         log.info(f"[loc={location_id}] STT diag: {stt_diag}")
-        # Техническую диагностику STT в Telegram шлём ТОЛЬКО в DEBUG-режиме.
-        # В проде клиент не должен видеть "🔧 STT: issai / timeout [yx=on...]" —
-        # это спамило на каждый IGNORE. STT работает, отладка больше не нужна.
-        if settings.DEBUG and telegram_chat and failed_job_id is None:
+        # Техническую диагностику STT шлём в ОТДЕЛЬНЫЙ админ-чат, НЕ владельцу.
+        # Раньше "🔧 STT: issai / timeout ... Jaketini masita aldin" сыпалось в чат
+        # клиента на каждый IGNORE и выглядело как сломанный продукт. Теперь это
+        # уходит только если задан ADMIN_TELEGRAM_CHAT (твой личный отладочный чат);
+        # пусто → диагностика только в логи, владелец видит лишь чистые отчёты.
+        _diag_chat = settings.ADMIN_TELEGRAM_CHAT
+        if _diag_chat and failed_job_id is None:
             try:
                 from backend.services.notifier import _send, _listen_button
                 from backend.services import yandex_stt, issai_stt
@@ -309,7 +312,7 @@ async def _process_submission(
                         _debug_listen = _listen_button(_up.get("s3_url"))
                     except Exception as _ue:
                         log.warning(f"[loc={location_id}] debug audio upload failed: {_ue}")
-                await _send(telegram_chat, msg, reply_markup=_debug_listen)
+                await _send(_diag_chat, msg, reply_markup=_debug_listen)
             except Exception as _de:
                 log.warning(f"[loc={location_id}] STT diag send failed: {_de}")
 
