@@ -58,36 +58,36 @@ async def _upload_wav(wav_bytes: bytes, location_id: int | None) -> str | None:
         log.warning("boto3 не установлен — аудио не будет сохранено для обучения")
         return None
 
-    _endpoint = (settings.S3_ENDPOINT_URL or "").strip() or None
-    _region = (settings.S3_REGION or "").strip() or "us-east-1"
-    if _endpoint and "yandexcloud" in _endpoint:
-        _region = "ru-central1"
-    _cfg_base = {"signature_version": "s3v4"}
     try:
-        _cfg = Config(request_checksum_calculation="when_required",
-                      response_checksum_validation="when_required", **_cfg_base)
-    except TypeError:
-        _cfg = Config(**_cfg_base)
+        _endpoint = (settings.S3_ENDPOINT_URL or "").strip() or None
+        _region = (settings.S3_REGION or "").strip() or "us-east-1"
+        if _endpoint and "yandexcloud" in _endpoint:
+            _region = "ru-central1"
+        _cfg_base = {"signature_version": "s3v4"}
+        try:
+            _cfg = Config(request_checksum_calculation="when_required",
+                          response_checksum_validation="when_required", **_cfg_base)
+        except TypeError:
+            _cfg = Config(**_cfg_base)
 
-    s3 = boto3.client(
-        "s3",
-        endpoint_url=_endpoint,
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID.strip(),
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY.strip(),
-        region_name=_region,
-        config=_cfg,
-    )
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=_endpoint,
+            aws_access_key_id=(settings.AWS_ACCESS_KEY_ID or "").strip(),
+            aws_secret_access_key=(settings.AWS_SECRET_ACCESS_KEY or "").strip(),
+            region_name=_region,
+            config=_cfg,
+        )
 
-    ts  = datetime.utcnow().strftime("%Y/%m/%d")
-    uid = uuid.uuid4().hex[:12]
-    key = f"training/{ts}/{uid}.wav"
+        ts  = datetime.utcnow().strftime("%Y/%m/%d")
+        uid = uuid.uuid4().hex[:12]
+        key = f"training/{ts}/{uid}.wav"
 
-    meta = {}
-    if location_id is not None:
-        meta["location_id"] = str(location_id)
+        meta = {}
+        if location_id is not None:
+            meta["location_id"] = str(location_id)
 
-    try:
-        await asyncio.get_event_loop().run_in_executor(
+        await asyncio.get_running_loop().run_in_executor(
             None,
             lambda: s3.put_object(
                 Bucket=settings.S3_BUCKET,

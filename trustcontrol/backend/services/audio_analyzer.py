@@ -64,7 +64,7 @@ def _compute_rms(wav_bytes: bytes) -> float:
                 return float("inf")
             raw = wf.readframes(wf.getnframes())
         if not raw:
-            return 0.0
+            return float("inf")  # пустые фреймы при непустом заголовке = битый файл, не фильтруем
         # audioop: быстро, не требует зависимостей (stdlib до Python 3.12)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
@@ -78,7 +78,7 @@ def _compute_rms(wav_bytes: bytes) -> float:
         with wave.open(io.BytesIO(wav_bytes)) as wf:
             raw = wf.readframes(wf.getnframes())
         samples = np.frombuffer(raw, dtype=np.int16).astype(np.float64)
-        return float(np.sqrt(np.mean(samples ** 2))) if len(samples) else 0.0
+        return float(np.sqrt(np.mean(samples ** 2))) if len(samples) else float("inf")
     except Exception:
         return float("inf")  # не удалось вычислить — не фильтруем
 
@@ -698,6 +698,14 @@ async def _transcribe_audio(
         return ""
 
 
+def _safe_int(value, default: int = 0) -> int:
+    """int() без падения: GPT иногда отдаёт 'high'/''/None вместо числа."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _normalize_text_result(gpt: dict, transcript: str, language: str = None) -> dict:
     """Приводит результат gpt_analyze (текстовый путь) к формату аудио-модели."""
     events = gpt.get("events", {}) or {}
@@ -709,22 +717,22 @@ def _normalize_text_result(gpt: dict, transcript: str, language: str = None) -> 
         "status":               "OK",
         "is_business":          True,
         "is_personal_talk":     bool(gpt.get("is_personal_talk", False)),
-        "priority":             int(gpt.get("priority", 0)) if gpt.get("priority") else (1 if events.get("fraud_attempt") or events.get("rudeness") else 0),
+        "priority":             _safe_int(gpt.get("priority")) if gpt.get("priority") else (1 if events.get("fraud_attempt") or events.get("rudeness") else 0),
         "transcript":           display_transcript,
         "tone":                 gpt.get("tone", "neutral"),
         "score":                gpt.get("score", 50),
         "summary":              gpt.get("summary", ""),
         "speakers":             [],
         "events":               events,
-        "fraud_confidence":     int(gpt.get("fraud_confidence", 0)),
+        "fraud_confidence":     _safe_int(gpt.get("fraud_confidence")),
         "language":             gpt.get("language") or language or "ru",
         "payment_confirmed":    None,
         "upsell_attempt":       events.get("upsell"),
-        "customer_satisfaction": int(gpt.get("customer_satisfaction") or 3),
-        "energy_level":         int(gpt.get("energy_level") or 3),
+        "customer_satisfaction": _safe_int(gpt.get("customer_satisfaction"), 3),
+        "energy_level":         _safe_int(gpt.get("energy_level"), 3),
         "positives":            gpt.get("positives", []),
         "issues":               gpt.get("issues", []),
-        "customers_served":     int(gpt.get("customers_served") or 1),
+        "customers_served":     _safe_int(gpt.get("customers_served"), 1),
     }
 
 
