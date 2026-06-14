@@ -23,12 +23,12 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.8'
+          python-version: '3.7'
 
       - name: Install dependencies
         run: |
           pip install "pyinstaller>=5.13,<6.0"
-          pip install -r trustcontrol/requirements-monitor-py38.txt
+          pip install -r trustcontrol/requirements-monitor-py37.txt
           REM webrtcvad-wheels даёт модуль webrtcvad, но имя дистрибутива —
           REM 'webrtcvad-wheels'. PyInstaller-хук делает copy_metadata('webrtcvad')
           REM и падает DistributionNotFound. На windows-раннере есть MSVC,
