@@ -90,6 +90,10 @@ def _mock_models(monkeypatch):
     monkeypatch.setattr(A, "_transcribe_audio", _no_transcribe)
     monkeypatch.setattr(A, "_triage_issai_text", _triage)
     monkeypatch.setattr(A, "_triage_russian_text", _triage)
+    # Фрод-аудио (полная audio-preview) по умолчанию «молчит» — кто тестирует
+    # фрод-эскалацию по звуку, мокает сам.
+    async def _no_fraud_audio(*a, **k):  return None
+    monkeypatch.setattr(A, "_judge_fraud_via_audio", _no_fraud_audio)
     return monkeypatch
 
 
@@ -450,37 +454,37 @@ def test_fraud_no_escalation_when_clean(_mock_models):
     assert calls["big"] == 0
 
 
-def test_fraud_escalation_retranscribes_with_full_model(_mock_models):
-    """Спорный фрод + есть аудио → переслушиваем полной gpt-4o-transcribe (точные слова
-    решают: «переведи МНЕ» vs «переведи»). Уточнённый текст идёт в анализ и владельцу."""
-    gpt, calls = _fraud_gpt(60, big_conf=90, big_fraud=True)
+def test_fraud_escalation_listens_with_audio_model(_mock_models):
+    """Спорный фрод + есть аудио → подключаем ПОЛНУЮ audio-preview, которая СЛУШАЕТ
+    запись (тон/шёпот/точные слова из звука). Её тревога поднимает вердикт даже
+    если текстовый gpt-4o не уверен (асимметрия: не пропустить вора)."""
+    gpt, calls = _fraud_gpt(60, big_conf=30, big_fraud=False)   # текстовый gpt-4o НЕ уверен
     _mock_models.setattr(A, "gpt_analyze", gpt)
-    seen = {"model": None, "n": 0}
-    async def _tr(wav, model="gpt-4o-mini-transcribe", **k):
-        seen["model"] = model
+    seen = {"n": 0}
+    async def _audio_judge(wav, known_text=None, business_context=None):
         seen["n"] += 1
-        return "переведи мне на каспи 1500 это между нами"   # точные слова от full
-    _mock_models.setattr(A, "_transcribe_audio", _tr)
+        return {"fraud_attempt": True, "fraud_confidence": 88,
+                "transcript": "переведи мне на каспи", "reason": "просит лично себе, вполголоса"}
+    _mock_models.setattr(A, "_judge_fraud_via_audio", _audio_judge)
     res = _run(A._analyze_via_text_gpt("переведи каспи 1500", b"RIFFxxxx", None, "ru", {}))
-    assert seen["n"] == 1, "спорный фрод с аудио должен переслушиваться"
-    assert seen["model"] == "gpt-4o-transcribe", "переслушиваем именно ПОЛНОЙ моделью"
-    assert "мне" in res["transcript"], "владельцу показываем уточнённый транскрипт от full"
-    assert res["fraud_confidence"] == 90
+    assert seen["n"] == 1, "спорный фрод с аудио должен СЛУШАТЬСЯ полной audio-preview"
+    assert calls["big"] == 1, "плюс второе мнение текстового gpt-4o"
+    assert res["fraud_confidence"] == 88, "берём более тревожный сигнал (audio расслышал кражу)"
     assert res["events"]["fraud_attempt"] is True
 
 
-def test_fraud_escalation_no_retranscribe_without_audio(_mock_models):
-    """Спорный фрод БЕЗ аудио (режим текста) → пересуд полным gpt-4o есть,
-    но переслушивать нечего → транскрипцию не зовём."""
+def test_fraud_escalation_no_audio_still_judges_text(_mock_models):
+    """Спорный фрод БЕЗ аудио (режим текста) → слушать нечего (audio-preview не зовём),
+    но пересуд полным gpt-4o всё равно происходит."""
     gpt, calls = _fraud_gpt(60, big_conf=20, big_fraud=False)
     _mock_models.setattr(A, "gpt_analyze", gpt)
-    tr_called = {"n": 0}
-    async def _tr(*a, **k):
-        tr_called["n"] += 1
-        return ""
-    _mock_models.setattr(A, "_transcribe_audio", _tr)
+    audio_called = {"n": 0}
+    async def _audio_judge(*a, **k):
+        audio_called["n"] += 1
+        return None
+    _mock_models.setattr(A, "_judge_fraud_via_audio", _audio_judge)
     res = _run(A._analyze_via_text_gpt("переведи каспи 1500", None, None, "ru", {}))
-    assert tr_called["n"] == 0, "без аудио переслушивать нечего"
+    assert audio_called["n"] == 0, "без аудио слушать нечего — audio-preview не зовём"
     assert calls["big"] == 1, "пересуд полным gpt-4o всё равно происходит"
     assert res["fraud_confidence"] == 20
 
