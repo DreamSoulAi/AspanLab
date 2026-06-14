@@ -53,7 +53,7 @@ def _make_silence(duration_s: float = 1.0, sample_rate: int = 16000) -> bytes:
 
 # ── HTTP-тесты напрямую к воркеру ────────────────────────────────────────────
 
-async def test_health(base_url: str) -> bool:
+async def check_health(base_url: str) -> bool:
     import httpx
     print(f"\n[1] /health → {base_url}/health")
     try:
@@ -71,7 +71,7 @@ async def test_health(base_url: str) -> bool:
         return False
 
 
-async def test_transcribe_silence(base_url: str, api_key: str = "") -> bool:
+async def check_transcribe_silence(base_url: str, api_key: str = "") -> bool:
     import httpx
     print("\n[2] transcribe(тишина) → ожидаем пустой или короткий текст")
     wav = _make_silence(2.0)
@@ -100,7 +100,7 @@ async def test_transcribe_silence(base_url: str, api_key: str = "") -> bool:
         return False
 
 
-async def test_transcribe_tone(base_url: str, api_key: str = "") -> bool:
+async def check_transcribe_tone(base_url: str, api_key: str = "") -> bool:
     import httpx
     print("\n[3] transcribe(синус 440Hz) → воркер не падает на не-речи")
     wav = _make_wav(440.0, 2.0)
@@ -123,7 +123,7 @@ async def test_transcribe_tone(base_url: str, api_key: str = "") -> bool:
         return False
 
 
-async def test_real_wav(base_url: str, api_key: str, wav_path: str) -> bool:
+async def check_real_wav(base_url: str, api_key: str, wav_path: str) -> bool:
     """Тест на реальном файле — если передан через --wav."""
     import httpx
     print(f"\n[4] transcribe({wav_path}) → реальный файл")
@@ -163,7 +163,7 @@ async def test_real_wav(base_url: str, api_key: str, wav_path: str) -> bool:
 
 # ── Тест клиента russian_stt.py ──────────────────────────────────────────────
 
-async def test_python_client(base_url: str, api_key: str = "") -> bool:
+async def check_python_client(base_url: str, api_key: str = "") -> bool:
     """Проверяет что russian_stt.py клиент работает через settings."""
     print("\n[5] russian_stt.transcribe() через Python-клиент")
     # Патчим settings в обход реального .env
@@ -212,14 +212,14 @@ async def main():
     print(f"Ключ:   {'задан' if args.key else 'не задан (без auth)'}")
 
     results = []
-    results.append(await test_health(base_url))
-    results.append(await test_transcribe_silence(base_url, args.key))
-    results.append(await test_transcribe_tone(base_url, args.key))
+    results.append(await check_health(base_url))
+    results.append(await check_transcribe_silence(base_url, args.key))
+    results.append(await check_transcribe_tone(base_url, args.key))
 
     if args.wav:
-        results.append(await test_real_wav(base_url, args.key, args.wav))
+        results.append(await check_real_wav(base_url, args.key, args.wav))
 
-    results.append(await test_python_client(base_url, args.key))
+    results.append(await check_python_client(base_url, args.key))
 
     passed = sum(results)
     total  = len(results)
