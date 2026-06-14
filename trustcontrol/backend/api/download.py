@@ -3,7 +3,6 @@ import logging
 import re
 import time
 import zipfile
-from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,8 +15,6 @@ from backend.models.user import User
 from backend.database import get_db
 
 router = APIRouter()
-
-BASE = Path(__file__).parent.parent.parent   # trustcontrol/
 
 # ── Кэш скачанного .exe (обновляется раз в час) ──────────────────────────────
 _EXE_BYTES: bytes | None = None
@@ -96,88 +93,6 @@ def _readme_exe(location_name: str) -> str:
 """
 
 
-def _readme_scripts(location_name: str, prefilled: bool) -> str:
-    if prefilled:
-        return f"""╔══════════════════════════════════════════════════╗
-  TrustControl — Касса: {location_name}
-  Ключ уже вписан, настраивать ничего не нужно!
-╚══════════════════════════════════════════════════╝
-
-ШАГ 1.  Дважды кликните на  1_SETUP.bat
-        Ждите надпись "Установка завершена!" (~3 мин)
-
-ШАГ 2.  Дважды кликните на  3_RUN.bat
-        Мониторинг запущен. Окно не закрывайте.
-
-Если окно случайно закрылось — запустите 3_RUN.bat снова.
-
-──────────────────────────────────────────────────
-АВТОЗАПУСК при включении ПК:
-  → Дважды кликните на  АВТОЗАПУСК.bat  (один раз)
-"""
-    else:
-        return """╔══════════════════════════════════════════════════╗
-  TrustControl — Установка на кассовый ПК
-╚══════════════════════════════════════════════════╝
-
-ШАГ 1.  Дважды кликните на  1_SETUP.bat
-        Ждите надпись "Установка завершена!" (~3 мин)
-
-ШАГ 2.  Откройте файл config.ini в Блокноте.
-        Замените  ВСТАВЬ_СЮДА_API_КЛЮЧ  на ключ из
-        личного кабинета (Точки → кнопка ⧉).
-        Файл → Сохранить → закрыть.
-
-ШАГ 3.  Дважды кликните на  3_RUN.bat
-        Мониторинг запущен. Окно не закрывайте.
-
-──────────────────────────────────────────────────
-АВТОЗАПУСК при включении ПК:
-  → Дважды кликните на  АВТОЗАПУСК.bat  (один раз)
-"""
-
-
-_WORKER_FILES = {
-    "monitor.py":                    BASE / "backend/worker/monitor.py",
-    "requirements-monitor.txt":      BASE / "requirements-monitor.txt",
-    "requirements-monitor-py38.txt": BASE / "requirements-monitor-py38.txt",
-    "1_SETUP.bat":                   BASE / "scripts/windows/1_SETUP.bat",
-    "3_RUN.bat":                     BASE / "scripts/windows/3_RUN.bat",
-    "АВТОЗАПУСК.bat":                BASE / "scripts/windows/АВТОЗАПУСК.bat",
-}
-
-
-def _build_scripts_zip(config_ini: str, readme_txt: str, folder: str) -> io.BytesIO:
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{folder}/config.ini", config_ini)
-        zf.writestr(f"{folder}/README.txt", readme_txt)
-        for name, path in _WORKER_FILES.items():
-            if path.exists():
-                zf.writestr(f"{folder}/{name}", path.read_bytes())
-    buf.seek(0)
-    return buf
-
-
-@router.get("/installer")
-async def download_installer(
-    request: Request,
-    user: User = Depends(get_current_user),
-):
-    """Generic installer без привязки к точке."""
-    api_url = str(request.base_url).rstrip("/")
-    buf = _build_scripts_zip(
-        _config_ini(api_url, "ВСТАВЬ_СЮДА_API_КЛЮЧ"),
-        _readme_scripts("", prefilled=False),
-        "TrustControl",
-    )
-    return StreamingResponse(
-        buf,
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=TrustControl_installer.zip"},
-    )
-
-
 @router.get("/installer/{location_id}")
 async def download_installer_for_location(
     location_id: int,
@@ -186,9 +101,9 @@ async def download_installer_for_location(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Персональный архив с уже вписанным API-ключом.
-    Приоритет: настоящий .exe из GitHub Release (ставить ничего не надо).
-    Fallback: Python-скрипты (если .exe ещё не собран или недоступен).
+    Персональный архив с уже вписанным API-ключом точки.
+    Отдаёт готовый TrustControl.exe из GitHub Release — устанавливать
+    Python или что-либо ещё НЕ нужно: распаковал → двойной клик → работает.
     """
     try:
         from backend.models.location import Location
@@ -203,24 +118,22 @@ async def download_installer_for_location(
         safe = re.sub(r"[^\w\-]", "_", loc.name or "location", flags=re.ASCII).strip("_")[:30] or "location"
         config = _config_ini(api_url, loc.api_key or "")
 
-        # Пробуем отдать настоящий .exe
         exe_bytes = await _get_exe_bytes()
-        if exe_bytes:
-            buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                zf.writestr(f"TrustControl_{safe}/TrustControl.exe", exe_bytes)
-                zf.writestr(f"TrustControl_{safe}/config.ini", config)
-                zf.writestr(f"TrustControl_{safe}/README.txt", _readme_exe(loc.name or ""))
-            buf.seek(0)
-            _log.info(f"Выдан .exe-архив для точки {location_id} ({safe})")
-        else:
-            # Fallback: Python-скрипты (нужна установка)
-            buf = _build_scripts_zip(
-                config,
-                _readme_scripts(loc.name or "", prefilled=bool(loc.api_key)),
-                f"TrustControl_{safe}",
+        if not exe_bytes:
+            # .exe временно недоступен (релиз ещё собирается или GitHub не отвечает).
+            # Раньше тут был Python-фолбэк — убран: клиент НИКОГДА не должен видеть Python.
+            raise HTTPException(
+                status_code=503,
+                detail="Программа сейчас обновляется. Подождите минуту и попробуйте снова.",
             )
-            _log.warning(f"Выдан fallback-архив со скриптами для точки {location_id}")
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"TrustControl_{safe}/TrustControl.exe", exe_bytes)
+            zf.writestr(f"TrustControl_{safe}/config.ini", config)
+            zf.writestr(f"TrustControl_{safe}/README.txt", _readme_exe(loc.name or ""))
+        buf.seek(0)
+        _log.info(f"Выдан .exe-архив для точки {location_id} ({safe})")
 
         return StreamingResponse(
             buf,
