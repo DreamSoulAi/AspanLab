@@ -74,6 +74,9 @@ _parser.add_argument("--device", default=None,
                           "По умолчанию — системный микрофон по умолчанию.")
 _parser.add_argument("--list-devices", action="store_true",
                      help="Показать все доступные устройства записи и выйти")
+_parser.add_argument("--min-duration", type=float, default=6.0,
+                     help="Минимальная длина записи в секундах перед отправкой (по умолчанию 6.0). "
+                          "Обрывки и случайные фразы короче этого порога не отправляются.")
 _parser.add_argument("--rtsp", default=None,
                      help="RTSP URL IP-камеры (например rtsp://admin:pass@192.168.1.100/stream1). "
                           "При использовании микрофон не нужен. Требуется ffmpeg в PATH.")
@@ -121,6 +124,7 @@ COMPRESS      = _args.compress
 VAD_LEVEL        = int(_ini.get("vad_level", _args.vad_level)) if _ini else _args.vad_level
 SILENCE_SECONDS  = float(_ini.get("silence", _args.silence)) if _ini else _args.silence
 MAX_MINUTES      = _args.max_minutes
+MIN_DURATION_SEC = float(_ini.get("min_duration", _args.min_duration)) if _ini else _args.min_duration
 COMPRESS_FORMAT  = _args.compress_format
 DEVICE_ARG       = _args.device
 RTSP_URL         = _args.rtsp
@@ -675,8 +679,10 @@ def run_rtsp(url: str):
         nonlocal voiced, silence, in_speech, speech_segments, last_was_speech
         if not voiced:
             return
-        if len(voiced) < 100:
-            log.debug(f"Сегмент слишком короткий ({len(voiced)} кадров) — пропускаем")
+        _min_frames = max(1, int(MIN_DURATION_SEC * 1000 / FRAME_DURATION))
+        if len(voiced) < _min_frames:
+            dur_sec = len(voiced) * FRAME_DURATION / 1000
+            log.info(f"Слишком коротко ({dur_sec:.1f}с < {MIN_DURATION_SEC:.0f}с) — не отправляем, не тратим API")
             voiced = []; silence = 0; in_speech = False
             speech_segments = 0; last_was_speech = False
             return
@@ -802,8 +808,10 @@ def run():
         if not voiced:
             return
         # Минимум 100 кадров ≈ 3 секунды реальной речи
-        if len(voiced) < 100:
-            log.debug(f"Сегмент слишком короткий ({len(voiced)} кадров) — пропускаем")
+        _min_frames = max(1, int(MIN_DURATION_SEC * 1000 / FRAME_DURATION))
+        if len(voiced) < _min_frames:
+            dur_sec = len(voiced) * FRAME_DURATION / 1000
+            log.info(f"Слишком коротко ({dur_sec:.1f}с < {MIN_DURATION_SEC:.0f}с) — не отправляем, не тратим API")
             voiced = []; silence = 0; in_speech = False
             speech_segments = 0; last_was_speech = False
             return
