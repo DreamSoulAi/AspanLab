@@ -270,8 +270,13 @@ def frames_to_wav(frames: list[bytes]) -> bytes:
     return buf.getvalue()
 
 
-def _compress_wav_fallback(wav_bytes: bytes) -> bytes:
-    """WAV 16 kHz → 8 kHz (прореживание 2:1). Не требует зависимостей."""
+def _compress_wav_fallback(wav_bytes: bytes, max_bytes: int = 9_000_000) -> bytes:
+    """Без зависимостей. СОХРАНЯЕМ 16 кГц — это критично для распознавания
+    казахского (8 кГц режет всё выше 4 кГц: шипящие и часть казахских фонем,
+    Whisper обучен на 16 кГц). Прореживаем до 8 кГц ТОЛЬКО как крайнюю меру,
+    если запись не влезает в лимит загрузки (10 МБ)."""
+    if len(wav_bytes) <= max_bytes:
+        return wav_bytes  # 16 кГц как есть — лучшее качество для STT
     try:
         buf_in = io.BytesIO(wav_bytes)
         with wave.open(buf_in, "rb") as wf:
@@ -283,6 +288,7 @@ def _compress_wav_fallback(wav_bytes: bytes) -> bytes:
             wf.setsampwidth(2)
             wf.setframerate(8000)
             wf.writeframes(downsampled.tobytes())
+        log.info("Запись слишком большая — понижена до 8 кГц чтобы влезть в лимит")
         return buf_out.getvalue()
     except Exception as e:
         log.warning(f"WAV-сжатие не удалось: {e}")
@@ -294,8 +300,9 @@ def compress_audio(wav_bytes: bytes) -> tuple:
     Сжимает аудио перед отправкой.
     Возвращает: (bytes, content_type, filename)
 
-    Приоритет: MP3 64kbps (pydub + ffmpeg) → WAV 8kHz (без зависимостей).
-    MP3 64kbps экономит 75-85% трафика по сравнению с WAV 16kHz.
+    Приоритет: MP3 64kbps (pydub + ffmpeg, сохраняет 16 кГц) → WAV 16 кГц
+    (без зависимостей, качество для STT не теряется; до 8 кГц понижается лишь
+    если запись не влезает в лимит 10 МБ).
 
     Установка ffmpeg: https://ffmpeg.org/download.html (добавить в PATH)
     """
@@ -312,13 +319,13 @@ def compress_audio(wav_bytes: bytes) -> tuple:
             log.debug(f"MP3 64k: {len(wav_bytes)//1024}kB → {len(result)//1024}kB")
             return result, "audio/mpeg", "audio.mp3"
         except ImportError:
-            log.warning("pydub не установлен (pip install pydub) — используется WAV 8kHz")
+            log.info("pydub/ffmpeg нет — отправляю WAV 16 кГц (качество для STT сохранено)")
         except Exception as e:
-            log.warning(f"MP3 сжатие не удалось ({e}) — используется WAV 8kHz")
+            log.warning(f"MP3 сжатие не удалось ({e}) — отправляю WAV 16 кГц")
 
-    # Fallback: WAV 16→8 kHz
+    # Fallback: WAV 16 кГц (понижение до 8 кГц только если превышен лимит)
     result = _compress_wav_fallback(wav_bytes)
-    log.debug(f"WAV 8kHz: {len(wav_bytes)//1024}kB → {len(result)//1024}kB")
+    log.debug(f"WAV fallback: {len(wav_bytes)//1024}kB → {len(result)//1024}kB")
     return result, "audio/wav", "audio.wav"
 
 
@@ -1075,6 +1082,11 @@ def _check_for_updates():
     import hashlib
     import os
 
+    # В .exe (onefile) самообновление через подмену monitor.py невозможно —
+    # __file__ лежит во временной папке распаковки, а обновление .exe идёт
+    # пересборкой релиза. Тихо выходим, без пугающих ошибок в логе.
+    if getattr(sys, "frozen", False):
+        return
     if not SERVER_URL or not API_KEY:
         return
 
