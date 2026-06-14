@@ -12,7 +12,8 @@ from backend.models.payment         import Payment         # noqa: F401
 from backend.models.pos_transaction import PosTransaction  # noqa: F401
 from backend.models.failed_job      import FailedJob       # noqa: F401
 from backend.models.incident        import Incident        # noqa: F401
-from backend.models.otp_code        import OtpCode         # noqa: F401
+from backend.models.otp_code         import OtpCode         # noqa: F401
+from backend.models.training_sample  import TrainingSample  # noqa: F401
 
 __all__ = ["User", "Location", "Report", "Alert", "Shift", "Payment",
-           "PosTransaction", "FailedJob", "Incident", "OtpCode"]
+           "PosTransaction", "FailedJob", "Incident", "OtpCode", "TrainingSample"]

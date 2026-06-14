@@ -20,7 +20,7 @@ import warnings
 from openai import AsyncOpenAI
 from backend.config import settings
 from backend.services.gpt_analyzer import gpt_analyze
-from backend.services import issai_stt, russian_stt, yandex_stt
+from backend.services import issai_stt, russian_stt, yandex_stt, training_collector
 from backend.services.stt_prompt import build_transcription_prompt
 
 log = logging.getLogger("audio_analyzer")
@@ -1159,6 +1159,7 @@ async def analyze_audio_with_fallback(
     language: str = None,
     business_context: str = None,
     location_glossary: list[str] | None = None,
+    location_id: int | None = None,
 ) -> dict:
     """
     Универсальная точка входа.
@@ -1292,6 +1293,16 @@ async def analyze_audio_with_fallback(
                 log.info(f"Каскад merged | {merged[:80]!r}")
                 res = await _analyze_via_text_gpt(merged, wav_bytes, business_context, language, stt_diag)
                 if res is not None:
+                    if training_collector.is_enabled():
+                        asyncio.create_task(training_collector.collect_pair(
+                            wav_bytes=wav_bytes,
+                            openai_text=primary_raw,
+                            issai_text=issai_raw or None,
+                            merged_text=merged,
+                            gpt_result=res,
+                            business_context=business_context,
+                            location_id=location_id,
+                        ))
                     return res
 
         # Yandex как запасной STT

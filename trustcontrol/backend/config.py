@@ -102,6 +102,15 @@ class Settings:
     RUSSIAN_WORKER_URL: str = os.getenv("RUSSIAN_WORKER_URL", "")
     RUSSIAN_WORKER_KEY: str = os.getenv("RUSSIAN_WORKER_KEY", "")
 
+    # ── Сборщик обучающих пар (дистилляция ISSAI ← OpenAI) ─────────────
+    # Когда включён: после каждого прохода OpenAI STT сохраняем пару
+    # (wav в R2 + тексты в БД) для будущего LoRA fine-tuning ISSAI.
+    # OpenAI = учитель (ground truth), ISSAI = ученик (исходник для улучшения).
+    # По умолчанию OFF — данные клиентов не копим без осознанного решения.
+    # Требует: S3_BUCKET + AWS_ACCESS_KEY_ID (для аудио в R2).
+    # Только строки с quality_ok=True идут в обучение (≥4 слов + аудио в R2).
+    COLLECT_TRAINING_DATA: bool = os.getenv("COLLECT_TRAINING_DATA", "").strip().lower() in ("1", "true", "yes", "on")
+
     # ── Yandex SpeechKit STT (точное распознавание казахского) ─
     # Если оба значения заданы — включается гибрид: точные казахские
     # слова от Yandex + тон голоса от аудио-модели OpenAI.

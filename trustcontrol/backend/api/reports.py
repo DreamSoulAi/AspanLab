@@ -206,6 +206,7 @@ async def _process_submission(
             language=language,
             business_context=business_context,
             location_glossary=location_glossary or None,
+            location_id=location_id,
         )
 
         # ── OpenAI не ответил → в очередь повторов ───────────────
