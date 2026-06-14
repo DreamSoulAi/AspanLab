@@ -68,6 +68,20 @@ def _dashboard_button(report_id: int | None,
     return InlineKeyboardMarkup([[InlineKeyboardButton(label, url=url)]])
 
 
+def _report_buttons(report_id: int | None,
+                    audio_url: str | None = None) -> InlineKeyboardMarkup | None:
+    """Кнопки под отчётом: «🎧 Слушать запись» (если есть аудио) + «Открыть в дашборде».
+    audio_url — presigned-ссылка на запись (живёт ограниченное время, ~7 дней);
+    если протухла — дашборд всегда отдаёт свежую."""
+    rows = []
+    if audio_url:
+        rows.append([InlineKeyboardButton("🎧 Слушать запись", url=audio_url)])
+    dash = _dashboard_url(report_id)
+    if dash:
+        rows.append([InlineKeyboardButton("Открыть в дашборде", url=dash)])
+    return InlineKeyboardMarkup(rows) if rows else None
+
+
 async def send_report(
     chat_id: str,
     location_name: str,
@@ -96,7 +110,7 @@ async def send_report(
     if detail:
         lines += ["", detail]
 
-    await _send(chat_id, "\n".join(lines), reply_markup=_dashboard_button(report_id))
+    await _send(chat_id, "\n".join(lines), reply_markup=_report_buttons(report_id, audio_url))
 
 
 async def send_critical_alert(data: dict):
@@ -107,6 +121,7 @@ async def send_critical_alert(data: dict):
     summary       = data.get("summary", "—")
     report_id     = data.get("report_id")
     location_name = data.get("location_name", "—")
+    audio_url     = data.get("audio_url")
     ts = datetime.now().strftime("%d.%m, %H:%M")
 
     text = (
@@ -114,7 +129,7 @@ async def send_critical_alert(data: dict):
         f"_{ts}_\n\n"
         f"{summary}"
     )
-    await _send(chat_id, text, reply_markup=_dashboard_button(report_id))
+    await _send(chat_id, text, reply_markup=_report_buttons(report_id, audio_url))
 
 
 async def send_incident_alert(
@@ -226,6 +241,7 @@ async def send_ok_report(
     greeting: bool,
     summary: str = "",
     report_id: int | None = None,
+    audio_url: str | None = None,
 ):
     score_icon = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
     tone_ru = {"positive": "позитивный", "neutral": "нейтральный", "negative": "негативный"}.get(tone, "нейтральный")
@@ -248,7 +264,7 @@ async def send_ok_report(
         f"{flags_line}"
         f"{summary_line}"
     )
-    await _send(chat_id, text, reply_markup=_dashboard_button(report_id))
+    await _send(chat_id, text, reply_markup=_report_buttons(report_id, audio_url))
 
 
 async def send_shift_summary(chat_id: str, location_name: str, shift_data: dict):

@@ -596,6 +596,13 @@ async def _process_submission(
         )
 
         # ── Уведомления ───────────────────────────────────────────
+        # presigned-ссылка на запись для кнопки «🎧 Слушать» в Telegram.
+        # TTL 7 дней (максимум для SigV4) — кнопка живёт пока актуален отчёт;
+        # протухнет — дашборд всегда отдаёт свежую ссылку. Если S3 не настроен
+        # или записи нет — None, кнопка просто не появится.
+        from backend.services.storage import presigned_get_url
+        listen_url = presigned_get_url(s3_key, expires=604800) if s3_key else None
+
         if is_priority_flag and telegram_chat:
             await notifier.send_critical_alert({
                 "telegram_chat": telegram_chat,
@@ -603,13 +610,14 @@ async def _process_submission(
                 "summary":       gpt_summary,
                 "sha256":        audio_sha256,
                 "report_id":     report_id,
+                "audio_url":     listen_url,
             })
         elif telegram_chat and (has_fraud or has_bad):
             await notifier.send_report(
                 chat_id=telegram_chat, location_name=location_name,
                 transcript=transcript, found=found,
                 tone=effective_tone, score=final_score,
-                report_id=report_id,
+                report_id=report_id, audio_url=listen_url,
             )
         elif telegram_chat and not suppress_alert and notify_ok_conversations:
             await notifier.send_ok_report(
@@ -622,6 +630,7 @@ async def _process_submission(
                 greeting=has_greeting,
                 summary=gpt_summary,
                 report_id=report_id,
+                audio_url=listen_url,
             )
 
         # Email for fraud incidents
