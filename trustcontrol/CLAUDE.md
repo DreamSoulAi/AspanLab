@@ -379,9 +379,12 @@ backend/
     context_analyzer.py        ← Определение что это рабочий разговор
     employee_matcher.py        ← Сопоставление имён сотрудников
   worker/
-    monitor.py                 ← PyAudio + VAD + отправка (кассовый ПК)
-    issai_worker.py            ← FastAPI inference сервер (faster-whisper)
+    issai_worker.py            ← FastAPI inference сервер (faster-whisper), серверный STT
     requirements-issai.txt     ← Зависимости воркера
+scripts/windows/
+    monitor.py                 ← ЕДИНСТВЕННЫЙ кассовый клиент: PyAudio + VAD + отправка;
+                                 из него GitHub Actions собирает TrustControl.exe
+    config.ini                 ← шаблон конфига (API-ключ вписывается при скачивании из ЛК)
 frontend/
   dashboard/index.html         ← SPA дашборд
   mic/index.html               ← PWA запись аудио на кассе

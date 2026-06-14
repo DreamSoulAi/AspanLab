@@ -101,12 +101,18 @@ python main.py
 
 ### 4. Скрипт на кассе
 
-```bash
-# На кассовом ПК (Windows/Mac)
-pip install -r requirements-monitor.txt
+На кассовый ПК ставится готовый `TrustControl.exe` — Python не нужен.
+Владелец скачивает его из личного кабинета (кнопка «⬇ Скачать .exe» у точки):
+архив уже содержит `config.ini` с вписанным API-ключом, распаковал → двойной клик.
 
-# Заполни SERVER_URL и API_KEY в monitor.py
-python backend/worker/monitor.py
+`.exe` собирается автоматически из единственного исходника
+`scripts/windows/monitor.py` через GitHub Actions (`.github/workflows/build-exe.yml`)
+и публикуется в Release `windows-latest`.
+
+```bash
+# Запуск из исходника (для разработки/отладки на Windows/Mac/Linux):
+pip install -r requirements-monitor.txt
+python scripts/windows/monitor.py --api-url http://localhost:8000 --api-key <ключ>
 ```
 
 ---

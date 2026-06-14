@@ -6,7 +6,7 @@ SaaS-платформа для ИИ-мониторинга качества об
 Аналог системы "Петти" от Burger King — для малого бизнеса Казахстана.
 
 **Как работает:**
-1. USB-микрофон на кассе → скрипт `backend/worker/monitor.py`
+1. USB-микрофон на кассе → `TrustControl.exe` (собран из `trustcontrol/scripts/windows/monitor.py`)
 2. Аудио отправляется POST-запросом на `/api/reports/submit`
 3. Сервер транскрибирует через OpenAI Whisper
 4. Анализирует фразы и тон через `backend/services/analyzer.py`
