@@ -14,10 +14,13 @@
 # ════════════════════════════════════════════════════════════
 
 import logging
+import os
 import httpx
 from backend.config import settings
 
 log = logging.getLogger("russian_stt")
+
+_RUSSIAN_TIMEOUT = float(os.getenv("RUSSIAN_TIMEOUT", "120"))
 
 
 def is_enabled() -> bool:
@@ -48,8 +51,7 @@ async def transcribe(audio_bytes: bytes, diag: dict | None = None) -> str:
         headers["X-API-Key"] = settings.RUSSIAN_WORKER_KEY
 
     try:
-        # 300с: CPU-инференция базовой whisper тяжелее ksc2, плюс очередь.
-        async with httpx.AsyncClient(timeout=300.0) as cli:
+        async with httpx.AsyncClient(timeout=_RUSSIAN_TIMEOUT) as cli:
             r = await cli.post(
                 f"{worker_url}/transcribe",
                 files={"audio": ("audio.wav", audio_bytes, "audio/wav")},
@@ -76,9 +78,9 @@ async def transcribe(audio_bytes: bytes, diag: dict | None = None) -> str:
         return text
 
     except httpx.TimeoutException:
-        log.warning("Russian STT: таймаут — воркер не ответил за 300с")
+        log.warning(f"Russian STT: таймаут — воркер не ответил за {_RUSSIAN_TIMEOUT:.0f}с")
         diag.update({"engine": "russian", "stage": "timeout",
-                     "error": "воркер не ответил за 300с"})
+                     "error": f"воркер не ответил за {_RUSSIAN_TIMEOUT:.0f}с"})
         return ""
     except Exception as e:
         log.warning(f"Russian STT ошибка: {e}")
