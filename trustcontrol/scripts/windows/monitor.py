@@ -77,11 +77,23 @@ _parser.add_argument("--list-devices", action="store_true",
 _parser.add_argument("--rtsp", default=None,
                      help="RTSP URL IP-камеры (например rtsp://admin:pass@192.168.1.100/stream1). "
                           "При использовании микрофон не нужен. Требуется ffmpeg в PATH.")
+_parser.add_argument("--setup", action="store_true",
+                     help="Принудительно перезапустить мастер настройки микрофона")
 _args = _parser.parse_args()
 
 # ════════════════════════════════════════════════════════════
 #  НАСТРОЙКИ — аргументы командной строки или config.ini
 # ════════════════════════════════════════════════════════════
+
+def _app_dir() -> Path:
+    """Папка для файлов, которые должны ПЕРЕЖИВАТЬ перезапуск (флаг настройки,
+    очередь неотправленных записей). В onefile-сборке __file__ указывает во
+    ВРЕМЕННУЮ папку распаковки (стирается при выходе) — поэтому для frozen .exe
+    берём папку рядом с самим .exe (sys.executable)."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).parent
+
 
 # Читаем config.ini рядом с .exe/.py если API_KEY не задан аргументом
 def _read_config_ini() -> dict:
@@ -118,7 +130,7 @@ FRAME_DURATION   = 30          # ms
 FRAME_SIZE    = int(SAMPLE_RATE * FRAME_DURATION / 1000)
 SILENCE_LIMIT = int(SILENCE_SECONDS * 1000 / FRAME_DURATION)
 MAX_FRAMES    = int(MAX_MINUTES * 60 * 1000 / FRAME_DURATION)
-FAILS_DIR     = Path(__file__).parent / "fails"
+FAILS_DIR     = _app_dir() / "fails"
 FAILS_DIR.mkdir(exist_ok=True)
 
 # Коды ошибок PyAudio при отключении микрофона
@@ -891,7 +903,7 @@ def run():
 #  МАСТЕР ПЕРВОЙ УСТАНОВКИ
 # ════════════════════════════════════════════════════════════
 
-SETUP_FLAG = Path(__file__).parent / "setup_ok.flag"
+SETUP_FLAG = _app_dir() / "setup_ok.flag"
 
 
 def _measure_loudness(stream, pa: pyaudio.PyAudio, seconds: float = 3.0) -> float:
@@ -916,11 +928,11 @@ def _measure_loudness(stream, pa: pyaudio.PyAudio, seconds: float = 3.0) -> floa
 
 def run_setup_wizard():
     """
-    Запускается один раз при первом запуске .exe.
-    Проверяет микрофон через два тестовых замера.
-    Сохраняет setup_ok.flag — больше не запустится.
+    Запускается один раз при первом запуске .exe (флаг setup_ok.flag хранится
+    рядом с .exe и переживает перезапуск). Повторно — только если удалить флаг
+    или запустить с ключом --setup. Проверяет микрофон через два тестовых замера.
     """
-    if SETUP_FLAG.exists():
+    if SETUP_FLAG.exists() and not _args.setup:
         return
 
     print()
