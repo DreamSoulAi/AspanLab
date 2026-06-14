@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'trustcontrol/scripts/windows/monitor.py'
-      - 'trustcontrol/requirements-monitor-py38.txt'
+      - 'trustcontrol/requirements-monitor-py37.txt'
       - '.github/workflows/build-exe.yml'
   workflow_dispatch:
 

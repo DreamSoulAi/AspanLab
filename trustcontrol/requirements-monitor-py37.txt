@@ -1,6 +1,5 @@
-# TrustControl — зависимости для Python 3.7 (Windows 7/8/10)
-# Python 3.7 — последняя версия с полной поддержкой Windows 7 без KB-обновлений.
-# numpy<1.23 — 1.23+ требует Python 3.8+.
+# TrustControl - deps for Python 3.7 (Windows 7/8/10)
+# numpy<1.23: numpy 1.23+ requires Python 3.8+
 
 numpy>=1.21.0,<1.23.0
 pyaudio>=0.2.14
