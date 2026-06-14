@@ -1021,6 +1021,69 @@ async def _judge_fraud_via_audio(
         return None
 
 
+_DICTATED_NUMBER_PROMPT = """Ты слушаешь запись с кассы в Казахстане. Кассир МОГ продиктовать клиенту
+номер телефона / Каспи для оплаты ПЕРЕВОДОМ (частый предлог: «аппарат не работает, переведите на этот номер»).
+Задача — РОВНО распознать продиктованный номер по услышанным цифрам (казахский ИЛИ русский счёт), без догадок.
+Если номер не диктовали или это обычная оплата QR/наличными — верни null.
+
+Верни ТОЛЬКО JSON:
+{"dictated_number":"<цифры номера, напр 87071234567, или null>","for_payment":<true|false>}"""
+
+
+async def extract_dictated_payment_number(
+    wav_bytes: bytes | None,
+    known_text: str | None = None,
+) -> str | None:
+    """
+    Узкий аудио-проход: СЛУШАЕТ запись и достаёт продиктованный номер каспи для
+    оплаты переводом. Слушающую модель можно инструктировать → цифры точнее, чем у
+    транскрайба (тот стабильно коверкает «7072228800» → «307 222 88.0»).
+    Возвращает только цифры (без +/пробелов) или None. Зовётся РЕДКО (только при
+    умысле на перевод / фроде) — дорого.
+    """
+    if not settings.OPENAI_API_KEY or not wav_bytes:
+        return None
+    try:
+        audio_b64    = base64.b64encode(wav_bytes).decode()
+        audio_format = _detect_audio_format(wav_bytes)
+        ref = (
+            f"\n\nЧерновая расшифровка (контекст, заново НЕ распознавай):\n«{(known_text or '').strip()[:1000]}»"
+            if known_text and known_text.strip() else ""
+        )
+        resp = await client.chat.completions.create(
+            model=_FRAUD_AUDIO_MODEL,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "input_audio",
+                     "input_audio": {"data": audio_b64, "format": audio_format}},
+                    {"type": "text", "text": _DICTATED_NUMBER_PROMPT + ref},
+                ],
+            }],
+            max_tokens=120,
+            temperature=0,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        d = json.loads(raw.strip())
+        num = d.get("dictated_number")
+        if not num or str(num).strip().lower() in ("null", "none", ""):
+            return None
+        if not d.get("for_payment", True):
+            return None
+        digits = re.sub(r"[^\d]", "", str(num))
+        # Полноценный KZ-номер — 10 (без кода) или 11 (с 7/8) цифр.
+        if not (10 <= len(digits) <= 11):
+            return None
+        return digits
+    except Exception as e:
+        log.warning(f"Аудио-извлечение номера не удалось: {e}")
+        return None
+
+
 async def _escalate_borderline_fraud(
     gpt: dict, text: str, wav_bytes: bytes | None, business_context: str | None,
 ) -> tuple[dict, str]:

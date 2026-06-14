@@ -898,3 +898,53 @@ def test_extract_amounts_words_are_components_not_composed():
     assert 690.0 not in amounts
     # каз «мың»=1000 распознаётся как компонент
     assert any(a >= 1000 for a in extract_amounts("екі мың теңге"))
+
+
+# ── Фрод диктовки номера: "аппарат не работает, переведите на этот номер" ──────
+# Главный реальный фрод касс КЗ. Транскрайб коверкает цифры ("7072228800" →
+# "307 222 88.0"), regex их не достаёт — добирает слушающая модель.
+
+from backend.services.kaspi_detector import has_transfer_intent as _hti
+
+
+def test_transfer_intent_fires_on_dictation():
+    assert _hti("аппарат не работает, переведите на этот номер")
+    assert _hti("аударыңыз осы нөмірге")
+
+
+def test_transfer_intent_silent_on_normal_qr():
+    # обычная оплата каспи QR НЕ должна звать дорогой аудио-проход за номером
+    assert not _hti("оплата каспи QR пожалуйста")
+    assert not _hti("здравствуйте два кофе спасибо")
+
+
+class _FakeResp:
+    def __init__(self, content):
+        self.choices = [type("C", (), {"message": type("M", (), {"content": content})})]
+
+
+def _mock_audio_create(content):
+    async def _create(*a, **k):
+        return _FakeResp(content)
+    return _create
+
+
+def test_extract_dictated_number_from_audio(monkeypatch):
+    """Слушающая модель достаёт РОВНЫЙ номер там где транскрайб дал кашу."""
+    monkeypatch.setattr(A.client.chat.completions, "create",
+                        _mock_audio_create('{"dictated_number":"87071234567","for_payment":true}'))
+    num = _run(A.extract_dictated_payment_number(b"RIFFxxxxWAVE", "переведите на 307 222 88.0"))
+    assert num == "87071234567"
+
+
+def test_extract_dictated_number_null_when_no_dictation(monkeypatch):
+    monkeypatch.setattr(A.client.chat.completions, "create",
+                        _mock_audio_create('{"dictated_number":null,"for_payment":false}'))
+    assert _run(A.extract_dictated_payment_number(b"RIFFxxxxWAVE", "два кофе спасибо")) is None
+
+
+def test_extract_dictated_number_ignores_non_payment(monkeypatch):
+    """Номер назван, но НЕ для оплаты (напр. для доставки) → не фрод."""
+    monkeypatch.setattr(A.client.chat.completions, "create",
+                        _mock_audio_create('{"dictated_number":"87071234567","for_payment":false}'))
+    assert _run(A.extract_dictated_payment_number(b"RIFFxxxxWAVE", "мой номер для доставки")) is None

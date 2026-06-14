@@ -36,11 +36,13 @@ from backend.services.analyzer import (
     analyze, get_tone, calculate_score,
     FRAUD_HARD_THRESHOLD, FRAUD_SOFT_THRESHOLD,
 )
-from backend.services.audio_analyzer import analyze_audio_with_fallback
+from backend.services.audio_analyzer import analyze_audio_with_fallback, extract_dictated_payment_number
 from backend.services.stt_prompt import flatten_menu_glossary
 from backend.services.storage import upload_evidence
 from backend.services.pos_matcher import match_report_with_pos
-from backend.services.kaspi_detector import check_kaspi_fraud
+from backend.services.kaspi_detector import (
+    check_kaspi_fraud, has_transfer_intent, extract_phones, normalize_phone,
+)
 from backend.services.evidence import create_evidence_clip
 from backend.services.context_analyzer import analyze_context, check_pos_window
 from backend.services.employee_matcher import match_employee
@@ -526,6 +528,22 @@ async def _process_submission(
             # ── Kaspi Antifraud (до regex-Alert, чтобы исключить дублирование) ──
             # При internal_talk с включённым suppress_alert пропускаем — сотрудники говорят между собой
             kaspi_hits = [] if suppress_alert else check_kaspi_fraud(transcript, allowed_phones or [])
+
+            # Главный фрод у касс КЗ: «аппарат не работает — переведите на этот номер»
+            # (кассир диктует ЛИЧНЫЙ каспи). Транскрайб стабильно коверкает цифры
+            # («7072228800» → «307 222 88.0»), поэтому regex выше его не достаёт.
+            # Если был УМЫСЕЛ на перевод/фрод — просим слушающую модель ровно цифры
+            # и сверяем с белым списком точки. Зовётся редко (только при умысле) → дорого, но точечно.
+            if (not suppress_alert and not kaspi_hits and wav_bytes and (
+                    raw_fraud or fraud_suspect
+                    or has_transfer_intent(transcript) or extract_phones(transcript))):
+                _audio_num = await extract_dictated_payment_number(wav_bytes, transcript)
+                if _audio_num:
+                    _allowed_norm = {normalize_phone(p) for p in (allowed_phones or [])}
+                    if normalize_phone(_audio_num) not in _allowed_norm:
+                        kaspi_hits = [{"phone": normalize_phone(_audio_num)}]
+                        log.info(f"[loc={location_id}] Фрод: продиктован номер {normalize_phone(_audio_num)} "
+                                 f"(из аудио, regex не достал) — нет в белом списке")
             for hit in kaspi_hits:
                 evidence = {}
                 if wav_bytes:
