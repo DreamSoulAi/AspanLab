@@ -1347,9 +1347,11 @@ async def analyze_audio_with_fallback(
         # бесплатно и играет роль фильтра: русская болтовня/телефон/фон → дроп без
         # OpenAI. НО финальный транскрипт для фрода всё равно даёт OpenAI — здесь
         # русский STT лишь решает «звать ли дорогие уши», ошибка в слове не критична.
+        ru_gate_raw = ""   # текст русского гейта — для сравнения движков в диагностике
         if _CASCADE_SKIP_CHATTER and russian_stt.is_enabled() and not issai_coherent:
             ru_diag: dict = {}
             ru_raw = _strip_repeat_loops(await russian_stt.transcribe(wav_bytes, diag=ru_diag) or "")
+            ru_gate_raw = ru_raw
             ru_words = len(ru_raw.split()) if ru_raw else 0
             log.info(f"Каскад шаг 2б | Russian-гейт: {ru_words} сл ({ru_raw[:60]!r})")
             if ru_words >= 3:
@@ -1378,6 +1380,7 @@ async def analyze_audio_with_fallback(
                 stt_diag = {
                     "engine":      "cascade_hybrid" if (issai_raw and primary_raw) else _PRIMARY_STT_MODEL,
                     "issai":       issai_raw[:120],
+                    "russian":     ru_gate_raw[:120],
                     "openai":      primary_raw[:120],
                     "merged":      merged[:120],
                     "confidence":  recon["confidence"],

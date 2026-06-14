@@ -272,7 +272,30 @@ async def _process_submission(
                     _kl = stt_diag.get("keylen")
                     _ws = " +WS!" if stt_diag.get("key_had_ws") else ""
                     _kinfo = f" keylen={_kl}{_ws}" if _kl is not None else ""
-                    msg = f"🔧 STT: `{_eng}` / `{_stg}` {_extra}\n[yx={_y} issai={_i}{_kinfo}] {_status_line}\n{_preview}"
+                    # ── Сравнение движков: что выдал КАЖДЫЙ STT отдельно ──
+                    # Видно насколько ISSAI (каз) и russian-гейт расходятся с
+                    # gpt-4o-transcribe (openai) и каким вышел итоговый merge.
+                    # Поля заполняются на каскадном пути; пустые — не показываем.
+                    _cmp = []
+                    _t_issai  = (stt_diag.get("issai")   or "").strip()
+                    _t_ru     = (stt_diag.get("russian") or "").strip()
+                    _t_openai = (stt_diag.get("openai")  or "").strip()
+                    _t_merged = (stt_diag.get("merged")  or "").strip()
+                    _t_gate   = (stt_diag.get("stt")     or "").strip()  # текст гейта при дропе
+                    if _t_issai:
+                        _cmp.append(f"🇰🇿 ISSAI: {_t_issai}")
+                    if _t_ru:
+                        _cmp.append(f"🇷🇺 Russian: {_t_ru}")
+                    if _t_openai:
+                        _cmp.append(f"🌐 gpt-4o: {_t_openai}")
+                    if _t_merged:
+                        _cmp.append(f"✅ Итог: {_t_merged}")
+                    if not _cmp and _t_gate:
+                        _cmp.append(f"🎚 Гейт: {_t_gate}")
+                    _cmp_block = ("\n" + "\n".join(_cmp)) if _cmp else ""
+                    msg = (f"🔧 STT: `{_eng}` / `{_stg}` {_extra}\n"
+                           f"[yx={_y} issai={_i}{_kinfo}] {_status_line}"
+                           f"{_cmp_block}\n{_preview}")
                 else:
                     msg = f"🔧 STT: нет диагностики [yx={_y} issai={_i}] {_status_line}\n{_preview}"
                 # Проверка слышимости: грузим СЫРОЕ аудио каждой записи в R2 и

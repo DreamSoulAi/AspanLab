@@ -13,10 +13,17 @@
 # ════════════════════════════════════════════════════════════
 
 import logging
+import os
 import httpx
 from backend.config import settings
 
 log = logging.getLogger("issai_stt")
+
+# Таймаут запроса к воркеру. CPU-инференция ~80-90с на 40с аудио + очередь.
+# 300с по умолчанию (длинный казахский разговор в очереди успевает), но если
+# воркер регулярно лежит/перегружен — снижай env ISSAI_TIMEOUT, чтобы быстрее
+# падать в фолбэк и не держать слот обработки (см. семафор в reports.py).
+_ISSAI_TIMEOUT = float(os.getenv("ISSAI_TIMEOUT", "300"))
 
 
 def is_enabled() -> bool:
@@ -65,10 +72,10 @@ async def transcribe(audio_bytes: bytes, lang: str | None = None, diag: dict | N
         headers["X-API-Key"] = settings.ISSAI_WORKER_KEY
 
     try:
-        # 300с: CPU-инференция ~80-90с на 40с аудио + очередь до 3 запросов.
-        # Render всё равно может оборвать соединение на своём уровне, но
-        # 120с было слишком мало даже для одного длинного разговора в очереди.
-        async with httpx.AsyncClient(timeout=300.0) as cli:
+        # Таймаут настраивается env ISSAI_TIMEOUT (по умолчанию 300с — длинный
+        # казахский разговор в очереди CPU-воркера успевает). Если воркер лежит,
+        # снизь до ~60-90с: быстрее падаем в фолбэк, не держим слот обработки.
+        async with httpx.AsyncClient(timeout=_ISSAI_TIMEOUT) as cli:
             r = await cli.post(
                 f"{worker_url}/transcribe",
                 files={"audio": ("audio.wav", audio_bytes, "audio/wav")},
@@ -111,9 +118,9 @@ async def transcribe(audio_bytes: bytes, lang: str | None = None, diag: dict | N
         return text
 
     except httpx.TimeoutException:
-        log.warning("ISSAI STT: таймаут — воркер не ответил за 300с")
+        log.warning(f"ISSAI STT: таймаут — воркер не ответил за {_ISSAI_TIMEOUT:.0f}с")
         diag.update({"engine": "issai", "stage": "timeout",
-                     "error": "воркер не ответил за 300с"})
+                     "error": f"воркер не ответил за {_ISSAI_TIMEOUT:.0f}с"})
         return ""
     except Exception as e:
         log.warning(f"ISSAI STT ошибка: {e}")
