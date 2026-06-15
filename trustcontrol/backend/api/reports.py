@@ -732,15 +732,28 @@ async def _enqueue_retry(
     telegram_chat: str, location_name: str,
     error: str = "",
 ):
-    """Сохраняет аудио на диск и создаёт FailedJob для повтора через 5 минут."""
+    """Сохраняет аудио и создаёт FailedJob для повтора через 5 минут.
+
+    Аудио кладём в R2 (постоянное хранилище) с ключом-маркером "r2:<key>",
+    чтобы запись пережила засыпание/редеплой Render (локальный диск там
+    эфемерный). Если R2 не настроен/недоступен — фолбэк на локальный диск
+    (dev и деградация без потери логики).
+    """
     try:
-        fname = RETRY_DIR / f"{uuid.uuid4().hex}.wav"
-        fname.write_bytes(wav_bytes)
+        from backend.services.storage import upload_retry_audio
+
+        r2_key = await upload_retry_audio(wav_bytes, location_id)
+        if r2_key:
+            audio_path = f"r2:{r2_key}"
+        else:
+            fname = RETRY_DIR / f"{uuid.uuid4().hex}.wav"
+            fname.write_bytes(wav_bytes)
+            audio_path = str(fname)
 
         async with AsyncSessionLocal() as db:
             job = FailedJob(
                 location_id=location_id,
-                audio_path=str(fname),
+                audio_path=audio_path,
                 language=language,
                 audio_size_kb=audio_size_kb,
                 business_type=business_type,
@@ -753,7 +766,7 @@ async def _enqueue_retry(
             )
             db.add(job)
             await db.commit()
-        log.info(f"[loc={location_id}] Задача поставлена в очередь повторов: {fname.name}")
+        log.info(f"[loc={location_id}] Задача поставлена в очередь повторов: {audio_path}")
     except Exception as e:
         log.error(f"Не удалось сохранить в очередь повторов: {e}")
 
@@ -766,6 +779,23 @@ def _mark_job_done(job_id: Optional[int]):
     asyncio.create_task(_delete_job(job_id))
 
 
+async def cleanup_retry_audio(audio_path: Optional[str]) -> None:
+    """Удаляет аудио задачи из R2 (маркер r2:) или с локального диска.
+
+    Зовётся при успешном повторе И при failed_permanently, чтобы мёртвые
+    записи не копили место (в R2 — деньги, на диске — мусор).
+    """
+    if not audio_path:
+        return
+    if audio_path.startswith("r2:"):
+        from backend.services.storage import delete_object
+        await delete_object(audio_path[3:])
+    else:
+        p = Path(audio_path)
+        if p.exists():
+            p.unlink(missing_ok=True)
+
+
 async def _delete_job(job_id: int):
     try:
         async with AsyncSessionLocal() as db:
@@ -774,11 +804,7 @@ async def _delete_job(job_id: int):
             )
             job = result.scalar()
             if job:
-                # Удаляем аудио-файл
-                if job.audio_path:
-                    p = Path(job.audio_path)
-                    if p.exists():
-                        p.unlink(missing_ok=True)
+                await cleanup_retry_audio(job.audio_path)
                 await db.delete(job)
                 await db.commit()
     except Exception as e:

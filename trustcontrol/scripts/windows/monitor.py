@@ -39,8 +39,15 @@ from pathlib import Path
 import numpy as np
 import pyaudio
 import webrtcvad
-import noisereduce as nr
 import requests
+
+# noisereduce тянет scipy и заметно ест RAM — на маломощных устройствах
+# (Raspberry Pi Zero 2 W, 512MB) его может не быть. Шумоподавление —
+# опционально: нет библиотеки → отправляем звук как есть (сервер справится).
+try:
+    import noisereduce as nr
+except Exception:
+    nr = None
 
 # ════════════════════════════════════════════════════════════
 #  АРГУМЕНТЫ КОМАНДНОЙ СТРОКИ
@@ -334,6 +341,8 @@ def compress_audio(wav_bytes: bytes) -> tuple:
 
 
 def denoise(frames: list[bytes]) -> list[bytes]:
+    if nr is None:
+        return frames   # библиотека недоступна (напр. на Pi Zero) — без шумоподавления
     try:
         pcm = np.frombuffer(b"".join(frames), dtype=np.int16).astype(np.float32)
         clean = nr.reduce_noise(y=pcm, sr=SAMPLE_RATE, stationary=False)
@@ -401,10 +410,17 @@ def detect_speaker_diversity(frames: list[bytes]) -> dict:
         centroid_var = float(np.std(centroids)) if len(centroids) >= 2 else 0.0
 
         # ── Решение: похоже ли на диалог? ──
-        # Критерии калибровались на типовых записях:
-        #   диалог: volume_var > 6 dB, centroid_var > 200 Hz
-        #   монолог: оба ниже
-        likely_dialogue = (volume_var_db > 6.0 and centroid_var > 200.0)
+        # ВАЖНО: раньше было "оставляем ТОЛЬКО если оба сигнала высокие"
+        # (volume_var > 6 И centroid_var > 200). Это резало ПОЛОВИНУ живых
+        # диалогов — когда кассир и клиент звучат на похожей громкости/тембре
+        # (далёкий микрофон, тихий зал). Потеря реального диалога хуже, чем
+        # лишний вызов STT за $0.006.
+        #
+        # Теперь логика обратная: дропаем ТОЛЬКО явный монолог — когда ОБА
+        # сигнала очень низкие (один ровный голос, без смены громкости и тембра).
+        # Всё остальное уходит на сервер, GPT сам разберётся диалог это или нет.
+        clearly_monologue = (volume_var_db < 3.0 and centroid_var < 120.0)
+        likely_dialogue = not clearly_monologue
 
         return {
             "likely_dialogue": likely_dialogue,
@@ -500,32 +516,106 @@ def _handle_response(r, wav_bytes: bytes | None = None):
             _save_fail(wav_bytes)
 
 
+_FAILS_MAX = 200          # максимум файлов в очереди (~200 разговоров)
+_RETRY_INTERVAL = 300     # проверяем очередь каждые 5 минут
+_RETRY_PACE = 5           # пауза между файлами в секундах (не спамим сервер)
+
+_retry_lock = threading.Lock()   # только один поток шлёт из fails/ за раз
+
+
 def _save_fail(wav_bytes: bytes):
     import datetime
+    existing = list(FAILS_DIR.glob("*.wav"))
+    if len(existing) >= _FAILS_MAX:
+        log.warning(
+            f"Очередь fails/ переполнена ({len(existing)} файлов) — "
+            f"старый файл удалён чтобы освободить место. "
+            f"Проверьте интернет-соединение."
+        )
+        oldest = sorted(existing)[0]
+        try:
+            oldest.unlink()
+        except Exception:
+            pass
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     path = FAILS_DIR / f"{ts}.wav"
     path.write_bytes(wav_bytes)
-    log.info(f"Сохранено в fails/: {path.name}")
+    log.info(f"Сохранено в fails/: {path.name} (в очереди: {len(existing)})")
+
+
+def _send_one_fail(fpath: Path) -> bool:
+    """Отправляет один файл из fails/. Возвращает True при успехе."""
+    try:
+        wav_bytes = fpath.read_bytes()
+        audio_bytes, content_type, filename = compress_audio(wav_bytes)
+        data = {"language": LANGUAGE} if LANGUAGE else None
+        r = _post(
+            data=data,
+            files={"audio": (filename, audio_bytes, content_type)},
+            timeout=60,
+        )
+        if r.status_code == 200:
+            fpath.unlink()
+            log.info(f"Переслан из fails/: {fpath.name}")
+            return True
+        else:
+            log.debug(f"Сервер вернул {r.status_code} при отправке fails/{fpath.name}")
+            return False
+    except Exception as e:
+        log.debug(f"Ошибка отправки fails/{fpath.name}: {e}")
+        return False
 
 
 def _retry_fails():
-    """Пересылаем ранее не отправленные файлы."""
-    for fpath in sorted(FAILS_DIR.glob("*.wav")):
-        try:
-            wav_bytes = fpath.read_bytes()
-            data = {"language": LANGUAGE} if LANGUAGE else None
-            r = _post(
-                data=data,
-                files={"audio": ("audio.wav", wav_bytes, "audio/wav")},
-                timeout=30,
-            )
-            if r.status_code == 200:
-                fpath.unlink()
-                log.info(f"Переслан из fails/: {fpath.name}")
-            else:
+    """
+    Пересылаем ранее не отправленные файлы.
+    Вызывается после успешной отправки нового файла — как «попутный сброс».
+    Лимит: не более 3 файлов за один вызов чтобы не блокировать поток надолго.
+    """
+    if not _retry_lock.acquire(blocking=False):
+        return   # фоновый retry уже работает
+    try:
+        pending = sorted(FAILS_DIR.glob("*.wav"))
+        if not pending:
+            return
+        log.info(f"Отправляю отложенные записи: {len(pending)} файл(ов)")
+        sent = 0
+        for fpath in pending[:3]:   # не более 3 за раз при «попутном» сбросе
+            if not _send_one_fail(fpath):
                 break
-        except Exception:
-            break
+            sent += 1
+            if sent < 3:
+                time.sleep(_RETRY_PACE)
+        remaining = len(list(FAILS_DIR.glob("*.wav")))
+        if remaining:
+            log.info(f"В очереди fails/ ещё {remaining} файл(ов) — отправим позже")
+    finally:
+        _retry_lock.release()
+
+
+def _retry_loop():
+    """
+    Фоновый поток: каждые 5 минут проверяет очередь fails/ и сливает всё
+    на сервер с паузой {_RETRY_PACE}с между файлами.
+    Это гарантирует что записи дойдут даже если интернет восстановился
+    в нерабочее время (нет новых разговоров которые бы запустили _retry_fails).
+    """
+    while True:
+        time.sleep(_RETRY_INTERVAL)
+        pending = sorted(FAILS_DIR.glob("*.wav"))
+        if not pending:
+            continue
+        if not _retry_lock.acquire(blocking=False):
+            continue   # основной поток уже отправляет
+        try:
+            log.info(f"[retry-loop] Сливаю {len(pending)} отложенных записей...")
+            for fpath in pending:
+                if not _send_one_fail(fpath):
+                    log.info("[retry-loop] Сервер недоступен — попробуем позже")
+                    break
+                time.sleep(_RETRY_PACE)
+        finally:
+            _retry_lock.release()
 
 
 def _ping_loop():
@@ -666,6 +756,7 @@ def run_rtsp(url: str):
     log.info(f"Транскрипция: {mode}")
 
     threading.Thread(target=_ping_loop, daemon=True, name="ping").start()
+    threading.Thread(target=_retry_loop, daemon=True, name="retry").start()
 
     BYTES_PER_FRAME = FRAME_SIZE * 2  # int16 = 2 байта/сэмпл
 
@@ -790,8 +881,9 @@ def run():
     device_index = _resolve_device_index(pa, DEVICE_ARG)
     stream = _open_stream(pa, device_index=device_index)
 
-    # Запускаем health-ping в фоне
+    # Запускаем health-ping и фоновый retry в фоне
     threading.Thread(target=_ping_loop, daemon=True, name="ping").start()
+    threading.Thread(target=_retry_loop, daemon=True, name="retry").start()
 
     mode        = "local faster-whisper" if LOCAL_WHISPER else f"сервер ({SERVER_URL})"
     compress_info = f"{COMPRESS_FORMAT.upper()} 64kbps" if COMPRESS and COMPRESS_FORMAT == "mp3" else ("WAV 8kHz" if COMPRESS else "выкл")
@@ -1095,6 +1187,11 @@ def _check_for_updates():
     # пересборкой релиза. Тихо выходим, без пугающих ошибок в логе.
     if getattr(sys, "frozen", False):
         return
+    # Механизм обновления ниже использует Windows .bat + cmd — на Linux/Pi он
+    # не применим. Там обновление идёт через git/apt в install.sh, поэтому
+    # самообновление просто пропускаем (без ложных ошибок в логе).
+    if sys.platform != "win32":
+        return
     if not SERVER_URL or not API_KEY:
         return
 
@@ -1153,12 +1250,43 @@ def _check_for_updates():
 
 
 # ════════════════════════════════════════════════════════════
+#  ЗАЩИТА ОТ СНА (Windows)
+# ════════════════════════════════════════════════════════════
+
+def _prevent_sleep():
+    """
+    Не даём ноутбуку/ПК кассы уйти в сон или погасить систему, пока
+    мониторинг работает. Без этого крышка ноутбука закрылась / сработал
+    режим энергосбережения → запись останавливается и теряются ЧАСЫ
+    разговоров (буфер fails/ тоже не помогает — программа просто не пишет).
+
+    SetThreadExecutionState с ES_CONTINUOUS держит систему «занятой» весь
+    срок жизни процесса. На не-Windows тихо пропускаем.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ES_CONTINUOUS      = 0x80000000
+        ES_SYSTEM_REQUIRED = 0x00000001
+        # ВНИМАНИЕ: дисплей гасить разрешаем (не указываем ES_DISPLAY_REQUIRED) —
+        # экономим энергию/выгорание, но система не уснёт.
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+        )
+        log.info("Защита от сна включена — ПК не уснёт пока работает мониторинг.")
+    except Exception as e:
+        log.debug(f"Не удалось включить защиту от сна: {e}")
+
+
+# ════════════════════════════════════════════════════════════
 #  ТОЧКА ВХОДА
 # ════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     if not _args.list_devices:
         run_setup_wizard()
+    _prevent_sleep()
     _check_for_updates()
     _main = (lambda: run_rtsp(RTSP_URL)) if RTSP_URL else run
     while True:

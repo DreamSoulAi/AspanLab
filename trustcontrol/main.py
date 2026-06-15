@@ -116,7 +116,8 @@ async def _retry_worker():
     from sqlalchemy import select, update as sql_update
     from backend.database import AsyncSessionLocal
     from backend.models.failed_job import FailedJob
-    from backend.api.reports import _process_submission
+    from backend.api.reports import _process_submission, cleanup_retry_audio
+    from backend.services.storage import download_bytes
     from datetime import datetime, timedelta
 
     MAX_RETRIES = 3
@@ -136,9 +137,14 @@ async def _retry_worker():
             for job in jobs:
                 wav_bytes = None
                 if job.audio_path:
-                    p = Path(job.audio_path)
-                    if p.exists():
-                        wav_bytes = p.read_bytes()
+                    if job.audio_path.startswith("r2:"):
+                        # Аудио в R2 (пережило перезапуск Render)
+                        wav_bytes = await download_bytes(job.audio_path[3:])
+                    else:
+                        # Старый локальный путь (обратная совместимость)
+                        p = Path(job.audio_path)
+                        if p.exists():
+                            wav_bytes = p.read_bytes()
 
                 if not wav_bytes and not job.transcript_text:
                     async with AsyncSessionLocal() as db2:
@@ -146,6 +152,7 @@ async def _retry_worker():
                         if j:
                             j.status = "failed_permanently"
                             await db2.commit()
+                    await cleanup_retry_audio(job.audio_path)
                     continue
 
                 log.info(f"Повтор FailedJob #{job.id} (попытка {job.retry_count + 1})")
@@ -169,10 +176,13 @@ async def _retry_worker():
                         if j.retry_count >= MAX_RETRIES - 1:
                             j.status = "failed_permanently"
                             log.warning(f"FailedJob #{job.id} — превышен лимит попыток")
+                            await db3.commit()
+                            # Мёртвая запись — чистим аудио (R2 деньги / диск мусор)
+                            await cleanup_retry_audio(j.audio_path)
                         else:
                             j.retry_count    += 1
                             j.next_retry_at   = datetime.utcnow() + timedelta(minutes=5)
-                        await db3.commit()
+                            await db3.commit()
 
         except Exception as e:
             log.error(f"Retry worker ошибка: {e}")

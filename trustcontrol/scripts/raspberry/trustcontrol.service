@@ -1,0 +1,18 @@
+[Unit]
+Description=TrustControl — монитор кассы
+After=trustcontrol-config.service network-online.target sound.target
+Wants=network-online.target
+Requires=trustcontrol-config.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/trustcontrol
+ExecStart=/opt/trustcontrol/venv/bin/python /opt/trustcontrol/monitor.py
+Restart=always
+RestartSec=5
+# Лог монитора рядом с системным журналом
+StandardOutput=append:/var/log/trustcontrol.log
+StandardError=append:/var/log/trustcontrol.log
+
+[Install]
+WantedBy=multi-user.target
