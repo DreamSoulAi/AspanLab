@@ -397,10 +397,17 @@ def detect_speaker_diversity(frames: list[bytes]) -> dict:
         centroid_var = float(np.std(centroids)) if len(centroids) >= 2 else 0.0
 
         # ── Решение: похоже ли на диалог? ──
-        # Критерии калибровались на типовых записях:
-        #   диалог: volume_var > 6 dB, centroid_var > 200 Hz
-        #   монолог: оба ниже
-        likely_dialogue = (volume_var_db > 6.0 and centroid_var > 200.0)
+        # ВАЖНО: раньше было "оставляем ТОЛЬКО если оба сигнала высокие"
+        # (volume_var > 6 И centroid_var > 200). Это резало ПОЛОВИНУ живых
+        # диалогов — когда кассир и клиент звучат на похожей громкости/тембре
+        # (далёкий микрофон, тихий зал). Потеря реального диалога хуже, чем
+        # лишний вызов STT за $0.006.
+        #
+        # Теперь логика обратная: дропаем ТОЛЬКО явный монолог — когда ОБА
+        # сигнала очень низкие (один ровный голос, без смены громкости и тембра).
+        # Всё остальное уходит на сервер, GPT сам разберётся диалог это или нет.
+        clearly_monologue = (volume_var_db < 3.0 and centroid_var < 120.0)
+        likely_dialogue = not clearly_monologue
 
         return {
             "likely_dialogue": likely_dialogue,
@@ -1221,12 +1228,43 @@ def _check_for_updates():
 
 
 # ════════════════════════════════════════════════════════════
+#  ЗАЩИТА ОТ СНА (Windows)
+# ════════════════════════════════════════════════════════════
+
+def _prevent_sleep():
+    """
+    Не даём ноутбуку/ПК кассы уйти в сон или погасить систему, пока
+    мониторинг работает. Без этого крышка ноутбука закрылась / сработал
+    режим энергосбережения → запись останавливается и теряются ЧАСЫ
+    разговоров (буфер fails/ тоже не помогает — программа просто не пишет).
+
+    SetThreadExecutionState с ES_CONTINUOUS держит систему «занятой» весь
+    срок жизни процесса. На не-Windows тихо пропускаем.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ES_CONTINUOUS      = 0x80000000
+        ES_SYSTEM_REQUIRED = 0x00000001
+        # ВНИМАНИЕ: дисплей гасить разрешаем (не указываем ES_DISPLAY_REQUIRED) —
+        # экономим энергию/выгорание, но система не уснёт.
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+        )
+        log.info("Защита от сна включена — ПК не уснёт пока работает мониторинг.")
+    except Exception as e:
+        log.debug(f"Не удалось включить защиту от сна: {e}")
+
+
+# ════════════════════════════════════════════════════════════
 #  ТОЧКА ВХОДА
 # ════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     if not _args.list_devices:
         run_setup_wizard()
+    _prevent_sleep()
     _check_for_updates()
     _main = (lambda: run_rtsp(RTSP_URL)) if RTSP_URL else run
     while True:
