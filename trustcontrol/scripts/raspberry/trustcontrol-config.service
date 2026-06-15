@@ -1,0 +1,12 @@
+[Unit]
+Description=TrustControl — применение настроек с SD (Wi-Fi + API-ключ)
+After=local-fs.target
+Before=trustcontrol.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/trustcontrol/apply-config.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -39,8 +39,15 @@ from pathlib import Path
 import numpy as np
 import pyaudio
 import webrtcvad
-import noisereduce as nr
 import requests
+
+# noisereduce тянет scipy и заметно ест RAM — на маломощных устройствах
+# (Raspberry Pi Zero 2 W, 512MB) его может не быть. Шумоподавление —
+# опционально: нет библиотеки → отправляем звук как есть (сервер справится).
+try:
+    import noisereduce as nr
+except Exception:
+    nr = None
 
 # ════════════════════════════════════════════════════════════
 #  АРГУМЕНТЫ КОМАНДНОЙ СТРОКИ
@@ -330,6 +337,8 @@ def compress_audio(wav_bytes: bytes) -> tuple:
 
 
 def denoise(frames: list[bytes]) -> list[bytes]:
+    if nr is None:
+        return frames   # библиотека недоступна (напр. на Pi Zero) — без шумоподавления
     try:
         pcm = np.frombuffer(b"".join(frames), dtype=np.int16).astype(np.float32)
         clean = nr.reduce_noise(y=pcm, sr=SAMPLE_RATE, stationary=False)
@@ -1169,6 +1178,11 @@ def _check_for_updates():
     # __file__ лежит во временной папке распаковки, а обновление .exe идёт
     # пересборкой релиза. Тихо выходим, без пугающих ошибок в логе.
     if getattr(sys, "frozen", False):
+        return
+    # Механизм обновления ниже использует Windows .bat + cmd — на Linux/Pi он
+    # не применим. Там обновление идёт через git/apt в install.sh, поэтому
+    # самообновление просто пропускаем (без ложных ошибок в логе).
+    if sys.platform != "win32":
         return
     if not SERVER_URL or not API_KEY:
         return
