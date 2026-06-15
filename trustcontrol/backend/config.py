@@ -92,6 +92,13 @@ class Settings:
     ISSAI_WORKER_URL: str = os.getenv("ISSAI_WORKER_URL", "")
     # API-ключ воркера (совпадает с ISSAI_API_KEY на воркере)
     ISSAI_WORKER_KEY: str = os.getenv("ISSAI_WORKER_KEY", "")
+    # Окно ожидания ISSAI (сек). ISSAI и OpenAI стартуют ПАРАЛЛЕЛЬНО; OpenAI
+    # ждём всегда (надёжная основа), ISSAI — best-effort в пределах этого окна.
+    # CPU-инференс ISSAI ~80-90с на свободном воркере, поэтому ставим с запасом.
+    # Если ISSAI занят/медленный (час пик, очередь) и не уложился — его результат
+    # игнорируется, работаем на OpenAI. Это снимает ISSAI с блокирующего пути:
+    # латентность ограничена этим окном, а не глубиной очереди воркера.
+    ISSAI_GRACE_SECONDS: float = float(os.getenv("ISSAI_GRACE_SECONDS", "95"))
 
     # ── Русский STT-гейт — self-hosted (бесплатный фильтр болтовни) ─────
     # ВТОРОЙ инстанс того же issai_worker.py, но с базовой моделью, которая

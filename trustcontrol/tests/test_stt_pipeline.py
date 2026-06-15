@@ -16,7 +16,6 @@ import pytest
 
 from backend.services import audio_analyzer as A
 from backend.services import issai_stt
-from backend.services import russian_stt
 from backend.services import context_analyzer as C
 from backend.services.analyzer import (
     calculate_score, get_tone, FRAUD_HARD_THRESHOLD, FRAUD_SOFT_THRESHOLD,
@@ -75,21 +74,15 @@ def _run(coro):
 def _mock_models(monkeypatch):
     """По умолчанию: ISSAI/Yandex выключены, аудио-модель и GPT — заглушки."""
     monkeypatch.setattr(issai_stt, "is_enabled", lambda: False)
-    monkeypatch.setattr(A.russian_stt, "is_enabled", lambda: False)
     monkeypatch.setattr(A.yandex_stt, "is_enabled", lambda: False)
     async def _audio(*a, **k):  return {}
     async def _gpt(*a, **k):    return {}
     # По умолчанию первичный OpenAI-STT «молчит» — тесты проверяют маршрутизацию
     # фолбэков (ISSAI/Yandex/whisper). Кто тестирует первичку — мокает сам.
     async def _no_transcribe(*a, **k):  return ""
-    # По умолчанию гейт связности «не знает» (None) → каскад проваливается в OpenAI,
-    # как и раньше. Кто тестирует ранний дроп — мокает _triage_issai_text сам.
-    async def _triage(*a, **k):  return None
     monkeypatch.setattr(A, "analyze_audio", _audio)
     monkeypatch.setattr(A, "gpt_analyze", _gpt)
     monkeypatch.setattr(A, "_transcribe_audio", _no_transcribe)
-    monkeypatch.setattr(A, "_triage_issai_text", _triage)
-    monkeypatch.setattr(A, "_triage_russian_text", _triage)
     # Фрод-аудио (полная audio-preview) по умолчанию «молчит» — кто тестирует
     # фрод-эскалацию по звуку, мокает сам.
     async def _no_fraud_audio(*a, **k):  return None
@@ -101,12 +94,6 @@ def _enable_issai(mp, text):
     mp.setattr(issai_stt, "is_enabled", lambda: True)
     async def _issai(wav, **k):  return text
     mp.setattr(issai_stt, "transcribe", _issai)
-
-
-def _enable_russian(mp, text):
-    mp.setattr(A.russian_stt, "is_enabled", lambda: True)
-    async def _ru(wav, **k):  return text
-    mp.setattr(A.russian_stt, "transcribe", _ru)
 
 
 def test_text_mode_uses_text_gpt(_mock_models):
@@ -150,235 +137,96 @@ def test_false_ignore_on_plausible_text_rescued_by_audio(_mock_models):
     assert res["status"] == "OK", "разговор с озвученной суммой не должен теряться в IGNORE"
 
 
-# ── Каскадный гейт связности ISSAI (главная защита русских разговоров) ─────────
-# Эти тесты проверяют ЛОГИКУ скипа. Флаг CASCADE_SKIP_CHATTER теперь ВКЛЮЧЁН по
-# умолчанию (см. test_cascade_skip_on_by_default), но тесты всё равно выставляют его
-# явно, чтобы не зависеть от значения env в окружении запуска.
+# ── Параллельный путь ISSAI + OpenAI (best-effort ISSAI с грейс-таймаутом) ─────
+# ISSAI больше НЕ на блокирующем пути и НЕ решает «звать ли OpenAI». OpenAI
+# зовётся ВСЕГДА (надёжная основа), ISSAI добирается ради лучшего казахского,
+# если уложился в окно settings.ISSAI_GRACE_SECONDS. personal/noise теперь
+# отсекает text-GPT ниже по потоку, а не дешёвый триаж-гейт.
 
-def test_cascade_coherent_personal_skips_openai(_mock_models):
-    """Связная казахская болтовня персонала → PERSONAL без вызова OpenAI STT (экономия)."""
-    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
-    _enable_issai(_mock_models, "ой бүгін шаршадым ғой кеше клуб болдым кеш жаттым")
-    openai_called = {"n": 0}
-    async def _tr(*a, **k):
-        openai_called["n"] += 1
-        return "не должно вызваться"
-    async def _triage(*a, **k):
-        return {"coherent": True, "category": "personal"}
-    _mock_models.setattr(A, "_transcribe_audio", _tr)
-    _mock_models.setattr(A, "_triage_issai_text", _triage)
-    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert res["status"] == "PERSONAL"
-    assert openai_called["n"] == 0, "связная казахская болтовня не должна тратить OpenAI STT"
-
-
-def test_cascade_incoherent_russian_falls_to_openai(_mock_models):
-    """КЛЮЧЕВОЙ кейс (на него указал Данил): русский разговор → ISSAI даёт связную
-    КАШУ. Гейт связности должен сказать coherent=false → OpenAI обязателен, иначе
-    русский разговор теряется."""
-    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
-    # ISSAI на русской речи выдаёт казахскую кашу из >4 слов (проходит is_garbage)
-    _enable_issai(_mock_models, "соғаға әдім шок соға щина шоколаданы әдім кәлі")
-    openai_called = {"n": 0}
-    async def _tr(*a, **k):
-        openai_called["n"] += 1
-        return "здравствуйте два капучино с вас тысяча двести"   # OpenAI слышит русский
-    async def _triage(*a, **k):
-        return {"coherent": False, "category": "business"}        # каша = был русский
-    async def _gpt(text, **k):
-        return {"status": "OK", "is_business": True, "score": 70, "events": {},
-                "summary": "два капучино", "tone": "neutral"}
-    _mock_models.setattr(A, "_transcribe_audio", _tr)
-    _mock_models.setattr(A, "_triage_issai_text", _triage)
-    _mock_models.setattr(A, "gpt_analyze", _gpt)
-    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert openai_called["n"] == 1, "несвязный ISSAI (русская речь) ОБЯЗАН дойти до OpenAI"
-    assert res["status"] == "OK"
-    assert "капучино" in res["transcript"], "должен использоваться русский транскрипт OpenAI"
-
-
-def test_cascade_coherent_business_still_calls_openai(_mock_models):
-    """Связный казахский БИЗНЕС-разговор → всё равно зовём OpenAI (фрод-критично,
-    могут быть русские вставки/платёжные детали). Экономим только болтовню/шум."""
-    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
+def test_parallel_calls_openai_and_merges_issai(_mock_models):
+    """Оба STT отработали → OpenAI вызван, текст уходит в анализ, статус OK."""
     _enable_issai(_mock_models, "бір донер картамен мың теңге рахмет")
     openai_called = {"n": 0}
     async def _tr(*a, **k):
         openai_called["n"] += 1
-        return "бір донер картамен мың теңге рахмет"
-    async def _triage(*a, **k):
-        return {"coherent": True, "category": "business"}
+        return "бір донер картамен мың теңге рахмет"   # совпадает с ISSAI → merge fast-path без сети
     async def _gpt(text, **k):
         return {"status": "OK", "is_business": True, "score": 80, "events": {},
                 "summary": "донер", "tone": "neutral"}
     _mock_models.setattr(A, "_transcribe_audio", _tr)
-    _mock_models.setattr(A, "_triage_issai_text", _triage)
     _mock_models.setattr(A, "gpt_analyze", _gpt)
     res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert openai_called["n"] == 1, "бизнес-разговор не экономим на STT — фрод-критично"
+    assert openai_called["n"] == 1, "OpenAI зовётся всегда (надёжная основа)"
     assert res["status"] == "OK"
 
 
-def test_cascade_personal_with_fraud_signals_forces_openai(_mock_models):
-    """КЛЮЧЕВОЙ фрод-кейс (вопрос Данила): кассир болтает по-казахски с коллегой,
-    потом заходит клиент и они говорят по-русски — и там ФРОД.
-    ISSAI: связный казахский (болтовня) + «мың» / «Каспи» из русской части.
-    Triage: coherent=True, category=personal (в основном болтовня).
-    НО — в ISSAI-тексте есть транзакционный сигнал → НЕ дропаем → OpenAI обязателен."""
-    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
-    # ISSAI слышит болтовню на казахском + «Каспи» из русской фрод-фразы (Каспи — заимствование)
+def test_parallel_personal_detected_by_text_gpt(_mock_models):
+    """Личная болтовня: триаж-гейтов больше нет — PERSONAL ставит text-GPT внизу
+    потока. OpenAI при этом вызывается (это норма), но результат — PERSONAL."""
+    _enable_issai(_mock_models, "ой бүгін шаршадым ғой кеше клуб болдым кеш жаттым")
+    async def _tr(*a, **k):  return "ой бүгін шаршадым ғой кеше клуб болдым кеш жаттым"
+    async def _gpt(text, **k):
+        return {"status": "PERSONAL", "is_personal_talk": True, "summary": "болтовня"}
+    _mock_models.setattr(A, "_transcribe_audio", _tr)
+    _mock_models.setattr(A, "gpt_analyze", _gpt)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert res["status"] == "PERSONAL"
+
+
+def test_parallel_issai_timeout_uses_openai(_mock_models):
+    """КЛЮЧЕВОЙ кейс: ISSAI занят/медленный — не укладывается в грейс. Его результат
+    игнорируется, работаем на OpenAI. ISSAI больше не валит пайплайн на пике."""
+    import asyncio as _aio
+    _mock_models.setattr(A.settings, "ISSAI_GRACE_SECONDS", 0.05)
+    _mock_models.setattr(issai_stt, "is_enabled", lambda: True)
+    async def _slow_issai(wav, **k):
+        await _aio.sleep(5)        # дольше грейса → wait_for отменит
+        return "не дождёмся"
+    _mock_models.setattr(issai_stt, "transcribe", _slow_issai)
+    async def _tr(*a, **k):  return "здравствуйте два капучино с вас тысяча двести"
+    async def _gpt(text, **k):
+        return {"status": "OK", "is_business": True, "score": 70, "events": {},
+                "summary": "капучино", "tone": "neutral"}
+    _mock_models.setattr(A, "_transcribe_audio", _tr)
+    _mock_models.setattr(A, "gpt_analyze", _gpt)
+    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
+    assert res["status"] == "OK"
+    assert "капучино" in res["transcript"], "при таймауте ISSAI берём транскрипт OpenAI"
+
+
+def test_parallel_fraud_in_chatter_reaches_analysis(_mock_models):
+    """Фрод в конце болтовни: OpenAI зовётся ВСЕГДА → фрод-фраза доходит до анализа
+    и не теряется. Раньше это защищал триаж-гейт, теперь — сам параллельный путь."""
     _enable_issai(_mock_models, "ой бүгін шаршадым кеше болдым Каспи мың кел")
     openai_called = {"n": 0}
     async def _tr(*a, **k):
         openai_called["n"] += 1
         return "ой шаршадым кеше болдым переведи мне на Каспи 1500"  # OpenAI слышит фрод
-    async def _triage(*a, **k):
-        return {"coherent": True, "category": "personal"}  # тriage не видит фрода
     async def _gpt(text, **k):
         return {"status": "OK", "is_business": True, "score": 20,
                 "events": {"fraud_attempt": True}, "fraud_confidence": 85,
                 "summary": "фрод", "tone": "negative"}
     _mock_models.setattr(A, "_transcribe_audio", _tr)
-    _mock_models.setattr(A, "_triage_issai_text", _triage)
     _mock_models.setattr(A, "gpt_analyze", _gpt)
     res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert openai_called["n"] == 1, (
-        "транзакционный сигнал в ISSAI-тексте (Каспи/мың) ОБЯЗАН дотащить запись до OpenAI "
-        "даже если triage сказал PERSONAL — фрод в конце болтовни не должен теряться"
-    )
-
-
-# ── Русский гейт болтовни (self-hosted, бесплатный фильтр русской речи) ────────
-# Срабатывает когда ISSAI несвязный (= говорили по-русски) И русский воркер включён.
-# Роль: отсеять русскую болтовню кассиров БЕЗ платного OpenAI; диалоги — в OpenAI.
-
-def test_russian_gate_drops_chatter_skips_openai(_mock_models):
-    """Русская болтовня персонала: ISSAI выдал кашу (несвязный) → русский гейт
-    видит personal без признака обслуживания → дроп, OpenAI НЕ вызывается."""
-    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
-    _enable_issai(_mock_models, "соғаға әдім шок соға щина әдім кәлі")     # каша = был русский
-    _enable_russian(_mock_models, "да я вчера в клубе был устал короче не выспался")
-    async def _issai_tr(*a, **k):  return {"coherent": False, "category": "business"}
-    async def _ru_tr(*a, **k):     return {"coherent": True, "category": "personal"}
-    openai_called = {"n": 0}
-    async def _tr(*a, **k):
-        openai_called["n"] += 1
-        return "не должно вызваться"
-    _mock_models.setattr(A, "_triage_issai_text", _issai_tr)
-    _mock_models.setattr(A, "_triage_russian_text", _ru_tr)
-    _mock_models.setattr(A, "_transcribe_audio", _tr)
-    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert res["status"] == "PERSONAL"
-    assert openai_called["n"] == 0, "русская болтовня не должна тратить OpenAI STT"
-
-
-def test_russian_gate_client_dialog_forces_openai(_mock_models):
-    """Русский КЛИЕНТСКИЙ диалог: русский гейт говорит business → НЕ дропаем,
-    OpenAI обязателен (точные слова для фрода даёт он, не дешёвый гейт)."""
-    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
-    _enable_issai(_mock_models, "соғаға әдім шок соға щина әдім кәлі")
-    _enable_russian(_mock_models, "здравствуйте два капучино с вас тысяча двести спасибо")
-    async def _issai_tr(*a, **k):  return {"coherent": False, "category": "business"}
-    async def _ru_tr(*a, **k):     return {"coherent": True, "category": "business"}
-    openai_called = {"n": 0}
-    async def _tr(*a, **k):
-        openai_called["n"] += 1
-        return "здравствуйте два капучино с вас тысяча двести"
-    async def _gpt(text, **k):
-        return {"status": "OK", "is_business": True, "score": 70, "events": {},
-                "summary": "капучино", "tone": "neutral"}
-    _mock_models.setattr(A, "_triage_issai_text", _issai_tr)
-    _mock_models.setattr(A, "_triage_russian_text", _ru_tr)
-    _mock_models.setattr(A, "_transcribe_audio", _tr)
-    _mock_models.setattr(A, "gpt_analyze", _gpt)
-    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert openai_called["n"] == 1, "русский клиентский диалог ОБЯЗАН дойти до OpenAI"
+    assert openai_called["n"] == 1, "OpenAI зовётся всегда — фрод в конце болтовни не теряется"
     assert res["status"] == "OK"
+    assert (res.get("events") or {}).get("fraud_attempt") is True
 
 
-def test_russian_gate_personal_with_service_marker_forces_openai(_mock_models):
-    """Дыра закрыта и для русского: гейт сказал personal, но в тексте маркер
-    обслуживания/оплаты → не дропаем, идём в OpenAI (реальный диалог не теряем)."""
-    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
-    _enable_issai(_mock_models, "соғаға әдім шок соға щина әдім кәлі")
-    _enable_russian(_mock_models, "так с вас тысяча двести каспи переведите спасибо")
-    async def _issai_tr(*a, **k):  return {"coherent": False, "category": "business"}
-    async def _ru_tr(*a, **k):     return {"coherent": True, "category": "personal"}  # недооценил
-    openai_called = {"n": 0}
-    async def _tr(*a, **k):
-        openai_called["n"] += 1
-        return "так с вас тысяча двести каспи переведите"
-    async def _gpt(text, **k):
-        return {"status": "OK", "is_business": True, "score": 60, "events": {},
-                "summary": "оплата", "tone": "neutral"}
-    _mock_models.setattr(A, "_triage_issai_text", _issai_tr)
-    _mock_models.setattr(A, "_triage_russian_text", _ru_tr)
-    _mock_models.setattr(A, "_transcribe_audio", _tr)
-    _mock_models.setattr(A, "gpt_analyze", _gpt)
-    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert openai_called["n"] == 1, (
-        "платёжный сигнал в русском тексте ОБЯЗАН дотащить запись до OpenAI "
-        "даже если гейт сказал personal"
-    )
+# ── Совместимость: ISSAI даёт только казахский, OpenAI молчит ──────────────────
 
-
-def test_russian_gate_not_called_when_issai_coherent(_mock_models):
-    """Если ISSAI дал СВЯЗНЫЙ казахский бизнес — речь казахская, русский гейт не
-    нужен и НЕ зовётся (экономим вызов воркера), сразу OpenAI."""
-    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
-    _enable_issai(_mock_models, "бір донер картамен мың теңге рахмет")
-    ru_called = {"n": 0}
-    def _ru_enabled():  return True
-    async def _ru(wav, **k):
-        ru_called["n"] += 1
-        return "не должно вызваться"
-    _mock_models.setattr(A.russian_stt, "is_enabled", _ru_enabled)
-    _mock_models.setattr(A.russian_stt, "transcribe", _ru)
-    async def _issai_tr(*a, **k):  return {"coherent": True, "category": "business"}
-    async def _tr(*a, **k):  return "бір донер картамен мың теңге"
-    async def _gpt(text, **k):
-        return {"status": "OK", "is_business": True, "score": 80, "events": {},
-                "summary": "донер", "tone": "neutral"}
-    _mock_models.setattr(A, "_triage_issai_text", _issai_tr)
-    _mock_models.setattr(A, "_transcribe_audio", _tr)
-    _mock_models.setattr(A, "gpt_analyze", _gpt)
-    res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert ru_called["n"] == 0, "при связном казахском русский гейт не должен вызываться"
-    assert res["status"] == "OK"
-
-
-def test_cascade_skip_on_by_default(_mock_models):
-    """ДЕФОЛТ ПРОДА: скип болтовни ВКЛЮЧЁН — личную казахскую болтовню не отправляем
-    в платный OpenAI STT. Безопасность держится на двух замках (гейт связности +
-    признак обслуживания перед дропом), проверяемых остальными тестами этого блока."""
-    assert A._CASCADE_SKIP_CHATTER is True, "скип болтовни в проде должен быть ВКЛЮЧЁН по умолчанию"
-
-
-def test_cascade_personal_with_service_marker_forces_openai(_mock_models):
-    """Закрытая дыра: triage пометил разговор personal, НО в казахском тексте есть
-    маркер обслуживания (приветствие/заказ/прощание) без озвученной суммы — это может
-    быть реальный диалог с клиентом. Перед дропом проверяем признак сервиса → не
-    дропаем, идём в OpenAI. Реальный диалог обслуживания теряться не должен."""
-    _mock_models.setattr(A, "_CASCADE_SKIP_CHATTER", True)
-    # «сәлеметсіз бе» (здравствуйте) + «рахмет» (спасибо) — маркеры обслуживания, суммы нет
+def test_parallel_issai_only_reconstructs(_mock_models):
+    """OpenAI вернул пусто, ISSAI дал казахский → используем ISSAI-текст
+    (reconstruct/plain), разговор не теряется."""
     _enable_issai(_mock_models, "сәлеметсіз бе бір кофе рахмет сау болыңыз")
-    openai_called = {"n": 0}
-    async def _tr(*a, **k):
-        openai_called["n"] += 1
-        return "здравствуйте один кофе спасибо до свидания"
-    async def _triage(*a, **k):
-        return {"coherent": True, "category": "personal"}   # triage недооценил
+    async def _tr(*a, **k):  return ""               # OpenAI молчит
     async def _gpt(text, **k):
         return {"status": "OK", "is_business": True, "score": 70, "events": {},
                 "summary": "кофе", "tone": "neutral"}
     _mock_models.setattr(A, "_transcribe_audio", _tr)
-    _mock_models.setattr(A, "_triage_issai_text", _triage)
     _mock_models.setattr(A, "gpt_analyze", _gpt)
     res = _run(A.analyze_audio_with_fallback(b"RIFFxxxx", None, None))
-    assert openai_called["n"] == 1, (
-        "маркер обслуживания в ISSAI-тексте ОБЯЗАН дотащить запись до OpenAI "
-        "даже если triage сказал PERSONAL — реальный диалог не дропаем"
-    )
     assert res["status"] == "OK"
 
 
