@@ -496,32 +496,106 @@ def _handle_response(r, wav_bytes: bytes | None = None):
             _save_fail(wav_bytes)
 
 
+_FAILS_MAX = 200          # максимум файлов в очереди (~200 разговоров)
+_RETRY_INTERVAL = 300     # проверяем очередь каждые 5 минут
+_RETRY_PACE = 5           # пауза между файлами в секундах (не спамим сервер)
+
+_retry_lock = threading.Lock()   # только один поток шлёт из fails/ за раз
+
+
 def _save_fail(wav_bytes: bytes):
     import datetime
+    existing = list(FAILS_DIR.glob("*.wav"))
+    if len(existing) >= _FAILS_MAX:
+        log.warning(
+            f"Очередь fails/ переполнена ({len(existing)} файлов) — "
+            f"старый файл удалён чтобы освободить место. "
+            f"Проверьте интернет-соединение."
+        )
+        oldest = sorted(existing)[0]
+        try:
+            oldest.unlink()
+        except Exception:
+            pass
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     path = FAILS_DIR / f"{ts}.wav"
     path.write_bytes(wav_bytes)
-    log.info(f"Сохранено в fails/: {path.name}")
+    log.info(f"Сохранено в fails/: {path.name} (в очереди: {len(existing)})")
+
+
+def _send_one_fail(fpath: Path) -> bool:
+    """Отправляет один файл из fails/. Возвращает True при успехе."""
+    try:
+        wav_bytes = fpath.read_bytes()
+        audio_bytes, content_type, filename = compress_audio(wav_bytes)
+        data = {"language": LANGUAGE} if LANGUAGE else None
+        r = _post(
+            data=data,
+            files={"audio": (filename, audio_bytes, content_type)},
+            timeout=60,
+        )
+        if r.status_code == 200:
+            fpath.unlink()
+            log.info(f"Переслан из fails/: {fpath.name}")
+            return True
+        else:
+            log.debug(f"Сервер вернул {r.status_code} при отправке fails/{fpath.name}")
+            return False
+    except Exception as e:
+        log.debug(f"Ошибка отправки fails/{fpath.name}: {e}")
+        return False
 
 
 def _retry_fails():
-    """Пересылаем ранее не отправленные файлы."""
-    for fpath in sorted(FAILS_DIR.glob("*.wav")):
-        try:
-            wav_bytes = fpath.read_bytes()
-            data = {"language": LANGUAGE} if LANGUAGE else None
-            r = _post(
-                data=data,
-                files={"audio": ("audio.wav", wav_bytes, "audio/wav")},
-                timeout=30,
-            )
-            if r.status_code == 200:
-                fpath.unlink()
-                log.info(f"Переслан из fails/: {fpath.name}")
-            else:
+    """
+    Пересылаем ранее не отправленные файлы.
+    Вызывается после успешной отправки нового файла — как «попутный сброс».
+    Лимит: не более 3 файлов за один вызов чтобы не блокировать поток надолго.
+    """
+    if not _retry_lock.acquire(blocking=False):
+        return   # фоновый retry уже работает
+    try:
+        pending = sorted(FAILS_DIR.glob("*.wav"))
+        if not pending:
+            return
+        log.info(f"Отправляю отложенные записи: {len(pending)} файл(ов)")
+        sent = 0
+        for fpath in pending[:3]:   # не более 3 за раз при «попутном» сбросе
+            if not _send_one_fail(fpath):
                 break
-        except Exception:
-            break
+            sent += 1
+            if sent < 3:
+                time.sleep(_RETRY_PACE)
+        remaining = len(list(FAILS_DIR.glob("*.wav")))
+        if remaining:
+            log.info(f"В очереди fails/ ещё {remaining} файл(ов) — отправим позже")
+    finally:
+        _retry_lock.release()
+
+
+def _retry_loop():
+    """
+    Фоновый поток: каждые 5 минут проверяет очередь fails/ и сливает всё
+    на сервер с паузой {_RETRY_PACE}с между файлами.
+    Это гарантирует что записи дойдут даже если интернет восстановился
+    в нерабочее время (нет новых разговоров которые бы запустили _retry_fails).
+    """
+    while True:
+        time.sleep(_RETRY_INTERVAL)
+        pending = sorted(FAILS_DIR.glob("*.wav"))
+        if not pending:
+            continue
+        if not _retry_lock.acquire(blocking=False):
+            continue   # основной поток уже отправляет
+        try:
+            log.info(f"[retry-loop] Сливаю {len(pending)} отложенных записей...")
+            for fpath in pending:
+                if not _send_one_fail(fpath):
+                    log.info("[retry-loop] Сервер недоступен — попробуем позже")
+                    break
+                time.sleep(_RETRY_PACE)
+        finally:
+            _retry_lock.release()
 
 
 def _ping_loop():
@@ -662,6 +736,7 @@ def run_rtsp(url: str):
     log.info(f"Транскрипция: {mode}")
 
     threading.Thread(target=_ping_loop, daemon=True, name="ping").start()
+    threading.Thread(target=_retry_loop, daemon=True, name="retry").start()
 
     BYTES_PER_FRAME = FRAME_SIZE * 2  # int16 = 2 байта/сэмпл
 
@@ -784,8 +859,9 @@ def run():
     device_index = _resolve_device_index(pa, DEVICE_ARG)
     stream = _open_stream(pa, device_index=device_index)
 
-    # Запускаем health-ping в фоне
+    # Запускаем health-ping и фоновый retry в фоне
     threading.Thread(target=_ping_loop, daemon=True, name="ping").start()
+    threading.Thread(target=_retry_loop, daemon=True, name="retry").start()
 
     mode        = "local faster-whisper" if LOCAL_WHISPER else f"сервер ({SERVER_URL})"
     compress_info = f"{COMPRESS_FORMAT.upper()} 64kbps" if COMPRESS and COMPRESS_FORMAT == "mp3" else ("WAV 8kHz" if COMPRESS else "выкл")
