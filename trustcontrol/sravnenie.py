@@ -92,7 +92,7 @@ async def _partner_transcribe(wav_bytes: bytes, lang: str | None) -> dict:
     if lang:
         kwargs["language"] = lang
     tr = await cli.audio.transcriptions.create(**kwargs)
-    return {"text": (getattr(tr, "text", "") or "").strip()}
+    return (getattr(tr, "text", "") or "").strip()
 
 
 async def _probe_partner() -> int:
