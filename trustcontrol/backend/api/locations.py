@@ -78,6 +78,8 @@ class LocationUpdate(BaseModel):
     track_upsell:         Optional[bool] = None
     track_greeting:       Optional[bool] = None
     track_goodbye:        Optional[bool] = None
+    allowed_phones:       Optional[list[str]] = None
+    payment_mode:         Optional[str] = None
 
     @field_validator("business_type")
     @classmethod
@@ -91,6 +93,24 @@ class LocationUpdate(BaseModel):
     def validate_language(cls, v):
         if v is not None and v not in VALID_LANGUAGES:
             raise ValueError(f"language должен быть одним из {VALID_LANGUAGES}")
+        return v
+
+    @field_validator("payment_mode")
+    @classmethod
+    def validate_payment_mode_upd(cls, v):
+        if v is not None and v not in ("qr_only", "cash_only", "transfers_ok", "mixed"):
+            raise ValueError("payment_mode должен быть qr_only|cash_only|transfers_ok|mixed")
+        return v
+
+    @field_validator("allowed_phones")
+    @classmethod
+    def validate_allowed_phones_upd(cls, v):
+        if v is not None:
+            if len(v) > 50:
+                raise ValueError("Максимум 50 номеров в белом списке")
+            for p in v:
+                if len(p) > 20:
+                    raise ValueError(f"Номер слишком длинный: {p[:20]}")
         return v
 
 
@@ -111,9 +131,20 @@ class EmployeesSettings(BaseModel):
         return v
 
 
+_VALID_PAYMENT_MODES = ("qr_only", "cash_only", "transfers_ok", "mixed")
+
+
 class AntifraudSettings(BaseModel):
     allowed_phones:   Optional[list[str]] = None
     required_upsells: Optional[list[str]] = None
+    payment_mode:     Optional[str] = None
+
+    @field_validator("payment_mode")
+    @classmethod
+    def validate_payment_mode(cls, v):
+        if v is not None and v not in _VALID_PAYMENT_MODES:
+            raise ValueError(f"payment_mode должен быть одним из {_VALID_PAYMENT_MODES}")
+        return v
 
     @field_validator("allowed_phones")
     @classmethod
@@ -207,6 +238,7 @@ async def list_locations(
             "last_seen":     loc.last_seen.isoformat() if loc.last_seen else None,
             "allowed_phones":            loc.allowed_phones or [],
             "required_upsells":          loc.required_upsells or [],
+            "payment_mode":              getattr(loc, "payment_mode", None) or "mixed",
             "employees":                 getattr(loc, "employees", None) or [],
             "ignore_internal_profanity": bool(loc.ignore_internal_profanity),
             "ignore_background_media":   bool(getattr(loc, "ignore_background_media", True)),
@@ -242,6 +274,7 @@ async def get_location(
         "api_key":       loc.api_key,
         "telegram_chat": loc.telegram_chat,
         "allowed_phones":            loc.allowed_phones or [],
+        "payment_mode":              getattr(loc, "payment_mode", None) or "mixed",
         "employees":                 getattr(loc, "employees", None) or [],
         "ignore_internal_profanity": bool(loc.ignore_internal_profanity),
         "ignore_background_media":   bool(getattr(loc, "ignore_background_media", True)),
@@ -372,6 +405,8 @@ async def update_location(
     if data.track_upsell              is not None: loc.track_upsell              = data.track_upsell
     if data.track_greeting            is not None: loc.track_greeting            = data.track_greeting
     if data.track_goodbye             is not None: loc.track_goodbye             = data.track_goodbye
+    if data.allowed_phones            is not None: loc.allowed_phones            = data.allowed_phones
+    if data.payment_mode              is not None: loc.payment_mode              = data.payment_mode
 
     await db.commit()
     return {"message": "Точка обновлена", "id": loc.id}
@@ -408,12 +443,15 @@ async def update_antifraud(
         loc.allowed_phones   = data.allowed_phones
     if data.required_upsells is not None:
         loc.required_upsells = data.required_upsells
+    if data.payment_mode is not None:
+        loc.payment_mode = data.payment_mode
 
     await db.commit()
     return {
         "message":         "Антифрод-настройки обновлены",
         "allowed_phones":   loc.allowed_phones,
         "required_upsells": loc.required_upsells,
+        "payment_mode":     loc.payment_mode or "mixed",
     }
 
 

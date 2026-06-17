@@ -1268,13 +1268,30 @@ textarea.f-input{resize:vertical;line-height:1.6}
     <hr class="modal-divider">
     <div class="modal-sec-title">Защита от мошенничества с Kaspi</div>
     <div class="f-group">
-      <label class="f-label">Ваши «свои» Kaspi-номера</label>
+      <label class="f-label">Как у вас принимают оплату?</label>
+      <select class="f-input" id="editLocPaymentMode">
+        <option value="mixed">Смешанно — наличные, QR и переводы (по умолчанию)</option>
+        <option value="qr_only">Только QR/карта — переводы на номер НЕ принимаем</option>
+        <option value="cash_only">Только наличные — переводы на номер НЕ принимаем</option>
+        <option value="transfers_ok">Переводы на номер разрешены</option>
+      </select>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5">
+        Если выбрать <b>«Только QR»</b> или <b>«Только наличные»</b> — система считает фродом
+        <b>любую</b> просьбу кассира перевести на номер (на таких точках переводов быть не должно).
+        Для «Смешанно» и «Переводы разрешены» — фродом считается только перевод на номер,
+        которого нет в вашем белом списке ниже.
+      </div>
+    </div>
+    <div class="f-group">
+      <label class="f-label">Ваши «свои» Kaspi-номера (белый список)</label>
       <textarea class="f-input" id="editLocPhones" rows="3"
-        placeholder="+77001234567&#10;+77009876543"></textarea>
+        placeholder="+7 700 123 45 67&#10;8 700 987 65 43"></textarea>
       <div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5">
         Номера ваших кассиров, бухгалтерии, ваш личный — на которые официально может
-        идти оплата. <b>Все остальные</b> Kaspi-номера в разговоре будут отмечены
-        как подозрительные (вероятно кассир переводит деньги мимо кассы).
+        идти оплата. По одному в строке, с <b>+7</b> или <b>8</b> в начале.
+        <b>Все остальные</b> Kaspi-номера в разговоре будут отмечены как подозрительные.<br>
+        <b style="color:var(--dim)">Список пуст?</b> Система не обвиняет кассира жёстко —
+        помечает «требует проверки», чтобы вы прослушали сами.
       </div>
     </div>
     <hr class="modal-divider">
@@ -2759,6 +2776,7 @@ async function openEditLoc(id){
   const et=document.getElementById('editLocType');if(et)et.value=d.business_type||'shop';
   setVal('editLocTg',d.telegram_chat);
   setVal('editLocPhones',(d.allowed_phones||[]).join('\n'));
+  const pm=document.getElementById('editLocPaymentMode');if(pm)pm.value=d.payment_mode||'mixed';
   const cbOk=document.getElementById('editLocNotifyOk');if(cbOk)cbOk.checked=!!d.notify_ok_conversations;
   const cbBg=document.getElementById('editLocIgnoreBg');if(cbBg)cbBg.checked=d.ignore_background_media!==false;
   const cbInt=document.getElementById('editLocIgnoreInternal');if(cbInt)cbInt.checked=!!d.ignore_internal_profanity;
@@ -2900,6 +2918,7 @@ async function saveLocation(){
     business_type:document.getElementById('editLocType')?.value,
     telegram_chat:val('editLocTg'),
     allowed_phones:phones,
+    payment_mode:document.getElementById('editLocPaymentMode')?.value||'mixed',
     notify_ok_conversations:   cbOk?cbOk.checked:false,
     ignore_background_media:   cbBg?cbBg.checked:true,
     ignore_internal_profanity: cbInt?cbInt.checked:false,

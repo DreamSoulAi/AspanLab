@@ -73,9 +73,9 @@ def extract_phones(text: str) -> list[str]:
     return seen
 
 
-# Узкий сигнал «УМЫСЕЛ НА ПЕРЕВОД» — подмножество триггеров без общего «каспи»,
-# которое звучит при КАЖДОЙ нормальной оплате QR. Нужен чтобы дорогой аудио-проход
-# за номером звался ТОЛЬКО когда речь про перевод на номер, а не на любой «каспи».
+# Узкий сигнал «УМЫСЕЛ НА ПЕРЕВОД» — подмножество триггеров БЕЗ общего «каспи»,
+# которое звучит при КАЖДОЙ нормальной QR-оплате. Это ворота фрод-проверки:
+# открываются только когда речь именно про перевод на номер.
 _TRANSFER_PHRASES = [
     "переведи", "перевод", "переводи", "перекинь", "скинь", "скинуть",
     "перекидывай", "на этот номер", "на мой номер", "на номер", "отправь на",
@@ -93,33 +93,52 @@ def has_transfer_intent(text: str) -> bool:
 def check_kaspi_fraud(
     transcript: str,
     allowed_phones: list[str],
+    payment_mode: str = "mixed",
 ) -> list[dict]:
     """
     Основная проверка.
 
     Возвращает список подозрительных номеров:
-      [{"phone": "+77071234567", "normalized": "+77071234567"}]
+      [{"phone": "+77071234567", "normalized": "+77071234567", "confidence": "high"|"low"}]
     Пустой список — всё чисто.
 
-    Алгоритм:
-      1. Есть ли Каспи-контекст? Нет — выходим (false-positive protection)
-      2. Вытаскиваем номера из транскрипта
-      3. Сверяем с белым списком владельца
-      4. Возвращаем только те что НЕ в белом списке
+    confidence="high" → KASPI_FRAUD (severity critical)
+    confidence="low"  → KASPI_UNVERIFIED (severity warning, белый список не настроен)
+
+    ВОРОТА: ТОЛЬКО has_transfer_intent() во ВСЕХ режимах.
+    Голое "каспи"/"kaspi" без намерения перевода — ворота закрыты всегда.
+
+    Алгоритм по payment_mode:
+      qr_only/cash_only  → intent + номер = high всегда (переводы недопустимы)
+      transfers_ok/mixed → intent + номер не в белом списке = high
+                           intent + пустой белый список = low (не обвиняем)
     """
-    if not has_kaspi_context(transcript):
+    # Ворота: только узкий intent, НЕ широкое "каспи"
+    if not has_transfer_intent(transcript):
         return []
 
     phones = extract_phones(transcript)
     if not phones:
         return []
 
+    # qr_only/cash_only: переводы режимом не предусмотрены — любой номер fraud
+    if payment_mode in ("qr_only", "cash_only"):
+        for p in phones:
+            log.warning(f"Kaspi fraud: {p} на точке режима {payment_mode} (переводы недопустимы)")
+        return [{"phone": p, "normalized": p, "confidence": "high"} for p in phones]
+
+    # transfers_ok/mixed: сверяем с белым списком
     allowed_normalized = {normalize_phone(p) for p in (allowed_phones or [])}
+
+    if not allowed_normalized:
+        # Пустой белый список — мягкий путь, не обвиняем кассира жёстко
+        log.info(f"Kaspi intent, белый список пуст → soft flag (low) для {phones}")
+        return [{"phone": p, "normalized": p, "confidence": "low"} for p in phones]
 
     suspicious = []
     for phone in phones:
         if phone not in allowed_normalized:
-            log.warning(f"Kaspi fraud: {phone} не в белом списке (всего в списке: {len(allowed_normalized)})")
-            suspicious.append({"phone": phone, "normalized": phone})
+            log.warning(f"Kaspi fraud: {phone} не в белом списке (в списке: {len(allowed_normalized)})")
+            suspicious.append({"phone": phone, "normalized": phone, "confidence": "high"})
 
     return suspicious

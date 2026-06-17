@@ -180,6 +180,7 @@ async def _process_submission(
     track_goodbye: bool = True,
     employees: Optional[list] = None,
     menu_json: Optional[list] = None,
+    payment_mode: str = "mixed",
 ) -> None:
     """
     Полный цикл обработки одного аудио-сегмента.
@@ -527,7 +528,9 @@ async def _process_submission(
 
             # ── Kaspi Antifraud (до regex-Alert, чтобы исключить дублирование) ──
             # При internal_talk с включённым suppress_alert пропускаем — сотрудники говорят между собой
-            kaspi_hits = [] if suppress_alert else check_kaspi_fraud(transcript, allowed_phones or [])
+            kaspi_hits = [] if suppress_alert else check_kaspi_fraud(
+                transcript, allowed_phones or [], payment_mode
+            )
 
             # Главный фрод у касс КЗ: «аппарат не работает — переведите на этот номер»
             # (кассир диктует ЛИЧНЫЙ каспи). Транскрайб стабильно коверкает цифры
@@ -548,14 +551,21 @@ async def _process_submission(
                 evidence = {}
                 if wav_bytes:
                     evidence = await create_evidence_clip(wav_bytes, location_id, report.id)
+
+                confidence = hit.get("confidence", "high")
+                is_hard = (confidence == "high")
+
                 incident = Incident(
                     location_id=location_id,
                     report_id=report.id,
-                    incident_type="KASPI_FRAUD",
-                    severity="critical",
+                    incident_type="KASPI_FRAUD" if is_hard else "KASPI_UNVERIFIED",
+                    severity="critical" if is_hard else "warning",
                     description=(
                         f"Продавец продиктовал номер {hit['phone']}, "
                         f"которого нет в белом списке Каспи"
+                        if is_hard else
+                        f"Продавец продиктовал номер {hit['phone']} — "
+                        f"белый список не настроен, требует проверки"
                     ),
                     detected_phone=hit["phone"],
                     proof_s3_url=evidence.get("s3_url"),
@@ -563,37 +573,38 @@ async def _process_submission(
                 )
                 db.add(incident)
                 await db.flush()
-                report.fraud_status = "critical_fraud_risk"
-                report.is_priority  = True
+                report.fraud_status = "critical_fraud_risk" if is_hard else "suspected"
+                report.is_priority  = is_hard
 
                 if telegram_chat:
                     await notifier.send_incident_alert(
                         chat_id=telegram_chat,
                         location_name=location_name,
-                        incident_type="KASPI_FRAUD",
+                        incident_type=incident.incident_type,
                         incident_id=incident.id,
                         description=incident.description,
                         proof_s3_url=incident.proof_s3_url,
                         detected_phone=hit["phone"],
                         report_id=report.id,
                     )
-                # Email alert for fraud — send to location owner
-                try:
-                    async with AsyncSessionLocal() as _mail_db:
-                        _loc = await _mail_db.get(Location, location_id)
-                        if _loc and _loc.owner_id:
-                            _usr = await _mail_db.get(User, _loc.owner_id)
-                            if _usr and _usr.email:
-                                await notifier.send_fraud_email(
-                                    user_email=_usr.email,
-                                    location_name=location_name,
-                                    incident_type="KASPI_FRAUD",
-                                    description=incident.description,
-                                    audio_url=incident.proof_s3_url,
-                                    report_id=report.id,
-                                )
-                except Exception as _e:
-                    log.warning(f"Fraud email not sent: {_e}")
+                # Email только при жёстком обвинении (high confidence)
+                if is_hard:
+                    try:
+                        async with AsyncSessionLocal() as _mail_db:
+                            _loc = await _mail_db.get(Location, location_id)
+                            if _loc and _loc.owner_id:
+                                _usr = await _mail_db.get(User, _loc.owner_id)
+                                if _usr and _usr.email:
+                                    await notifier.send_fraud_email(
+                                        user_email=_usr.email,
+                                        location_name=location_name,
+                                        incident_type="KASPI_FRAUD",
+                                        description=incident.description,
+                                        audio_url=incident.proof_s3_url,
+                                        report_id=report.id,
+                                    )
+                    except Exception as _e:
+                        log.warning(f"Fraud email not sent: {_e}")
 
             if kaspi_hits:
                 await db.commit()
@@ -921,6 +932,7 @@ async def submit_audio(
         track_goodbye=bool(getattr(location, 'track_goodbye', True)),
         employees=getattr(location, 'employees', None) or [],
         menu_json=getattr(location, 'menu_json', None),
+        payment_mode=getattr(location, 'payment_mode', None) or "mixed",
     )
 
     return {"status": "ok", "message": "Принято в обработку"}
