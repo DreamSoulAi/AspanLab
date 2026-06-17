@@ -78,6 +78,8 @@ class LocationUpdate(BaseModel):
     track_upsell:         Optional[bool] = None
     track_greeting:       Optional[bool] = None
     track_goodbye:        Optional[bool] = None
+    allowed_phones:       Optional[list[str]] = None
+    payment_mode:         Optional[str] = None
 
     @field_validator("business_type")
     @classmethod
@@ -91,6 +93,24 @@ class LocationUpdate(BaseModel):
     def validate_language(cls, v):
         if v is not None and v not in VALID_LANGUAGES:
             raise ValueError(f"language должен быть одним из {VALID_LANGUAGES}")
+        return v
+
+    @field_validator("payment_mode")
+    @classmethod
+    def validate_payment_mode_upd(cls, v):
+        if v is not None and v not in ("qr_only", "cash_only", "transfers_ok", "mixed"):
+            raise ValueError("payment_mode должен быть qr_only|cash_only|transfers_ok|mixed")
+        return v
+
+    @field_validator("allowed_phones")
+    @classmethod
+    def validate_allowed_phones_upd(cls, v):
+        if v is not None:
+            if len(v) > 50:
+                raise ValueError("Максимум 50 номеров в белом списке")
+            for p in v:
+                if len(p) > 20:
+                    raise ValueError(f"Номер слишком длинный: {p[:20]}")
         return v
 
 
@@ -385,6 +405,8 @@ async def update_location(
     if data.track_upsell              is not None: loc.track_upsell              = data.track_upsell
     if data.track_greeting            is not None: loc.track_greeting            = data.track_greeting
     if data.track_goodbye             is not None: loc.track_goodbye             = data.track_goodbye
+    if data.allowed_phones            is not None: loc.allowed_phones            = data.allowed_phones
+    if data.payment_mode              is not None: loc.payment_mode              = data.payment_mode
 
     await db.commit()
     return {"message": "Точка обновлена", "id": loc.id}
