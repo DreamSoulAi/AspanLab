@@ -1,6 +1,9 @@
 # Секреты — НИКОГДА не заливать в git!
 .env
 *.env
+.env.prod
+!.env.prod.example
+certbot-www/
 
 # База данных
 *.db
