@@ -510,6 +510,7 @@ async def _fix_schema():
             ("energy_level",  "INTEGER"),
             ("score",         "INTEGER"),
             ("s3_key",        "TEXT"),
+            ("is_primary",    "BOOLEAN DEFAULT TRUE"),
         ]
         for _col, _typ in _rep_cols:
             await _run(

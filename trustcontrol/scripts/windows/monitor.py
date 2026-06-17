@@ -60,10 +60,13 @@ _parser.add_argument("--api-key", default="",
                      help="API-ключ точки из личного кабинета")
 _parser.add_argument("--vad-level", type=int, default=2,
                      help="Чувствительность VAD 0-3 (по умолчанию 2)")
-_parser.add_argument("--silence", type=float, default=2.5,
-                     help="Секунд тишины = конец разговора (по умолчанию 2.5)")
-_parser.add_argument("--max-minutes", type=int, default=2,
-                     help="Максимальная длина сегмента в минутах (по умолчанию 2)")
+_parser.add_argument("--silence", type=float, default=3.5,
+                     help="Секунд тишины = конец разговора (по умолчанию 3.5). "
+                          "Пауза в середине фразы клиента не рвёт диалог. "
+                          "Умное разбиение очереди делает сервер поверх транскрипта.")
+_parser.add_argument("--max-minutes", type=int, default=5,
+                     help="Максимальная длина сегмента в минутах (по умолчанию 5). "
+                          "Длиннее любого реального диалога — не рвёт длинный разговор пополам.")
 _parser.add_argument("--local-whisper", action="store_true",
                      help="Транскрибировать локально через faster-whisper (бесплатно)")
 _parser.add_argument("--whisper-model", default="small",
@@ -81,9 +84,10 @@ _parser.add_argument("--device", default=None,
                           "По умолчанию — системный микрофон по умолчанию.")
 _parser.add_argument("--list-devices", action="store_true",
                      help="Показать все доступные устройства записи и выйти")
-_parser.add_argument("--min-duration", type=float, default=6.0,
-                     help="Минимальная длина записи в секундах перед отправкой (по умолчанию 6.0). "
-                          "Обрывки и случайные фразы короче этого порога не отправляются.")
+_parser.add_argument("--min-duration", type=float, default=2.0,
+                     help="Минимальная длина записи в секундах перед отправкой (по умолчанию 2.0). "
+                          "Короткие сделки ('Кофе. 800. QR') перестают теряться молча; "
+                          "совсем обрывки (<2с) всё ещё отсекаются.")
 _parser.add_argument("--rtsp", default=None,
                      help="RTSP URL IP-камеры (например rtsp://admin:pass@192.168.1.100/stream1). "
                           "При использовании микрофон не нужен. Требуется ffmpeg в PATH.")

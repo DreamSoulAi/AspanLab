@@ -107,6 +107,47 @@ ISSAI остаётся как ПАРАЛЛЕЛЬНЫЙ улучшатель ка
 **ПРИЁМНИК НА RASPBERRY PI (15.06.2026):** `scripts/raspberry/` — headless коробка,
 golden-image клонирование, конфиг через FAT-раздел SD. НЕ протестировано на железе.
 
+### УМНАЯ НАРЕЗКА ДИАЛОГОВ — ЭТАП 1 (17.06.2026, ветка claude/cool-babbage-bjVDS)
+Одна запись кассы (до 5 мин) может содержать НЕСКОЛЬКО клиентов + болтовню персонала.
+Реализован Layer 2 — серверная нарезка готового транскрипта через gpt-4o-mini.
+
+**Layer 1 — monitor.py (3 изменения дефолтов):**
+- `--silence` 2.5→3.5с (не рвём диалог на паузе с QR)
+- `--max-minutes` 2→5 мин (захватываем длинные разговоры целиком)
+- `--min-duration` 6.0→2.0с (не теряем быстрые «Кофе. 800. QR»)
+- `config.ini`: `SILENCE=3.5` (шаблон для новых установок)
+
+**Layer 2 — `backend/services/dialog_splitter.py` (новый файл):**
+- `split_into_dialogues(transcript, business_type, payment_mode, greeting_script)` — вызывает gpt-4o-mini, возвращает `[{text, type, start_marker, end_marker, has_service_markers}]`
+- Типы: SERVICE (кассир↔клиент) / PERSONAL (болтовня) / UNCLEAR (граница неочевидна)
+- <25 слов → возвращает `[]` (один короткий диалог, не платим за нарезку)
+- Любая ошибка/пустой ответ/один сегмент → возвращает `[]` (фолбэк)
+- `response_format=json_object`, `temperature=0`
+
+**`backend/api/reports.py` — рефакторинг `_process_submission`:**
+- Выделена `_persist_report(result, transcript, ..., is_primary, audio_fraud_number)` — вся логика сохранения одного Report (GPT-поля, контекст, DB, kaspi, алерты, уведомления)
+- Оркестрация в `_process_submission`:
+  - S3-загрузка аудио ОДИН раз, `s3_key`/`audio_sha256` передаются во все сегменты
+  - `extract_dictated_payment_number` ОДИН раз на всю запись (дорогой gpt-4o-audio), результат `audio_fraud_number` → только в сегмент с intent-переводом
+  - `split_into_dialogues` → если ≥2 сегментов: SERVICE/UNCLEAR → `_persist_report`; PERSONAL без фрод-сигнала → пропуск (лог); PERSONAL с `has_transfer_intent()` или номером → АНАЛИЗИРУЕМ (сговор персонала!)
+  - `is_primary=True` у первого сохранённого Report, у остальных `False`
+  - Если все сегменты отказали → фолбэк: один Report на весь транскрипт
+  - Если `split=[]` → один Report как раньше
+
+**`backend/models/report.py`:** поле `is_primary = Column(Boolean, default=True, index=True)`
+**`alembic/versions/0011_add_report_is_primary.py`:** миграция `is_primary` (nullable=True, server_default=true)
+**`main.py` `_fix_schema`:** `("is_primary", "BOOLEAN DEFAULT TRUE")`
+**`_get_monthly_count`:** фильтр `Report.is_primary == True` — биллинг считает только первичные (сплит не раздувает лимит)
+
+**Тест `test_dialog_split.py` (5/5 ✅):**
+- A: 4 сегмента (3 SERVICE + 1 PERSONAL) парсятся корректно
+- B: 3 Report создано, PERSONAL («Айгуль, когда обед?») НЕ сохранён
+- C: `is_primary=True` ровно у одного (первого) Report
+- D: PERSONAL с «переведи на 8 707...» → проанализирован и сохранён (фрод!)
+- E: split=[] → ровно один Report на весь транскрипт (фолбэк)
+
+**Принцип:** «Ложное обвинение кассира хуже пропуска» — PERSONAL пропускается только если ЧИСТАЯ болтовня; сомнение → анализируем.
+
 ### KASPI-ФРОД — РЕЖИМЫ ОПЛАТЫ + УЗКИЕ ВОРОТА (17.06.2026, ветка claude/cool-babbage-bjVDS)
 Переработан `kaspi_detector.check_kaspi_fraud()` под боль «ложное обвинение кассира
 хуже пропуска»:

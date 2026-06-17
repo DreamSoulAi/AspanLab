@@ -43,6 +43,7 @@ from backend.services.pos_matcher import match_report_with_pos
 from backend.services.kaspi_detector import (
     check_kaspi_fraud, has_transfer_intent, extract_phones, normalize_phone,
 )
+from backend.services.dialog_splitter import split_into_dialogues
 from backend.services.evidence import create_evidence_clip
 from backend.services.context_analyzer import analyze_context, check_pos_window
 from backend.services.employee_matcher import match_employee
@@ -114,6 +115,10 @@ async def _get_monthly_count(user_id: int, location_ids: list) -> int:
                 Report.location_id.in_(location_ids),
                 Report.timestamp >= month_start,
                 Report.is_hidden == False,
+                # Биллинг «по записям»: доп. диалоги от умного разбиения одной
+                # записи (is_primary=False) НЕ считаем — иначе лимит тарифа
+                # расходовался бы в N раз быстрее на точках с очередью.
+                Report.is_primary == True,
             )
         )
         count = result.scalar() or 0
@@ -152,6 +157,337 @@ def _check_submit_rate(api_key: str):
     _daily_counts[api_key] = (day, count + 1)
 RETRY_DIR = Path("uploads/retry")
 RETRY_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ── Сохранение одного диалога в Report (+ фрод, тревоги, уведомления) ──────────
+# Вынесено из _process_submission, чтобы одну запись можно было разбить на
+# НЕСКОЛЬКО диалогов (несколько клиентов) и сохранить отдельный Report на каждого.
+# Аудио-архив (s3_key/sha256) и аудио-проба номера считаются ОДИН раз на запись
+# в _process_submission и прокидываются сюда — здесь повторного аудио-вызова нет.
+# Возвращает report_id или None (если сегмент пустой / нечего сохранять).
+async def _persist_report(
+    *,
+    result: dict,
+    transcript: str,
+    location_id: int,
+    audio_size_kb: int,
+    business_type: Optional[str],
+    allowed_phones: Optional[list],
+    required_upsells: Optional[list],
+    ignore_internal_profanity: bool,
+    notify_ok_conversations: bool,
+    track_upsell: bool,
+    track_greeting: bool,
+    track_goodbye: bool,
+    employees: Optional[list],
+    payment_mode: str,
+    telegram_chat: Optional[str],
+    location_name: str,
+    wav_bytes: Optional[bytes],
+    s3_key: Optional[str],
+    audio_sha256: Optional[str],
+    is_primary: bool = True,
+    audio_fraud_number: Optional[str] = None,
+) -> Optional[int]:
+    transcript = (transcript or "").strip()
+    word_count = len(transcript.split())
+    if word_count < 2:
+        return None
+
+    # ── Поля GPT ─────────────────────────────────────────────
+    speakers              = result.get("speakers") or []
+    is_short = word_count < 6 or len(speakers) < 2
+    gpt_score             = result.get("score")
+    gpt_summary           = result.get("summary", "")
+    gpt_tone              = result.get("tone", "neutral")
+    events                = result.get("events", {})
+    priority              = int(result.get("priority", 0))
+    payment_confirmed     = result.get("payment_confirmed")
+    upsell_attempt        = result.get("upsell_attempt")
+    customer_satisfaction = result.get("customer_satisfaction")
+    raw_energy            = result.get("energy_level")
+    energy_level          = max(1, min(5, int(raw_energy))) if raw_energy is not None else None
+
+    # ── Contextual Severity: определяем контекст разговора ──
+    async with AsyncSessionLocal() as _ctx_db:
+        has_pos_nearby = await check_pos_window(location_id, datetime.utcnow(), _ctx_db)
+
+    ctx = analyze_context(
+        transcript=transcript,
+        events=result.get("events", {}),
+        speakers=result.get("speakers", []),
+        has_pos_nearby=has_pos_nearby,
+        customer_satisfaction=result.get("customer_satisfaction"),
+        is_personal_talk=result.get("is_personal_talk", False),
+        gpt_is_business=result.get("is_business", False),
+    )
+    conversation_context = ctx["context"]
+    context_score        = ctx["score"]
+    log.info(
+        f"[loc={location_id}] context={conversation_context} "
+        f"score={context_score:.2f} | {ctx['reason']}"
+    )
+
+    # ── Анализ фраз (regex резерв) + GPT events ──────────────
+    found = analyze(transcript, business_type=business_type)
+
+    # ── Фрод с порогом уверенности ───────────────────────────
+    fraud_confidence = int(result.get("fraud_confidence", 0) or 0)
+    raw_fraud        = bool(events.get("fraud_attempt", False))
+    has_fraud        = bool(raw_fraud and fraud_confidence >= FRAUD_HARD_THRESHOLD)
+    fraud_suspect    = bool(raw_fraud and FRAUD_SOFT_THRESHOLD <= fraud_confidence < FRAUD_HARD_THRESHOLD)
+
+    has_greeting = ("✅ Приветствие"   in found) or events.get("greeting", False)
+    has_thanks   = ("✅ Благодарность" in found)
+    has_goodbye  = ("✅ Прощание"      in found) or events.get("farewell", False)
+    has_bonus    = events.get("upsell", False) or bool(upsell_attempt)
+    has_bad      = events.get("rudeness", False)
+
+    is_priority_flag = bool(priority == 1 or has_fraud or has_bad)
+
+    # ── Тон ──────────────────────────────────────────────────
+    effective_tone = get_tone(gpt_tone, events)
+    tone_score_val = 1.0 if effective_tone == "positive" else 0.0 if effective_tone == "negative" else 0.5
+
+    # ── Единый прозрачный движок оценки ──────────────────────
+    score_events = dict(events)
+    if has_greeting:
+        score_events["greeting"] = True
+    if has_goodbye or has_thanks:
+        score_events["farewell"] = True
+
+    final_score = calculate_score(
+        events=score_events,
+        tone=effective_tone,
+        fraud_confidence=fraud_confidence,
+        customer_satisfaction=customer_satisfaction,
+        energy_level=energy_level,
+        track_upsell=track_upsell,
+        track_greeting=track_greeting,
+        track_goodbye=track_goodbye,
+        is_short=is_short,
+    )
+
+    is_internal_talk = (conversation_context == "internal_talk")
+    suppress_alert   = is_internal_talk and ignore_internal_profanity
+
+    if suppress_alert:
+        has_bad          = False
+        has_fraud        = False
+        is_priority_flag = False
+        log.info(
+            f"[loc={location_id}] INTERNAL_TALK: флаги подавлены "
+            f"(ignore_internal_profanity=True). Записано в БД тихо."
+        )
+
+    now_utc = datetime.utcnow()
+    hour = now_utc.hour
+    shift_number = 1 if 6 <= hour < 14 else 2 if 14 <= hour < 22 else 3
+    employee_name = match_employee(employees, now_utc)
+
+    # ── Сохраняем в БД ────────────────────────────────────────
+    async with AsyncSessionLocal() as db:
+        report = Report(
+            location_id=location_id,
+            transcript=transcript,
+            employee_name=employee_name,
+            audio_size_kb=audio_size_kb,
+            found_categories=found,
+            has_greeting=has_greeting, has_thanks=has_thanks,
+            has_goodbye=has_goodbye,   has_bonus=has_bonus,
+            has_bad=has_bad,           has_fraud=has_fraud,
+            tone=effective_tone,       tone_score=tone_score_val,
+            shift_number=shift_number,
+            score=final_score,
+            gpt_score=gpt_score,       gpt_summary=gpt_summary,
+            gpt_details={"positives": result.get("positives", []), "issues": result.get("issues", []), "events": events},
+            speakers=speakers,
+            is_priority=is_priority_flag,
+            audio_sha256=audio_sha256,  s3_key=s3_key,
+            payment_confirmed=payment_confirmed,
+            upsell_attempt=upsell_attempt,
+            customer_satisfaction=customer_satisfaction,
+            energy_level=energy_level,
+            is_personal_talk=False,
+            is_hidden=False,
+            is_primary=is_primary,
+            fraud_status="suspected" if fraud_suspect else "normal",
+            conversation_context=conversation_context,
+            context_score=context_score,
+        )
+        db.add(report)
+        await db.flush()
+
+        # ── Kaspi Antifraud (до regex-Alert, чтобы исключить дублирование) ──
+        kaspi_hits = [] if suppress_alert else check_kaspi_fraud(
+            transcript, allowed_phones or [], payment_mode
+        )
+
+        # Аудио-проба номера запускается ОДИН раз на всю запись (выше, в
+        # _process_submission) и уже сверена с белым списком — здесь только
+        # превращаем готовый номер в hit, без повторного аудио-вызова.
+        if not suppress_alert and not kaspi_hits and audio_fraud_number:
+            kaspi_hits = [{"phone": normalize_phone(audio_fraud_number)}]
+            log.info(f"[loc={location_id}] Фрод: продиктован номер {normalize_phone(audio_fraud_number)} "
+                     f"(из аудио, regex не достал) — нет в белом списке")
+
+        for hit in kaspi_hits:
+            evidence = {}
+            if wav_bytes:
+                evidence = await create_evidence_clip(wav_bytes, location_id, report.id)
+
+            confidence = hit.get("confidence", "high")
+            is_hard = (confidence == "high")
+
+            incident = Incident(
+                location_id=location_id,
+                report_id=report.id,
+                incident_type="KASPI_FRAUD" if is_hard else "KASPI_UNVERIFIED",
+                severity="critical" if is_hard else "warning",
+                description=(
+                    f"Продавец продиктовал номер {hit['phone']}, "
+                    f"которого нет в белом списке Каспи"
+                    if is_hard else
+                    f"Продавец продиктовал номер {hit['phone']} — "
+                    f"белый список не настроен, требует проверки"
+                ),
+                detected_phone=hit["phone"],
+                proof_s3_url=evidence.get("s3_url"),
+                proof_sha256=evidence.get("sha256"),
+            )
+            db.add(incident)
+            await db.flush()
+            report.fraud_status = "critical_fraud_risk" if is_hard else "suspected"
+            report.is_priority  = is_hard
+
+            if telegram_chat:
+                await notifier.send_incident_alert(
+                    chat_id=telegram_chat,
+                    location_name=location_name,
+                    incident_type=incident.incident_type,
+                    incident_id=incident.id,
+                    description=incident.description,
+                    proof_s3_url=incident.proof_s3_url,
+                    detected_phone=hit["phone"],
+                    report_id=report.id,
+                )
+            # Email только при жёстком обвинении (high confidence)
+            if is_hard:
+                try:
+                    async with AsyncSessionLocal() as _mail_db:
+                        _loc = await _mail_db.get(Location, location_id)
+                        if _loc and _loc.owner_id:
+                            _usr = await _mail_db.get(User, _loc.owner_id)
+                            if _usr and _usr.email:
+                                await notifier.send_fraud_email(
+                                    user_email=_usr.email,
+                                    location_name=location_name,
+                                    incident_type="KASPI_FRAUD",
+                                    description=incident.description,
+                                    audio_url=incident.proof_s3_url,
+                                    report_id=report.id,
+                                )
+                except Exception as _e:
+                    log.warning(f"Fraud email not sent: {_e}")
+
+        if kaspi_hits:
+            await db.commit()
+            has_fraud = False
+
+        # Тревоги (regex)
+        if has_fraud:
+            db.add(Alert(location_id=location_id, report_id=report.id,
+                         alert_type="fraud", severity="high", transcript=transcript,
+                         trigger_phrase=gpt_summary[:150] if gpt_summary else "Обнаружено GPT-анализом"))
+        if has_bad:
+            db.add(Alert(location_id=location_id, report_id=report.id,
+                         alert_type="bad_language", severity="high", transcript=transcript,
+                         trigger_phrase=gpt_summary[:150] if gpt_summary else "Обнаружено GPT-анализом"))
+        if effective_tone == "negative" and not has_bad:
+            db.add(Alert(location_id=location_id, report_id=report.id,
+                         alert_type="negative_tone", severity="medium", transcript=transcript))
+
+        await db.commit()
+        report_id = report.id
+
+        # ── POS-матчинг если оплата подтверждена ─────────────
+        # Best-effort: отчёт уже в БД, сбой матчинга не должен ронять сохранение.
+        if payment_confirmed:
+            try:
+                new_fraud_status = await match_report_with_pos(
+                    report, db, required_upsells=required_upsells or []
+                )
+                if new_fraud_status == "critical_fraud_risk":
+                    report.fraud_status = new_fraud_status
+                    report.is_priority  = True
+                    db.add(Alert(location_id=location_id, report_id=report_id,
+                                 alert_type="fraud", severity="high",
+                                 transcript=transcript,
+                                 trigger_phrase="POS-разрыв: нет чека в кассе"))
+                    await db.commit()
+            except Exception as _pe:
+                log.warning(f"[loc={location_id}] POS-матчинг упал: {_pe}")
+
+    log.info(
+        f"[loc={location_id}] Отчёт #{report_id} (primary={is_primary}) | "
+        f"score={final_score} (gpt={gpt_score}) | tone={effective_tone} | "
+        f"priority={priority} | payment={payment_confirmed} | "
+        f"upsell={upsell_attempt} | sat={customer_satisfaction}"
+    )
+
+    # ── Уведомления (best-effort, отчёт уже сохранён) ─────────
+    try:
+        from backend.services.storage import presigned_get_url
+        listen_url = presigned_get_url(s3_key, expires=604800) if s3_key else None
+
+        if is_priority_flag and telegram_chat:
+            await notifier.send_critical_alert({
+                "telegram_chat": telegram_chat,
+                "location_name": location_name,
+                "summary":       gpt_summary,
+                "sha256":        audio_sha256,
+                "report_id":     report_id,
+                "audio_url":     listen_url,
+            })
+        elif telegram_chat and (has_fraud or has_bad):
+            await notifier.send_report(
+                chat_id=telegram_chat, location_name=location_name,
+                transcript=transcript, found=found,
+                tone=effective_tone, score=final_score,
+                report_id=report_id, audio_url=listen_url,
+            )
+        elif telegram_chat and not suppress_alert and notify_ok_conversations:
+            await notifier.send_ok_report(
+                chat_id=telegram_chat,
+                location_name=location_name,
+                transcript=transcript,
+                tone=effective_tone,
+                score=final_score,
+                upsell=upsell_attempt,
+                greeting=has_greeting,
+                summary=gpt_summary,
+                report_id=report_id,
+                audio_url=listen_url,
+            )
+
+        # Email for fraud incidents
+        if (has_fraud or has_bad) and not suppress_alert:
+            async with AsyncSessionLocal() as _mail_db:
+                _loc = await _mail_db.get(Location, location_id)
+                if _loc and _loc.owner_id:
+                    _usr = await _mail_db.get(User, _loc.owner_id)
+                    if _usr and _usr.email and has_fraud:
+                        await notifier.send_fraud_email(
+                            user_email=_usr.email,
+                            location_name=location_name,
+                            incident_type="FRAUD",
+                            description=gpt_summary or "Обнаружено GPT-анализом",
+                            report_id=report_id,
+                        )
+    except Exception as _ne:
+        log.warning(f"[loc={location_id}] уведомление после сохранения упало: {_ne}")
+
+    return report_id
 
 
 # ── Фоновая обработка ─────────────────────────────────────────────────────────
@@ -372,48 +708,11 @@ async def _process_submission(
             )
             _mark_job_done(failed_job_id)
             return
-        # ── Поля GPT ─────────────────────────────────────────────
-        speakers              = result.get("speakers") or []
-        is_short = word_count < 6 or len(speakers) < 2
-        gpt_score             = result.get("score")
-        gpt_summary           = result.get("summary", "")
-        gpt_tone              = result.get("tone", "neutral")
-        events                = result.get("events", {})
-        priority              = int(result.get("priority", 0))
-        payment_confirmed     = result.get("payment_confirmed")
-        upsell_attempt        = result.get("upsell_attempt")
-        customer_satisfaction = result.get("customer_satisfaction")
-        raw_energy            = result.get("energy_level")
-        energy_level          = max(1, min(5, int(raw_energy))) if raw_energy is not None else None
-
-        # ── Contextual Severity: определяем контекст разговора ──
-        # Нужен async-доступ к БД для проверки POS-окна
-        async with AsyncSessionLocal() as _ctx_db:
-            has_pos_nearby = await check_pos_window(location_id, datetime.utcnow(), _ctx_db)
-
-        ctx = analyze_context(
-            transcript=transcript,
-            events=result.get("events", {}),
-            speakers=result.get("speakers", []),
-            has_pos_nearby=has_pos_nearby,
-            customer_satisfaction=result.get("customer_satisfaction"),
-            is_personal_talk=result.get("is_personal_talk", False),
-            gpt_is_business=result.get("is_business", False),
-        )
-        conversation_context = ctx["context"]
-        context_score        = ctx["score"]
-
-        log.info(
-            f"[loc={location_id}] context={conversation_context} "
-            f"score={context_score:.2f} | {ctx['reason']}"
-        )
-
-        # ── Архив аудио в R2/S3 для прослушки + SHA-256 ──────────
-        # Сохраняем КАЖДУЮ запись (не только priority=1), чтобы владелец
-        # мог прослушать любой разговор. Храним ТОЛЬКО s3_key — ссылку на
-        # запись выдаёт presigned-эндпоинт get_report_audio с проверкой прав.
-        # Публичную (вечную) ссылку не строим и не храним.
-        # Если S3 не настроен — тихо пропускаем (upload_evidence вернёт key=None).
+        # ── Архив аудио ОДИН раз на запись (общий для всех диалогов) ──
+        # Сохраняем КАЖДУЮ запись (не только priority=1). Храним ТОЛЬКО s3_key —
+        # ссылку выдаёт presigned-эндпоинт get_report_audio с проверкой прав.
+        # Если запись режется на несколько диалогов — все Report ссылаются на
+        # ОДНУ запись (по тексту аудио по сегментам не разрезать).
         audio_sha256 = s3_key = None
         if wav_bytes:
             tmp_id         = int(datetime.utcnow().timestamp())
@@ -421,290 +720,130 @@ async def _process_submission(
             audio_sha256   = storage_result.get("sha256")
             s3_key         = storage_result.get("key")
 
-        # ── Анализ фраз (regex резерв) + GPT events ──────────────
-        found = analyze(transcript, business_type=business_type)
+        # ── Аудио-проба продиктованного номера — ОДИН раз на запись ──
+        # Слушаем всё аудио единожды (дорого, но точно), номер сверяем с белым
+        # списком, дальше прокидываем в нужный сегмент. Так нет N аудио-вызовов
+        # и нет дубля инцидента по разным Report одной записи.
+        audio_fraud_number = None
+        _whole_events = result.get("events", {})
+        _whole_raw_fraud = bool(_whole_events.get("fraud_attempt", False))
+        if wav_bytes and (_whole_raw_fraud
+                          or has_transfer_intent(transcript) or extract_phones(transcript)):
+            _num = await extract_dictated_payment_number(wav_bytes, transcript)
+            if _num:
+                _allowed_norm = {normalize_phone(p) for p in (allowed_phones or [])}
+                if normalize_phone(_num) not in _allowed_norm:
+                    audio_fraud_number = _num
 
-        # ── Фрод с порогом уверенности ───────────────────────────
-        # GPT различает явный фрод (90-100) и косвенный намёк (50-89).
-        # Тревогу и обнуление балла даём только при ВЫСОКОЙ уверенности —
-        # один неуверенный сигнал не должен «разносить» кассира.
-        fraud_confidence = int(result.get("fraud_confidence", 0) or 0)
-        raw_fraud        = bool(events.get("fraud_attempt", False))
-        has_fraud        = bool(raw_fraud and fraud_confidence >= FRAUD_HARD_THRESHOLD)   # явный
-        fraud_suspect    = bool(raw_fraud and FRAUD_SOFT_THRESHOLD <= fraud_confidence < FRAUD_HARD_THRESHOLD)
-
-        has_greeting = ("✅ Приветствие"   in found) or events.get("greeting", False)
-        has_thanks   = ("✅ Благодарность" in found)
-        has_goodbye  = ("✅ Прощание"      in found) or events.get("farewell", False)
-        has_bonus    = events.get("upsell", False) or bool(upsell_attempt)
-        has_bad      = events.get("rudeness", False)
-
-        is_priority_flag = bool(priority == 1 or has_fraud or has_bad)
-
-        # ── Тон ──────────────────────────────────────────────────
-        effective_tone = get_tone(gpt_tone, events)
-        tone_score_val = 1.0 if effective_tone == "positive" else 0.0 if effective_tone == "negative" else 0.5
-
-        # ── Единый прозрачный движок оценки ──────────────────────
-        # GPT-события (greeting/upsell/rudeness/…) уже учитывают track_*
-        # на уровне наличия; здесь движок применяет настройки владельца
-        # к итоговому баллу и не штрафует дважды.
-        #
-        # ВАЖНО: в балл отдаём события, ОБОГАЩЁННЫЕ regex-резервом. GPT нередко
-        # пропускает явное «здравствуйте/спасибо/рахмет/сау болыңыз» в шумном
-        # транскрипте и ставит greeting/farewell=false — тогда вежливый разговор
-        # несправедливо застревает на базовых 60. Если вежливое слово реально
-        # есть в тексте (regex его поймал) — засчитываем бонус. Это согласуется
-        # с принципом «при сомнении трактуй в пользу кассира».
-        score_events = dict(events)
-        if has_greeting:
-            score_events["greeting"] = True
-        if has_goodbye or has_thanks:
-            score_events["farewell"] = True
-
-        final_score = calculate_score(
-            events=score_events,
-            tone=effective_tone,
-            fraud_confidence=fraud_confidence,
-            customer_satisfaction=customer_satisfaction,
-            energy_level=energy_level,
-            track_upsell=track_upsell,
-            track_greeting=track_greeting,
-            track_goodbye=track_goodbye,
-            is_short=is_short,
+        _common = dict(
+            location_id=location_id, audio_size_kb=audio_size_kb,
+            business_type=business_type, allowed_phones=allowed_phones,
+            required_upsells=required_upsells,
+            ignore_internal_profanity=ignore_internal_profanity,
+            notify_ok_conversations=notify_ok_conversations,
+            track_upsell=track_upsell, track_greeting=track_greeting,
+            track_goodbye=track_goodbye, employees=employees,
+            payment_mode=payment_mode, telegram_chat=telegram_chat,
+            location_name=location_name, wav_bytes=wav_bytes,
+            s3_key=s3_key, audio_sha256=audio_sha256,
         )
 
-        is_internal_talk = (conversation_context == "internal_talk")
-        suppress_alert   = is_internal_talk and ignore_internal_profanity
+        # ── Слой 2: умное разбиение записи на отдельные диалоги ──
+        # Одна запись может содержать очередь клиентов + болтовню персонала.
+        # split_into_dialogues режет ГОТОВЫЙ транскрипт через gpt-4o-mini.
+        # Пустой список / один сегмент / ошибка → анализируем весь транскрипт
+        # как раньше (фолбэк, ни один отчёт не теряется).
+        segments = await split_into_dialogues(
+            transcript, business_type=business_type,
+            payment_mode=payment_mode, greeting_script=greeting_script,
+        )
 
-        if suppress_alert:
-            # Внутренний разговор сотрудников — глушим все флаги тревоги
-            has_bad          = False
-            has_fraud        = False
-            is_priority_flag = False
-            log.info(
-                f"[loc={location_id}] INTERNAL_TALK: флаги подавлены "
-                f"(ignore_internal_profanity=True). Записано в БД тихо."
-            )
+        if len(segments) >= 2:
+            # Запись с очередью → отдельный Report на клиента.
+            # Куда отнести продиктованный номер: первый сегмент с умыслом/номером.
+            _fraud_seg_idx = None
+            if audio_fraud_number:
+                for _i, _s in enumerate(segments):
+                    if has_transfer_intent(_s["text"]) or extract_phones(_s["text"]):
+                        _fraud_seg_idx = _i
+                        break
+                if _fraud_seg_idx is None:
+                    _fraud_seg_idx = 0
 
-        now_utc = datetime.utcnow()
-        hour = now_utc.hour
-        shift_number = 1 if 6 <= hour < 14 else 2 if 14 <= hour < 22 else 3
+            any_saved = False
+            for _i, seg in enumerate(segments):
+                seg_text     = (seg.get("text") or "").strip()
+                seg_type     = seg.get("type", "UNCLEAR")
+                fraud_signal = has_transfer_intent(seg_text) or bool(extract_phones(seg_text))
 
-        # Кто был на кассе в это время (по сменам сотрудников)
-        employee_name = match_employee(employees, now_utc)
+                # PERSONAL без признака фрода — болтовня персонала: не создаём
+                # Report и не платим за анализ (как и задумано). НО если в нём
+                # звучит перевод/номер (сговор персонала) — анализируем.
+                if seg_type == "PERSONAL" and not fraud_signal:
+                    log.info(f"[loc={location_id}] сегмент#{_i} PERSONAL — пропущен (болтовня)")
+                    continue
 
-        # ── Сохраняем в БД ────────────────────────────────────────
-        async with AsyncSessionLocal() as db:
-            report = Report(
-                location_id=location_id,
-                transcript=transcript,
-                employee_name=employee_name,
-                audio_size_kb=audio_size_kb,
-                found_categories=found,
-                has_greeting=has_greeting, has_thanks=has_thanks,
-                has_goodbye=has_goodbye,   has_bonus=has_bonus,
-                has_bad=has_bad,           has_fraud=has_fraud,
-                tone=effective_tone,       tone_score=tone_score_val,
-                shift_number=shift_number,
-                score=final_score,
-                gpt_score=gpt_score,       gpt_summary=gpt_summary,
-                gpt_details={"positives": result.get("positives", []), "issues": result.get("issues", []), "events": events},
-                speakers=speakers,
-                is_priority=is_priority_flag,
-                audio_sha256=audio_sha256,  s3_key=s3_key,
-                payment_confirmed=payment_confirmed,
-                upsell_attempt=upsell_attempt,
-                customer_satisfaction=customer_satisfaction,
-                energy_level=energy_level,
-                is_personal_talk=False,
-                is_hidden=False,
-                fraud_status="suspected" if fraud_suspect else "normal",
-                conversation_context=conversation_context,
-                context_score=context_score,
-            )
-            db.add(report)
-            await db.flush()
-
-            # ── Kaspi Antifraud (до regex-Alert, чтобы исключить дублирование) ──
-            # При internal_talk с включённым suppress_alert пропускаем — сотрудники говорят между собой
-            kaspi_hits = [] if suppress_alert else check_kaspi_fraud(
-                transcript, allowed_phones or [], payment_mode
-            )
-
-            # Главный фрод у касс КЗ: «аппарат не работает — переведите на этот номер»
-            # (кассир диктует ЛИЧНЫЙ каспи). Транскрайб стабильно коверкает цифры
-            # («7072228800» → «307 222 88.0»), поэтому regex выше его не достаёт.
-            # Если был УМЫСЕЛ на перевод/фрод — просим слушающую модель ровно цифры
-            # и сверяем с белым списком точки. Зовётся редко (только при умысле) → дорого, но точечно.
-            if (not suppress_alert and not kaspi_hits and wav_bytes and (
-                    raw_fraud or fraud_suspect
-                    or has_transfer_intent(transcript) or extract_phones(transcript))):
-                _audio_num = await extract_dictated_payment_number(wav_bytes, transcript)
-                if _audio_num:
-                    _allowed_norm = {normalize_phone(p) for p in (allowed_phones or [])}
-                    if normalize_phone(_audio_num) not in _allowed_norm:
-                        kaspi_hits = [{"phone": normalize_phone(_audio_num)}]
-                        log.info(f"[loc={location_id}] Фрод: продиктован номер {normalize_phone(_audio_num)} "
-                                 f"(из аудио, regex не достал) — нет в белом списке")
-            for hit in kaspi_hits:
-                evidence = {}
-                if wav_bytes:
-                    evidence = await create_evidence_clip(wav_bytes, location_id, report.id)
-
-                confidence = hit.get("confidence", "high")
-                is_hard = (confidence == "high")
-
-                incident = Incident(
-                    location_id=location_id,
-                    report_id=report.id,
-                    incident_type="KASPI_FRAUD" if is_hard else "KASPI_UNVERIFIED",
-                    severity="critical" if is_hard else "warning",
-                    description=(
-                        f"Продавец продиктовал номер {hit['phone']}, "
-                        f"которого нет в белом списке Каспи"
-                        if is_hard else
-                        f"Продавец продиктовал номер {hit['phone']} — "
-                        f"белый список не настроен, требует проверки"
-                    ),
-                    detected_phone=hit["phone"],
-                    proof_s3_url=evidence.get("s3_url"),
-                    proof_sha256=evidence.get("sha256"),
-                )
-                db.add(incident)
-                await db.flush()
-                report.fraud_status = "critical_fraud_risk" if is_hard else "suspected"
-                report.is_priority  = is_hard
-
-                if telegram_chat:
-                    await notifier.send_incident_alert(
-                        chat_id=telegram_chat,
-                        location_name=location_name,
-                        incident_type=incident.incident_type,
-                        incident_id=incident.id,
-                        description=incident.description,
-                        proof_s3_url=incident.proof_s3_url,
-                        detected_phone=hit["phone"],
-                        report_id=report.id,
+                # Текстовый ре-анализ сегмента (дёшево, без повторного аудио).
+                try:
+                    seg_result = await analyze_audio_with_fallback(
+                        wav_bytes=None, transcript_text=seg_text,
+                        language=language, business_context=business_context,
+                        location_glossary=location_glossary or None,
+                        location_id=location_id,
                     )
-                # Email только при жёстком обвинении (high confidence)
-                if is_hard:
-                    try:
-                        async with AsyncSessionLocal() as _mail_db:
-                            _loc = await _mail_db.get(Location, location_id)
-                            if _loc and _loc.owner_id:
-                                _usr = await _mail_db.get(User, _loc.owner_id)
-                                if _usr and _usr.email:
-                                    await notifier.send_fraud_email(
-                                        user_email=_usr.email,
-                                        location_name=location_name,
-                                        incident_type="KASPI_FRAUD",
-                                        description=incident.description,
-                                        audio_url=incident.proof_s3_url,
-                                        report_id=report.id,
-                                    )
-                    except Exception as _e:
-                        log.warning(f"Fraud email not sent: {_e}")
+                except Exception as _ae:
+                    log.warning(f"[loc={location_id}] сегмент#{_i} анализ упал: {_ae}")
+                    seg_result = None
 
-            if kaspi_hits:
-                await db.commit()
-                # Kaspi уже создал Incident и отправил Telegram —
-                # сбрасываем has_fraud чтобы не добавлять дублирующий Alert ниже
-                has_fraud = False
+                _ok = (bool(seg_result)
+                       and seg_result.get("status", "OK") not in ("IGNORE", "PERSONAL")
+                       and seg_result.get("is_business", True)
+                       and (seg_result.get("transcript") or "").strip())
 
-            # Тревоги (regex)
-            if has_fraud:
-                db.add(Alert(location_id=location_id, report_id=report.id,
-                             alert_type="fraud", severity="high", transcript=transcript,
-                             trigger_phrase=gpt_summary[:150] if gpt_summary else "Обнаружено GPT-анализом"))
-            if has_bad:
-                db.add(Alert(location_id=location_id, report_id=report.id,
-                             alert_type="bad_language", severity="high", transcript=transcript,
-                             trigger_phrase=gpt_summary[:150] if gpt_summary else "Обнаружено GPT-анализом"))
-            if effective_tone == "negative" and not has_bad:
-                db.add(Alert(location_id=location_id, report_id=report.id,
-                             alert_type="negative_tone", severity="medium", transcript=transcript))
+                # Шум без признака фрода — пропускаем. Но при умысле/номере
+                # (в т.ч. UNCLEAR/PERSONAL) ФОРСИМ анализ — фрод обязан ловиться.
+                if not _ok and not fraud_signal:
+                    continue
+                if not _ok:
+                    seg_result = {
+                        "status": "OK", "is_business": True, "transcript": seg_text,
+                        "summary": "Сегмент с признаком перевода (форс-проверка фрода)",
+                        "tone": "neutral", "events": {}, "speakers": [],
+                    }
 
-            await db.commit()
-            report_id = report.id
-            report_saved = True   # отчёт в БД — повтор больше не нужен
+                seg_num = audio_fraud_number if (_i == _fraud_seg_idx) else None
+                try:
+                    rid = await _persist_report(
+                        result=seg_result,
+                        transcript=(seg_result.get("transcript") or seg_text).strip(),
+                        is_primary=(not any_saved),   # первый сохранённый = первичный (биллинг)
+                        audio_fraud_number=seg_num,
+                        **_common,
+                    )
+                except Exception as _pe:
+                    log.warning(f"[loc={location_id}] сегмент#{_i} сохранение упало: {_pe}")
+                    rid = None
+                if rid:
+                    any_saved = True
+                    report_saved = True
 
-            # ── POS-матчинг если оплата подтверждена ─────────────
-            if payment_confirmed:
-                new_fraud_status = await match_report_with_pos(
-                    report, db, required_upsells=required_upsells or []
+            # Все сегменты отвалились → фолбэк на цельный отчёт (не теряем запись).
+            if not any_saved:
+                log.info(f"[loc={location_id}] split дал 0 сохранённых — фолбэк на цельный отчёт")
+                rid = await _persist_report(
+                    result=result, transcript=transcript,
+                    is_primary=True, audio_fraud_number=audio_fraud_number, **_common,
                 )
-                if new_fraud_status == "critical_fraud_risk":
-                    report.fraud_status = new_fraud_status
-                    report.is_priority  = True
-                    db.add(Alert(location_id=location_id, report_id=report_id,
-                                 alert_type="fraud", severity="high",
-                                 transcript=transcript,
-                                 trigger_phrase="POS-разрыв: нет чека в кассе"))
-                    await db.commit()
-
-        log.info(
-            f"[loc={location_id}] Отчёт #{report_id} | "
-            f"score={final_score} (gpt={gpt_score}) | tone={effective_tone} | "
-            f"priority={priority} | payment={payment_confirmed} | "
-            f"upsell={upsell_attempt} | sat={customer_satisfaction}"
-        )
-
-        # ── Уведомления ───────────────────────────────────────────
-        # presigned-ссылка на запись для кнопки «🎧 Слушать» в Telegram.
-        # TTL 7 дней (максимум для SigV4) — кнопка живёт пока актуален отчёт;
-        # протухнет — дашборд всегда отдаёт свежую ссылку. Если S3 не настроен
-        # или записи нет — None, кнопка просто не появится.
-        from backend.services.storage import presigned_get_url
-        listen_url = presigned_get_url(s3_key, expires=604800) if s3_key else None
-
-        if is_priority_flag and telegram_chat:
-            await notifier.send_critical_alert({
-                "telegram_chat": telegram_chat,
-                "location_name": location_name,
-                "summary":       gpt_summary,
-                "sha256":        audio_sha256,
-                "report_id":     report_id,
-                "audio_url":     listen_url,
-            })
-        elif telegram_chat and (has_fraud or has_bad):
-            await notifier.send_report(
-                chat_id=telegram_chat, location_name=location_name,
-                transcript=transcript, found=found,
-                tone=effective_tone, score=final_score,
-                report_id=report_id, audio_url=listen_url,
+                if rid:
+                    report_saved = True
+        else:
+            # Один диалог (или split отказался/упал) — один Report, как раньше.
+            rid = await _persist_report(
+                result=result, transcript=transcript,
+                is_primary=True, audio_fraud_number=audio_fraud_number, **_common,
             )
-        elif telegram_chat and not suppress_alert and notify_ok_conversations:
-            await notifier.send_ok_report(
-                chat_id=telegram_chat,
-                location_name=location_name,
-                transcript=transcript,
-                tone=effective_tone,
-                score=final_score,
-                upsell=upsell_attempt,
-                greeting=has_greeting,
-                summary=gpt_summary,
-                report_id=report_id,
-                audio_url=listen_url,
-            )
-
-        # Email for fraud incidents
-        if (has_fraud or has_bad) and not suppress_alert:
-            try:
-                async with AsyncSessionLocal() as _mail_db:
-                    _loc = await _mail_db.get(Location, location_id)
-                    if _loc and _loc.owner_id:
-                        _usr = await _mail_db.get(User, _loc.owner_id)
-                        if _usr and _usr.email and has_fraud:
-                            await notifier.send_fraud_email(
-                                user_email=_usr.email,
-                                location_name=location_name,
-                                incident_type="FRAUD",
-                                description=gpt_summary or "Обнаружено GPT-анализом",
-                                report_id=report_id,
-                            )
-            except Exception as _e:
-                log.warning(f"Fraud email not sent: {_e}")
+            if rid:
+                report_saved = True
 
         _mark_job_done(failed_job_id)
 

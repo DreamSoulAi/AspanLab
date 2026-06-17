@@ -59,6 +59,15 @@ class Report(Base):
     is_personal_talk      = Column(Boolean, default=False, index=True)  # личный разговор
     is_hidden             = Column(Boolean, default=False, index=True)  # скрыт от дашборда
 
+    # ── Умное разбиение диалогов (split_into_dialogues) ──────
+    # Одна запись с кассы (один submit) может содержать несколько клиентов.
+    # Сервер режет транскрипт на отдельные диалоги → отдельный Report на клиента.
+    # is_primary=True  — первый диалог записи (или единственный/нерезанный).
+    # is_primary=False — доп. диалоги той же записи (2-й, 3-й клиент).
+    # Месячный лимит тарифа считает ТОЛЬКО is_primary (биллинг «по записям»),
+    # дашборд и дневной итог показывают ВСЕ (аналитика «по клиентам»).
+    is_primary            = Column(Boolean, default=True, index=True)
+
     # ── Contextual Severity (детектор клиента) ───────────────
     conversation_context = Column(String(30), default="unknown", index=True)
     # customer_service | internal_talk | unknown
