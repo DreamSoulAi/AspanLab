@@ -41,6 +41,9 @@ class Location(Base):
     # Антифрод: настройки владельца
     allowed_phones   = Column(JSON, default=list)           # белый список Каспи-номеров
     required_upsells = Column(JSON, default=list)           # обязательные фразы допродажи
+    # qr_only/cash_only → intent+номер = fraud(high) всегда
+    # transfers_ok/mixed → fraud только если номер не в allowed_phones
+    payment_mode     = Column(String(20), default="mixed")  # qr_only|cash_only|transfers_ok|mixed
 
     # ── Сотрудники и их смены ─────────────────────────────────
     # Список вида [{"name": "Айгуль", "start": 10, "end": 22}, ...]
