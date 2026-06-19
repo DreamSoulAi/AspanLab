@@ -496,6 +496,8 @@ async def _fix_schema():
             ("employees",               "JSONB DEFAULT '[]'::jsonb" if is_pg else "JSON"),
             ("custom_phrases",          "JSONB DEFAULT '[]'::jsonb" if is_pg else "JSON"),
             ("menu_json",               "JSONB" if is_pg else "JSON"),
+            ("payment_mode",            "VARCHAR(20) DEFAULT 'mixed'"),
+            ("allowed_phones",          "JSONB DEFAULT '[]'::jsonb" if is_pg else "JSON"),
         ]
         for col_name, col_type in _loc_cols:
             await _run(
