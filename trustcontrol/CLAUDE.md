@@ -227,26 +227,30 @@ golden-image клонирование, конфиг через FAT-раздел 
   не работает). Настройка: `marketing/THREADS_BOT_SETUP.md`. Логика протестирована
   (выбор угла/cooldown/обрезка/гард без токенов); реальный постинг ждёт токенов.
 
-**ИНФРАСТРУКТУРА ПРОДА (поднята 02.06.2026 — НЕ ПЕРЕНАСТРАИВАТЬ):**
-- **Домен:** `trustcontrol.kz` — купленный домен. BotFather `/setdomain` = `trustcontrol.kz`.
-- **Бэкенд:** Render, деплоит ветку **main** → `https://aspanlab.onrender.com`
-  (или `https://trustcontrol.kz` если DNS уже привязан к Render).
-  (free tier — спит при простое, первый запрос после паузы +50с, это норма).
-- **БД:** Neon PostgreSQL (free, AWS Frankfurt). `DATABASE_URL` в Render.
-  `database.py` сам нормализует URL. Данные больше НЕ теряются.
-- **ISSAI воркер:** VPS ps.kz (Basic-3, 4GB RAM / 4 CPU, Алматы kz-ala-1),
-  IPv4 **213.155.21.25**, порт 8010, +4GB swap. Запущен через
-  `bash scripts/deploy-issai.sh` (Docker, whisper-turbo-ksc2, int8/CPU).
-  Воркер бьётся из main (`git clone` = main). Логин ubuntu → `sudo -i`.
-  Порт 8010 открыт. `/health` публичный. ⚠️ ВОРКЕР ДОЛЖЕН БЫТЬ НА ВЕТКЕ main
-  (не на dev-ветках) — там лучшие настройки распознавания.
+**ИНФРАСТРУКТУРА ПРОДА (ОБНОВЛЕНО 19.06.2026 — ПЕРЕЕЗД С RENDER НА VPS):**
+- **Render ОТКЛЮЧЁН** (free tier исчерпан 16.06, сайт висел с 503). НЕ использовать.
+- **Домен:** `trustcontrol.kz` → DNS A-запись → `213.155.21.25` (ps.kz, TTL 300).
+  BotFather `/setdomain` = `trustcontrol.kz`.
+- **Бэкенд:** VPS ps.kz (Basic-3, 4GB RAM / 4 CPU, Алматы kz-ala-1), IPv4 **213.155.21.25**.
+  Docker: `trustcontrol_api` (FastAPI, порт 8000 внутри) + `trustcontrol_nginx` (443/80 наружу).
+  Репозиторий: `/root/AspanLab/trustcontrol/` (ветка main).
+  Автодеплой: cron root `0 * * * *` → `bash scripts/deploy-backend.sh` → `/var/log/tc-deploy.log`.
+  SSL: Let's Encrypt, действует до 2026-09-17, автопродление через certbot в deploy-backend.sh.
+  Порт 8000 ЗАКРЫТ снаружи (только nginx). API доступен только через 443/HTTPS.
+  Запуск/логи: `docker compose -f docker-compose.prod.yml --env-file .env.prod ...`
+  Env: `/root/AspanLab/trustcontrol/.env.prod` (НЕ в git, в .gitignore).
+- **ISSAI воркер:** тот же VPS, порт 8010, отдельный docker-compose.issai.yml.
+  Логин: `ssh ubuntu@213.155.21.25` → `sudo -i`. `/health` публичный.
+  ⚠️ ВОРКЕР ДОЛЖЕН БЫТЬ НА ВЕТКЕ main — там лучшие настройки распознавания.
+- **БД:** Neon PostgreSQL (free, AWS Frankfurt). `database.py` нормализует URL.
+  Данные НЕ трогать, НЕ переносить. Баг миграции 0010 (`payment_mode`) починен
+  вручную через python + добавлен в `_fix_schema` main.py (коммит после 19.06).
 - **Аудио-архив:** Cloudflare R2, бакет **trustcontrol-audio** (публичный r2.dev).
-- **Env в Render (выставлены):** DATABASE_URL, OPENAI_API_KEY, TELEGRAM_BOT_TOKEN,
-  SECRET_KEY, ISSAI_WORKER_URL=http://213.155.21.25:8010, ISSAI_WORKER_KEY,
-  OTP_BYPASS=true (код 000000, пока нет SMS), S3_BUCKET, S3_ENDPOINT_URL,
-  S3_PUBLIC_URL, S3_REGION=auto, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY.
-- Цены (реальные ps.kz): VPS 4GB ~14 450 тг/мес, домен trustcontrol.kz
-  ~9 590 тг/год. Neon + Render + R2 = 0 тг.
+- **Env (в .env.prod на VPS):** SECRET_KEY, DATABASE_URL (Neon), OPENAI_API_KEY,
+  TELEGRAM_BOT_TOKEN, ALLOWED_ORIGINS, APP_URL, ISSAI_WORKER_URL/KEY,
+  TELEGRAM_BOT_USERNAME, TELEGRAM_CHAT_ID, S3_*, AWS_*, ADMIN_PHONE,
+  WHISPER_LANGUAGE=ru, DEBUG=false, OTP_BYPASS=true.
+- Цены: VPS 4GB ~14 450 тг/мес, домен ~9 590 тг/год. Neon + R2 = 0 тг.
 
 **STT цепочка (ОБНОВЛЕНО 13.06.2026 — КАСКАДНЫЙ ПАЙПЛАЙН):**
 ISSAI (бесплатный VPS) идёт ПЕРВЫМ как ворота, OpenAI — только если нужен.
