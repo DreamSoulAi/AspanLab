@@ -1243,6 +1243,32 @@ async def analyze_audio_with_fallback(
 
     stt_diag: dict = {}
 
+    # ── ПАРТНЁРСКИЙ STT-ПУТЬ (KK‖RU параллельно + детект галлюцинаций) ──
+    # Включается когда заданы PARTNER_KK_URL + PARTNER_RU_URL в env.
+    # ISSAI и OpenAI при этом НЕ вызываются — экономим и ускоряем.
+    # Если оба партнёра сломались → фолбэк на обычный gpt-4o путь ниже.
+    from backend.services import partner_stt as _pstt
+    if _pstt.is_enabled():
+        partner_text, partner_engine = await _pstt.transcribe(wav_bytes)
+        if partner_text:
+            recon = await reconstruct_transcript(partner_text, business_context, location_glossary)
+            clean = recon["text"]
+            stt_diag = {
+                "engine": partner_engine,
+                "raw": partner_text[:120],
+                "merged": clean[:120],
+                "confidence": recon["confidence"],
+                "corrections": recon["corrections"],
+                "needs_review": recon["needs_review"],
+            }
+            log.info(f"partner_stt {partner_engine} | {len(partner_text.split())} слов сырых | clean={clean[:80]!r}")
+            res = await _analyze_via_text_gpt(clean, wav_bytes, business_context, language, stt_diag)
+            if res is not None:
+                return res
+        else:
+            log.warning("partner_stt: оба партнёра недоступны/сломаны → фолбэк на gpt-4o")
+        # Падаем дальше на стандартный путь
+
     # ── ПАРАЛЛЕЛЬНЫЙ ПУТЬ: ISSAI и OpenAI стартуют ОДНОВРЕМЕННО ──────────
     # Раньше ISSAI стоял ПЕРВЫМ на блокирующем пути: ждали его ~90с (серийный
     # CPU-воркер), и только потом звали OpenAI. На пике очередь воркера росла
