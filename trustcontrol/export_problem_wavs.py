@@ -66,18 +66,25 @@ async def main(args) -> int:
 
     since = datetime.utcnow() - timedelta(days=args.days)
 
-    # Берём с запасом (в 6× от лимита) — потом отфильтруем по содержимому.
-    fetch_n = max(args.limit * 6, 60)
+    # Берём широкую выборку (потом фильтруем по содержимому и качаем пока не наберём
+    # лимит). ВАЖНО: s3_deleted_at IS NULL — retention удаляет обычные записи из R2
+    # через 48 ч (фрод/приоритет живут 30 дней). Запись с уже стёртым файлом качать
+    # бессмысленно — отсекаем сразу.
     async with AsyncSessionLocal() as db:
         rows = (await db.execute(
             select(Report)
             .where(Report.s3_key.isnot(None))
+            .where(Report.s3_deleted_at.is_(None))
             .where(Report.timestamp >= since)
             .order_by(Report.timestamp.desc())
-            .limit(fetch_n)
+            .limit(2000)
         )).scalars().all()
 
-    print(f"Найдено записей с аудио за {args.days} дн.: {len(rows)}")
+    print(f"Записей с ЖИВЫМ аудио в R2 за {args.days} дн.: {len(rows)}")
+    if not rows:
+        print("⚠ Нет записей с неудалённым аудио. Retention стирает обычные записи")
+        print("  через 48 ч — попробуй меньший период или подожди свежих записей.")
+        return 1
 
     # ── Отбор проблемных ──
     # Делим на казахские/смешанные (приоритет) и русские (добор).
@@ -87,21 +94,15 @@ async def main(args) -> int:
             continue  # пустышка/обрывок — партнёру неинтересно
         (kazakh if _has_kazakh(r.transcript) else russian).append(r)
 
-    if args.only_kazakh:
-        picked = kazakh[:args.limit]
-    else:
-        # 70% казах/смесь, остаток — русские (для разнообразия)
-        n_kk = min(len(kazakh), max(1, int(args.limit * 0.7)))
-        n_ru = args.limit - n_kk
-        picked = kazakh[:n_kk] + russian[:n_ru]
-
-    if not picked:
+    # Порядок кандидатов: казахские/смесь первыми (приоритет), потом русские.
+    # Качаем по порядку пока не наберём args.limit успешных (мёртвые ключи скипаем).
+    candidates = kazakh if args.only_kazakh else (kazakh + russian)
+    if not candidates:
         print("⚠ Подходящих записей не нашлось — попробуй увеличить --days.")
         return 1
 
-    print(f"Отобрано: {len(picked)}  (каз/смесь: {sum(_has_kazakh(r.transcript) for r in picked)}, "
-          f"рус: {sum(not _has_kazakh(r.transcript) for r in picked)})")
-    print(f"Качаю WAV из R2 в {out_dir} …\n")
+    print(f"Кандидатов (≥{args.min_words} слов): каз/смесь {len(kazakh)}, рус {len(russian)}")
+    print(f"Качаю до {args.limit} WAV из R2 в {out_dir} …\n")
 
     manifest = [
         "# ПРОБЛЕМНЫЕ КАССОВЫЕ ЗАПИСИ TrustControl — для теста STT-моделей",
@@ -113,11 +114,14 @@ async def main(args) -> int:
     ]
 
     saved = 0
-    for r in picked:
+    dead = 0
+    for r in candidates:
+        if saved >= args.limit:
+            break
         wav = await download_bytes(r.s3_key)
         if not wav:
-            print(f"  ⊘ #{r.id}: не скачалось (ключ {r.s3_key})")
-            continue
+            dead += 1
+            continue  # файл стёрт из R2 / ошибка — пробуем следующий
         saved += 1
         tag = _lang_tag(r.transcript)
         fname = f"{saved:03d}_{tag}_r{r.id}.wav"
@@ -136,8 +140,12 @@ async def main(args) -> int:
             "",
         ]
 
+    if dead:
+        print(f"\n  (пропущено {dead} записей — файл уже стёрт из R2 по retention)")
+
     if saved == 0:
-        print("\n⚠ Ни одного файла не скачалось — проверь S3_*/AWS_* в .env.prod.")
+        print("\n⚠ Ни одного файла не скачалось.")
+        print("  Все ключи мёртвые (retention) ИЛИ проблема с S3_*/AWS_* в .env.prod.")
         return 1
 
     manifest_path = os.path.join(out_dir, "manifest.txt")
