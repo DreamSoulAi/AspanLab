@@ -11,6 +11,7 @@
 # ════════════════════════════════════════════════════════════
 
 import logging
+import os
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -20,8 +21,11 @@ from backend.database import AsyncSessionLocal
 
 log = logging.getLogger("retention")
 
-NORMAL_TTL_HOURS   = 48
-EVIDENCE_TTL_DAYS  = 30
+# Сроки хранения настраиваются через env (для временного накопления реальных
+# записей под тест STT можно поднять RETENTION_NORMAL_TTL_HOURS, напр. 336 = 14 дней,
+# потом вернуть 48). Дефолты — прежнее поведение.
+NORMAL_TTL_HOURS   = int(os.getenv("RETENTION_NORMAL_TTL_HOURS", "48"))
+EVIDENCE_TTL_DAYS  = int(os.getenv("RETENTION_EVIDENCE_TTL_DAYS", "30"))
 EVIDENCE_PREFIX    = "evidence"
 
 
