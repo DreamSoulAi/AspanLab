@@ -1,9 +1,9 @@
 # ════════════════════════════════════════════════════════════
 #  TrustControl — ПРОД на собственном VPS (ps.kz, Алматы)
 #
-#  Поднимает БЭКЕНД (FastAPI) + nginx с SSL под trustcontrol.kz.
-#  БД остаётся на Neon (DATABASE_URL в .env.prod) — данные уже там,
-#  free-тариф, автобэкап. Локальный Postgres НЕ поднимаем.
+#  Поднимает БЭКЕНД (FastAPI) + PostgreSQL + nginx с SSL под trustcontrol.kz.
+#  БД — локальный PostgreSQL (postgres:5432), данные в volume postgres_data.
+#  DATABASE_URL в .env.prod: postgresql+asyncpg://trustcontrol:***@postgres:5432/trustcontrol?sslmode=disable
 #  ISSAI-воркер живёт в своём docker-compose.issai.yml на том же VPS.
 #
 #  Запуск:   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
@@ -18,6 +18,21 @@
 version: "3.9"
 
 services:
+
+  # ── PostgreSQL — локальная база данных ────────────────────
+  postgres:
+    image: postgres:17
+    container_name: trustcontrol_postgres
+    restart: always
+    env_file:
+      - .env.prod
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trustcontrol"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ── Основной API сервер (FastAPI/uvicorn) ─────────────────
   api:
@@ -34,6 +49,9 @@ services:
       - DEBUG=false
     volumes:
       - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -61,3 +79,6 @@ services:
       - ./certbot-www:/var/www/certbot              # acme-challenge для renew
     depends_on:
       - api
+
+volumes:
+  postgres_data:
