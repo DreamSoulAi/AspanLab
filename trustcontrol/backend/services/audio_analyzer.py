@@ -19,7 +19,7 @@ import wave
 import warnings
 from openai import AsyncOpenAI
 from backend.config import settings
-from backend.services.gpt_analyzer import gpt_analyze
+from backend.services.gpt_analyzer import gpt_analyze, text_client as _text_client, _TEXT_MODEL
 from backend.services import issai_stt, yandex_stt, training_collector
 from backend.services.stt_prompt import build_transcription_prompt
 
@@ -482,7 +482,7 @@ def _strip_repeat_loops(text: str) -> str:
     return " ".join(out)
 
 
-_RECON_MODEL = "gpt-4o-mini"
+_RECON_MODEL = _TEXT_MODEL
 
 # Уверенность ниже этого порога → транскрипт помечается на ручную проверку.
 _REVIEW_CONFIDENCE = 0.5
@@ -525,7 +525,7 @@ async def _gpt_json_with_retry(messages: list, max_tokens: int = 1500,
     delay = 1.0
     for i in range(attempts):
         try:
-            resp = await client.chat.completions.create(
+            resp = await _text_client.chat.completions.create(
                 model=_RECON_MODEL,
                 messages=messages,
                 response_format={"type": "json_object"},

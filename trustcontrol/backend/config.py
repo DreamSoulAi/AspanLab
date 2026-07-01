@@ -35,6 +35,17 @@ class Settings:
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     TELEGRAM_BOT_TOKEN:str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
+    # ── Текстовый LLM (DeepSeek или любой OpenAI-совместимый) ──────────────
+    # Если TEXT_LLM_API_KEY задан — используется вместо OpenAI для всех
+    # текстовых вызовов (анализ разговора, нарезка диалогов, реконструкция STT).
+    # Аудио-вызовы (STT gpt-4o-transcribe, tone gpt-4o-mini-audio) всё равно
+    # идут через OPENAI_API_KEY — DeepSeek их не поддерживает.
+    # DeepSeek API:  TEXT_LLM_BASE_URL=https://api.deepseek.com/v1 MODEL=deepseek-chat
+    # Партнёр:       TEXT_LLM_BASE_URL=https://mini.trustcontrol.kz/v1 MODEL=deepseek-chat
+    TEXT_LLM_API_KEY:  str = os.getenv("TEXT_LLM_API_KEY", "")
+    TEXT_LLM_BASE_URL: str = os.getenv("TEXT_LLM_BASE_URL", "")
+    TEXT_LLM_MODEL:    str = os.getenv("TEXT_LLM_MODEL", "gpt-4o-mini")
+
     # ── SECURITY: SECRET_KEY ─────────────────────────────────
     # ОБЯЗАТЕЛЬНО задать в Render env vars. В DEBUG можно работать
     # с временным ключом (но JWT инвалидируется при каждом рестарте).

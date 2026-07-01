@@ -22,11 +22,10 @@
 import json
 import logging
 
-from openai import AsyncOpenAI
 from backend.config import settings
+from backend.services.gpt_analyzer import text_client as client, _TEXT_MODEL
 
 log = logging.getLogger("dialog_splitter")
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 # Ниже этого числа слов резать смысла нет — это заведомо один короткий диалог.
 # Экономит вызов gpt-4o-mini на типовой быстрой сделке ("Кофе. 800. QR").
@@ -120,7 +119,7 @@ async def split_into_dialogues(
     try:
         prompt = build_prompt(text, business_type, payment_mode, greeting_script)
         resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=_TEXT_MODEL,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0,
