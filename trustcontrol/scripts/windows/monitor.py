@@ -36,6 +36,21 @@ import threading
 import traceback
 from pathlib import Path
 
+# Фикс кракозябр в Windows cmd: переключаем консоль на UTF-8.
+# Работает на Windows 10 v1903+ и Windows 11.
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        ctypes.windll.kernel32.SetConsoleCP(65001)
+    except Exception:
+        pass
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 import numpy as np
 import pyaudio
 import webrtcvad
