@@ -58,6 +58,10 @@ router = APIRouter()
 
 MAX_AUDIO_SIZE_MB    = 10
 MAX_TRANSCRIPT_CHARS = 10_000
+# Минимальная длина аудио. Записи короче — шум/случайный звук, не диалог.
+# Реальная транзакция (поздороваться, заказать, оплатить) — минимум 10-12с.
+# Переопределяется env MIN_AUDIO_DURATION_SEC.
+_MIN_AUDIO_DURATION_SEC = float(os.getenv("MIN_AUDIO_DURATION_SEC", "8"))
 
 # ── Потолок одновременной обработки ───────────────────────────────────────────
 # Каждый разговор обрабатывается в фоне и может ждать STT (ISSAI) до 300с — всё
@@ -77,6 +81,16 @@ _PROCESS_SEMAPHORE = asyncio.Semaphore(_MAX_CONCURRENT_PROCESSING)
 #   * 1500 запросов / сутки → защита от runaway-кошелька OpenAI
 #     (1500 = ~1 разговор/минуту 24/7 — заведомо больше любой реальной кассы)
 _submit_attempts: dict[str, list[float]] = defaultdict(list)
+
+
+def _wav_duration_sec(wav_bytes: bytes) -> float:
+    """Длительность WAV-файла в секундах (читает только заголовок). 0 при ошибке."""
+    try:
+        import wave, io
+        with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
+            return wf.getnframes() / wf.getframerate()
+    except Exception:
+        return 0.0
 _daily_counts:    dict[str, tuple[str, int]] = {}  # key → (YYYY-MM-DD, count)
 MAX_SUBMITS_PER_MIN = 60
 MAX_SUBMITS_PER_DAY = 1500
@@ -556,6 +570,19 @@ async def _process_submission(
         # Плоский глоссарий для STT-промпта: custom_phrases + названия/размеры из меню.
         # business_context (описание, скрипты) → в GPT-анализ. Это → в транскрипцию.
         location_glossary = list(custom_phrases or []) + flatten_menu_glossary(menu_json)
+
+        # ── Фильтр коротких записей ───────────────────────────────────────────────
+        # Запись < MIN_AUDIO_DURATION_SEC — случайный звук, не диалог (реальная
+        # транзакция занимает минимум 10-12с). Отбрасываем ДО STT — экономим API.
+        if wav_bytes:
+            _dur = _wav_duration_sec(wav_bytes)
+            if _dur > 0 and _dur < _MIN_AUDIO_DURATION_SEC:
+                log.info(
+                    f"[loc={location_id}] Запись {_dur:.1f}с < {_MIN_AUDIO_DURATION_SEC}с — "
+                    f"слишком короткая, IGNORE (audio_size_kb={audio_size_kb})"
+                )
+                _mark_job_done(failed_job_id)
+                return
 
         result = await analyze_audio_with_fallback(
             wav_bytes=wav_bytes,
