@@ -437,8 +437,8 @@ async def _persist_report(
 
     # ── Уведомления (best-effort, отчёт уже сохранён) ─────────
     try:
-        from backend.services.storage import presigned_get_url
-        listen_url = presigned_get_url(s3_key, expires=604800) if s3_key else None
+        from backend.services.storage import public_url_for_key
+        listen_url = public_url_for_key(s3_key) if s3_key else None
 
         if is_priority_flag and telegram_chat:
             await notifier.send_critical_alert({
@@ -646,9 +646,10 @@ async def _process_submission(
                 _debug_listen = None
                 if wav_bytes:
                     try:
+                        from backend.services.storage import public_url_for_key
                         _diag_id = int(datetime.utcnow().timestamp())
                         _up = await upload_evidence(wav_bytes, location_id, _diag_id)
-                        _debug_listen = _listen_button(_up.get("s3_url"))
+                        _debug_listen = _listen_button(public_url_for_key(_up.get("key")))
                     except Exception as _ue:
                         log.warning(f"[loc={location_id}] debug audio upload failed: {_ue}")
                 await _send(_diag_chat, msg, reply_markup=_debug_listen)

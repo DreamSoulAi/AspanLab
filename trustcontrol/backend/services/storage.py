@@ -76,6 +76,22 @@ def presigned_get_url(key: str, expires: int = 3600) -> str | None:
         return None
 
 
+def public_url_for_key(key: str) -> str | None:
+    """
+    Публичный URL для R2 (pub-xxxx.r2.dev) — используется в Telegram-кнопках.
+    Telegram не открывает presigned-ссылки на r2.cloudflarestorage.com, поэтому
+    когда задан S3_PUBLIC_URL возвращаем прямую публичную ссылку.
+    Фолбэк: presigned URL на 7 дней если S3_PUBLIC_URL не задан.
+    """
+    from backend.config import settings
+
+    if not key:
+        return None
+    if settings.S3_PUBLIC_URL:
+        return f"{settings.S3_PUBLIC_URL.rstrip('/')}/{key}"
+    return presigned_get_url(key, expires=604800)
+
+
 async def upload_evidence(audio_bytes: bytes, location_id: int, report_id: int) -> dict:
     """
     Архивирует аудио в S3/R2 (для прослушки и доказательств).
