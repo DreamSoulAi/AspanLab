@@ -101,6 +101,11 @@ class Settings:
     # тихого сотрудника. На шумной точке лучше повышать порог постепенно,
     # сверяясь с логами «RMS фильтр».
     RMS_SILENCE_THRESHOLD: int = int(os.getenv("RMS_SILENCE_THRESHOLD", "120"))
+    # Целевой RMS после нормализации перед STT. 0 = нормализация выключена.
+    # 2000/32768 ≈ -24 dBFS — хороший уровень для gpt-4o-transcribe.
+    # Усиление ограничено 20 dB (x10): не усиливаем шум сверх меры.
+    # Если аудио уже достаточно громкое (RMS > target) — не трогаем.
+    AUDIO_NORMALIZE_TARGET_RMS: int = int(os.getenv("AUDIO_NORMALIZE_TARGET_RMS", "2000"))
 
     # ── ISSAI STT — self-hosted faster-whisper (whisper-turbo-ksc2) ────
     # Лучшая открытая модель для казахского (9.16% WER, KSC2 + code-switching).

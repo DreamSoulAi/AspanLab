@@ -73,6 +73,55 @@ def _compute_rms(wav_bytes: bytes) -> float:
         return float("inf")  # не удалось вычислить — не фильтруем
 
 
+def _normalize_for_stt(wav_bytes: bytes) -> bytes:
+    """
+    Усиливает тихую запись до целевого RMS перед отправкой на STT.
+
+    gpt-4o-transcribe даёт стабильный результат при -25..-15 dBFS.
+    Тихий сигнал (-40..-35 dBFS) — человек разбирает, модель даёт мусор.
+    Нормализация не меняет смысл записи, только уровень. Безопасна:
+      • уже громкое аудио не трогаем (gain ≤ 1)
+      • max gain = 20 dB (x10) — не раздуваем шум донельзя
+      • при любой ошибке возвращаем оригинал
+
+    Выключается через AUDIO_NORMALIZE_TARGET_RMS=0.
+    """
+    target_rms = settings.AUDIO_NORMALIZE_TARGET_RMS
+    if not target_rms:
+        return wav_bytes
+    try:
+        import numpy as np
+        with wave.open(io.BytesIO(wav_bytes)) as wf:
+            if wf.getsampwidth() != 2:
+                return wav_bytes
+            params = wf.getparams()
+            raw    = wf.readframes(wf.getnframes())
+        if not raw:
+            return wav_bytes
+        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+        current_rms = float(np.sqrt(np.mean(samples ** 2)))
+        if current_rms < 1.0:
+            return wav_bytes  # мёртвая тишина — нечего усиливать
+        gain = min(target_rms / current_rms, 10.0)  # не более +20 dB
+        if gain <= 1.05:
+            return wav_bytes  # уже достаточно громко
+        amplified = np.clip(samples * gain, -32767, 32767).astype(np.int16)
+        out = io.BytesIO()
+        with wave.open(out, "wb") as wf_out:
+            wf_out.setparams(params)
+            wf_out.writeframes(amplified.tobytes())
+        out.seek(0)
+        result = out.read()
+        log.debug(
+            f"_normalize_for_stt: RMS {current_rms:.0f} → {target_rms} "
+            f"(gain x{gain:.1f}, +{20*__import__('math').log10(gain):.1f} dB)"
+        )
+        return result
+    except Exception as e:
+        log.debug(f"_normalize_for_stt: пропущено ({e})")
+        return wav_bytes
+
+
 def _audio_duration_sec(wav_bytes: bytes) -> float:
     """
     Длительность WAV в секундах. Возвращает 0.0 если распарсить не удалось —
@@ -714,6 +763,7 @@ async def _transcribe_audio(
         return ""
     try:
         import io as _io
+        wav_bytes = _normalize_for_stt(wav_bytes)
         buf = _io.BytesIO(wav_bytes)
         buf.name = "audio.wav"
 
