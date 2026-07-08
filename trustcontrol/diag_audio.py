@@ -76,6 +76,19 @@ def _analyze_wav(wav_bytes: bytes, name: str, rms_threshold: int) -> dict:
         db_peak = 20 * math.log10(peak / 32768) if peak > 1 else -99.0
         passes  = rms >= rms_threshold
 
+        # RMS ПОСЛЕ нормализации — то, что реально уйдёт в STT после фикса.
+        # Прогоняем через ту же _normalize_for_stt, что и прод.
+        try:
+            from backend.services.audio_analyzer import _normalize_for_stt
+            norm_bytes = _normalize_for_stt(wav_bytes)
+            with wave.open(io.BytesIO(norm_bytes)) as wf2:
+                raw2 = wf2.readframes(wf2.getnframes())
+            rms_after = _rms(raw2) if sw == 2 else rms
+        except Exception:
+            rms_after = rms  # функция недоступна (старый код) — считаем без изменения
+        db_after = 20 * math.log10(rms_after / 32768) if rms_after > 1 else -99.0
+        gain     = rms_after / rms if rms > 0 else 1.0
+
         return {
             "name":      name,
             "size_kb":   len(wav_bytes) // 1024,
@@ -87,6 +100,9 @@ def _analyze_wav(wav_bytes: bytes, name: str, rms_threshold: int) -> dict:
             "db_rms":    db_rms,
             "db_peak":   db_peak,
             "passes":    passes,
+            "rms_after": rms_after,
+            "db_after":  db_after,
+            "gain":      gain,
         }
     except Exception as e:
         return {"name": name, "error": str(e)}
@@ -104,14 +120,16 @@ def _print_row(r: dict, rms_threshold: int):
         return
     ok   = r["passes"]
     flag = _color(ok, "✓ PASS" if ok else "✗ НИЖЕ ПОРОГА")
-    db_s = _color(ok, f"{r['db_rms']:+.1f} dBFS")
+    db_s = _color(ok, f"{r['db_rms']:+6.1f}")
+    gain = r.get("gain", 1.0)
+    # Показываем ДО → ПОСЛЕ нормализации + во сколько раз усилено
+    after_s = f"{r.get('db_after', r['db_rms']):+6.1f}"
+    gain_s  = f"x{gain:.1f}" if gain > 1.05 else "—"
     print(
-        f"  {r['name']:40s}  "
+        f"  {r['name']:36s}  "
         f"{r['dur']:5.1f}с  "
-        f"RMS={r['rms']:.0f}  "
-        f"{db_s}  "
-        f"peak={r['db_peak']:+.1f}dB  "
-        f"{r['sr']}Hz/{r['bits']}bit  "
+        f"{r['sr']}Hz/{r['bits']}b  "
+        f"ДО:{db_s}dBFS → ПОСЛЕ:{after_s}dBFS  усил:{gain_s:>5}  "
         f"{flag}"
     )
 
@@ -153,12 +171,14 @@ async def _run(location_name: str, n: int, run_sravnenie: bool):
         loc_id, loc_name = loc
         print(f"\nТочка: '{loc_name}' (id={loc_id})")
 
-        # Последние N отчётов с s3_key
+        # Последние N отчётов с s3_key (колонка времени = timestamp;
+        # s3_deleted_at IS NULL — файл ещё лежит в R2, не удалён очисткой)
         rows = await sess.execute(
             text(
-                "SELECT id, s3_key, created_at FROM reports "
+                "SELECT id, s3_key, timestamp FROM reports "
                 "WHERE location_id=:lid AND s3_key IS NOT NULL AND s3_key != '' "
-                "ORDER BY created_at DESC LIMIT :n"
+                "AND s3_deleted_at IS NULL "
+                "ORDER BY timestamp DESC LIMIT :n"
             ),
             {"lid": loc_id, "n": n},
         )
@@ -176,16 +196,16 @@ async def _run(location_name: str, n: int, run_sravnenie: bool):
     s3 = _build_s3_client()
 
     rms_threshold = settings.RMS_SILENCE_THRESHOLD
-    print(f"RMS-порог тишины (RMS_SILENCE_THRESHOLD): {rms_threshold}  "
-          f"(≈ {20*math.log10(rms_threshold/32768):+.1f} dBFS)\n")
-    print(
-        f"  {'Файл':40s}  {'Длит':>5}  {'RMS':>8}  "
-        f"{'dBFS':>9}  {'Peak':>8}  {'Параметры':15}  Фильтр"
-    )
-    print("  " + "-" * 110)
+    target = getattr(settings, "AUDIO_NORMALIZE_TARGET_RMS", 0)
+    print(f"RMS-порог тишины: {rms_threshold} (≈{20*math.log10(rms_threshold/32768):+.1f} dBFS)  |  "
+          f"Цель нормализации: {target} "
+          f"({'ВЫКЛ' if not target else f'≈{20*math.log10(target/32768):+.1f} dBFS'})\n")
+    print(f"  {'Файл':36s}  {'Длит':>5}  {'Формат':>10}  "
+          f"{'Громкость ДО→ПОСЛЕ норм.':^30}  Фильтр")
+    print("  " + "-" * 108)
 
     wav_files = []
-    for rep_id, s3_key, created_at in reports:
+    for rep_id, s3_key, ts in reports:
         try:
             resp = s3.get_object(Bucket=settings.S3_BUCKET, Key=s3_key)
             wav_bytes = resp["Body"].read()
